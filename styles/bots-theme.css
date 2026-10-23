@@ -1,0 +1,228 @@
+/*
+ * Theme layer of the standalone bots app. Scoped to [data-app="bots"] (set on <html> by the bots root
+ * layout), so nothing here can reach the main JSYNQ app. The accent stays the JSYNQ emerald (it is a
+ * Tailwind token backed by --color-primary*); this layer adds the "ink" surfaces, glow, grid and motion.
+ */
+[data-app="bots"] {
+  --bots-ink: 7 12 11;
+  --bots-ink-raised: 13 21 19;
+  --bots-ink-line: 255 255 255;
+  --bots-glow: 69 173 126;
+  --bots-glow-cool: 56 189 248;
+  --bots-surface: 246 246 250;
+  --bots-radius: 14px;
+  --bots-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --bots-shadow-card: 0 1px 2px rgb(23 22 30 / 0.04), 0 8px 24px -12px rgb(23 22 30 / 0.12);
+  --bots-shadow-lift: 0 2px 4px rgb(23 22 30 / 0.05), 0 18px 40px -16px rgb(23 22 30 / 0.22);
+
+  /* Brandbook v1.1: "Verde profundo" #1F7A5A for green text and active states (JSYNQ keeps its own shade). */
+  --color-primary-dark: 31 122 90;
+
+  background: rgb(var(--bots-surface));
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+[data-app="bots"] body {
+  background: rgb(var(--bots-surface));
+  color: rgb(var(--color-neutral-700, 40 39 51));
+}
+
+/*
+ * Dark theme. Tailwind's neutral, white and status colors are backed by --color-* variables
+ * (tailwind.config.js) whose fallbacks are the light values, so the JSYNQ app never changes. Here the
+ * bots app swaps the palette: neutrals invert (900 = brightest text, 10 = page ground), `white` becomes
+ * the raised surface, and the status scales flip (-clean = dim tint, -dark/-darkest = light text).
+ * Solid fills keep their hue and get dark text (`text-white` now resolves to the surface color).
+ */
+[data-app="bots"][data-theme="dark"] {
+  color-scheme: dark;
+  --bots-surface: 14 16 19;
+  --bots-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
+  --bots-shadow-lift: 0 2px 4px rgb(0 0 0 / 0.3), 0 18px 40px -16px rgb(0 0 0 / 0.6);
+
+  --color-white: 21 24 28;
+  --color-neutral-900: 242 244 247;
+  --color-neutral-800: 233 235 239;
+  --color-neutral-700: 214 218 224;
+  --color-neutral-600: 192 197 205;
+  --color-neutral-500: 170 176 186;
+  --color-neutral-400: 155 162 173;
+  --color-neutral-300: 128 135 146;
+  --color-neutral-200: 108 115 126;
+  --color-neutral-100: 70 76 86;
+  --color-neutral-50: 38 43 50;
+  --color-neutral-10: 28 32 38;
+  --color-neutral-border: 38 43 50;
+
+  --color-primary-darkest: 199 230 216;
+  --color-primary-dark: 143 206 178;
+  --color-primary-light: 41 104 76;
+  --color-primary-lighter: 36 84 62;
+  --color-primary-clean: 24 48 38;
+  --color-secondary-clean: 36 40 46;
+
+  --color-info-darkest: 203 224 242;
+  --color-info-dark: 169 203 234;
+  --color-info-light: 49 90 128;
+  --color-info-lighter: 38 64 92;
+  --color-info-clean: 22 36 50;
+
+  --color-warning-darkest: 252 211 77;
+  --color-warning-dark: 250 204 21;
+  --color-warning-light: 161 98 7;
+  --color-warning-lighter: 96 70 14;
+  --color-warning-clean: 46 37 12;
+
+  --color-error-darkest: 252 165 165;
+  --color-error-dark: 248 113 113;
+  --color-error-light: 185 28 28;
+  --color-error-lighter: 110 32 32;
+  --color-error-clean: 52 22 24;
+
+  --color-success-darkest: 110 231 183;
+  --color-success-dark: 52 211 153;
+  --color-success-light: 4 120 87;
+  --color-success-lighter: 12 82 62;
+  --color-success-clean: 14 44 35;
+}
+
+/* Notifications (react-toastify) follow the theme: its light theme reads these variables. */
+[data-app="bots"][data-theme="dark"] {
+  --toastify-color-light: rgb(28 32 38);
+  --toastify-text-color-light: rgb(233 235 239);
+}
+
+/*
+ * Shared primitives that hard-code Tailwind's default gray/slate (no `dark:` variant): map them onto the
+ * themed neutrals so selected rows, hovers and borders keep their contrast in the dark theme.
+ */
+[data-app="bots"][data-theme="dark"] :is(.bg-gray-50, .bg-gray-100, .bg-slate-50, .bg-slate-100),
+[data-app="bots"][data-theme="dark"] [data-state="checked"][class*="bg-gray-100"],
+[data-app="bots"][data-theme="dark"] :is(.hover\:bg-gray-100, .hover\:bg-slate-50, .hover\:bg-slate-100):hover {
+  background-color: rgb(var(--color-neutral-10));
+}
+[data-app="bots"][data-theme="dark"] :is(.text-gray-500, .text-slate-500) {
+  color: rgb(var(--color-neutral-400));
+}
+[data-app="bots"][data-theme="dark"] :is(.text-gray-900, .text-slate-900, .text-slate-950) {
+  color: rgb(var(--color-neutral-900));
+}
+[data-app="bots"][data-theme="dark"] :is(.border-gray-200, .border-gray-300, .border-slate-200) {
+  border-color: rgb(var(--color-neutral-50));
+}
+
+/* Brand panels are always dark ink with white text, in both themes. */
+[data-app="bots"] .bots-ink-panel {
+  --color-white: 255 255 255;
+}
+
+[data-app="bots"] ::selection {
+  background: rgb(var(--bots-glow) / 0.28);
+}
+
+/* Visible, consistent keyboard focus across the standalone app. */
+[data-app="bots"] :focus-visible {
+  outline: 2px solid rgb(var(--bots-glow));
+  outline-offset: 2px;
+}
+
+/* Dotted grid used behind illustrations and empty states. */
+[data-app="bots"] .bots-grid {
+  background-image: radial-gradient(rgb(var(--bots-ink-line) / 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+[data-app="bots"] .bots-grid-light {
+  background-image: radial-gradient(rgb(var(--color-neutral-800, 23 22 30) / 0.08) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Brand panel backdrop: deep ink with two soft glows. */
+[data-app="bots"] .bots-ink-panel {
+  position: relative;
+  isolation: isolate;
+  color: #fff;
+  background:
+    radial-gradient(60% 50% at 18% 12%, rgb(var(--bots-glow) / 0.28), transparent 70%),
+    radial-gradient(50% 45% at 88% 92%, rgb(var(--bots-glow-cool) / 0.16), transparent 70%),
+    rgb(var(--bots-ink));
+}
+
+[data-app="bots"] .bots-glass {
+  background: rgb(var(--bots-ink-line) / 0.06);
+  border: 1px solid rgb(var(--bots-ink-line) / 0.12);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+[data-app="bots"] .bots-text-gradient {
+  background: linear-gradient(100deg, #fff 10%, rgb(143 206 178) 55%, rgb(125 211 252) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Motion: a flowing dash along connectors and a slow float for nodes. */
+@keyframes bots-flow {
+  to {
+    stroke-dashoffset: -48;
+  }
+}
+@keyframes bots-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes bots-pulse-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+@keyframes bots-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+[data-app="bots"] .bots-flow-line {
+  stroke-dasharray: 6 10;
+  animation: bots-flow 2.4s linear infinite;
+}
+[data-app="bots"] .bots-float {
+  animation: bots-float 7s ease-in-out infinite;
+}
+[data-app="bots"] .bots-float-slow {
+  animation: bots-float 11s ease-in-out infinite;
+}
+[data-app="bots"] .bots-ring {
+  transform-origin: center;
+  animation: bots-pulse-ring 3.2s ease-out infinite;
+}
+[data-app="bots"] .bots-rise {
+  animation: bots-rise 0.5s var(--bots-ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-app="bots"] .bots-flow-line,
+  [data-app="bots"] .bots-float,
+  [data-app="bots"] .bots-float-slow,
+  [data-app="bots"] .bots-ring,
+  [data-app="bots"] .bots-rise {
+    animation: none;
+  }
+}

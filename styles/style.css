@@ -1,0 +1,113 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+
+body {
+    background-color: #f6f6fa;
+}
+
+.bg-login {
+    background-repeat: no-repeat;
+    background-size: cover;
+}
+
+.divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 20px 0;
+}
+
+.divider::before,
+.divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid #BBB9C7;
+}
+
+.divider::before {
+    margin-right: 10px;
+}
+
+.divider::after {
+    margin-left: 10px;
+}
+
+.divider span {
+    color: #BBB9C7;
+}
+
+.js-input-text {
+    height: 40px;
+    border-radius: 4px;
+    border-color: #BBB9C7;
+    transition: border-color 0.2s linear;
+}
+
+button {
+    transition: background-color 0.2s linear;
+}
+
+.icon-email {
+    background-image: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="17" height="18" viewBox="0 0 17 18" fill="none"%3E%3Cpath d="M12.0417 15.5521H4.95835C2.37294 15.5521 0.885437 14.0646 0.885437 11.4792V6.52082C0.885437 3.93541 2.37294 2.44791 4.95835 2.44791H12.0417C14.6271 2.44791 16.1146 3.93541 16.1146 6.52082V11.4792C16.1146 14.0646 14.6271 15.5521 12.0417 15.5521ZM4.95835 3.51041C2.93252 3.51041 1.94794 4.49499 1.94794 6.52082V11.4792C1.94794 13.505 2.93252 14.4896 4.95835 14.4896H12.0417C14.0675 14.4896 15.0521 13.505 15.0521 11.4792V6.52082C15.0521 4.49499 14.0675 3.51041 12.0417 3.51041H4.95835Z" fill="%23BBB9C7"/%3E%3Cpath d="M8.49982 9.61623C7.90482 9.61623 7.30274 9.43206 6.84232 9.05665L4.62524 7.28581C4.39857 7.10165 4.35607 6.76873 4.54024 6.54206C4.72441 6.31539 5.05733 6.2729 5.28399 6.45706L7.50107 8.2279C8.0394 8.65998 8.95315 8.65998 9.49148 8.2279L11.7086 6.45706C11.9352 6.2729 12.2752 6.30831 12.4523 6.54206C12.6365 6.76873 12.6011 7.10873 12.3673 7.28581L10.1502 9.05665C9.69691 9.43206 9.09482 9.61623 8.49982 9.61623Z" fill="%23BBB9C7"/%3E%3C/svg%3E');
+    background-repeat: no-repeat;
+    background-position: 12px;
+    background-size: 1.3em;
+    padding-left: 2.5rem;
+}
+
+.icon-password {
+    background-image: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="17" height="18" viewBox="0 0 17 18" fill="none"%3E%3Cpath d="M7.80581 14.8437H5.31248C4.78123 14.8437 4.39165 14.8225 4.05873 14.7729C1.69998 14.5108 1.23956 13.1083 1.23956 10.7708V7.22917C1.23956 4.89167 1.70706 3.48208 4.07998 3.22C4.39165 3.1775 4.78123 3.15625 5.31248 3.15625H7.76331C8.05373 3.15625 8.29456 3.39708 8.29456 3.6875C8.29456 3.97792 8.05373 4.21875 7.76331 4.21875H5.31248C4.83081 4.21875 4.49081 4.24 4.21456 4.27542C2.77665 4.43125 2.30206 4.88458 2.30206 7.22917V10.7708C2.30206 13.1154 2.77665 13.5617 4.19331 13.7246C4.49081 13.7671 4.83081 13.7812 5.31248 13.7812H7.80581C8.09623 13.7812 8.33706 14.0221 8.33706 14.3125C8.33706 14.6029 8.09623 14.8437 7.80581 14.8437Z" fill="%23BBB9C7"/%3E%3Cpath d="M11.6872 14.8437H10.6389C10.3484 14.8437 10.1076 14.6029 10.1076 14.3125C10.1076 14.0221 10.3484 13.7812 10.6389 13.7812H11.6872C12.1689 13.7812 12.5089 13.76 12.7851 13.7246C14.223 13.5687 14.6976 13.1154 14.6976 10.7708V7.22917C14.6976 4.88458 14.223 4.43833 12.8064 4.27542C12.5089 4.23292 12.1689 4.21875 11.6872 4.21875H10.6389C10.3484 4.21875 10.1076 3.97792 10.1076 3.6875C10.1076 3.39708 10.3484 3.15625 10.6389 3.15625H11.6872C12.2184 3.15625 12.608 3.1775 12.9409 3.22708C15.2997 3.48917 15.7601 4.89167 15.7601 7.22917V10.7708C15.7601 13.1083 15.2926 14.5179 12.9197 14.78C12.608 14.8225 12.2184 14.8437 11.6872 14.8437Z" fill="%23BBB9C7"/%3E%3Cpath d="M10.625 16.6146C10.3346 16.6146 10.0938 16.3738 10.0938 16.0833V1.91667C10.0938 1.62626 10.3346 1.38542 10.625 1.38542C10.9154 1.38542 11.1562 1.62626 11.1562 1.91667V16.0833C11.1562 16.3738 10.9154 16.6146 10.625 16.6146Z" fill="%23BBB9C7"/%3E%3Cpath d="M4.74581 9.70833C4.65373 9.70833 4.56164 9.68708 4.47664 9.65167C4.39164 9.61625 4.31373 9.56667 4.24289 9.50292C4.17914 9.43208 4.12248 9.35417 4.08706 9.26917C4.05164 9.18417 4.03748 9.09208 4.03748 9C4.03748 8.81583 4.11539 8.63167 4.24289 8.49708C4.50498 8.235 4.97956 8.235 5.24873 8.49708C5.37623 8.63167 5.45414 8.81583 5.45414 9C5.45414 9.09208 5.43289 9.18417 5.39748 9.26917C5.36206 9.35417 5.31248 9.43208 5.24873 9.50292C5.17789 9.56667 5.09998 9.61625 5.01498 9.65167C4.92998 9.68708 4.83789 9.70833 4.74581 9.70833Z" fill="%23BBB9C7"/%3E%3Cpath d="M7.57918 9.70833C7.4871 9.70833 7.39502 9.68708 7.31002 9.65167C7.22502 9.61625 7.1471 9.56667 7.07627 9.50292C7.01252 9.43208 6.96293 9.35417 6.92043 9.26917C6.8921 9.18417 6.87085 9.09208 6.87085 9C6.87085 8.81583 6.94877 8.63167 7.07627 8.49708C7.33835 8.235 7.82002 8.235 8.0821 8.49708C8.2096 8.63167 8.28752 8.81583 8.28752 9C8.28752 9.09208 8.26627 9.18417 8.23085 9.26917C8.19543 9.35417 8.14585 9.43208 8.0821 9.50292C8.01127 9.56667 7.93335 9.61625 7.84835 9.65167C7.76335 9.68708 7.67127 9.70833 7.57918 9.70833Z" fill="%23BBB9C7"/%3E%3C/svg%3E');
+    background-repeat: no-repeat;
+    background-position: 12px;
+    background-size: 1.3em;
+    padding-left: 2.5rem;
+}
+
+.js-input-text:focus {
+    border: 1px solid #040404;
+}
+
+.btn-primary {
+    border-radius: 4px;
+    background: var(--primary-45AD7E, #45AD7E);
+}
+
+/* Onborda paints a full-viewport layer under the card. Keep it visual-only so
+   sidebar / tabs / settings stay clickable while a tour is open. */
+[data-name="onborda-overlay"],
+[data-name="onborda-pointer"] {
+    pointer-events: none !important;
+}
+
+[data-name="onborda-card"] {
+    pointer-events: auto !important;
+}
+
+/* Project tabs tour — Figma 10120:12139 / 10120:14149 / 10120:16502
+   Highlight: 2px #10B981 + drop-shadow 0 2px 6px #10B981
+   Overlay: rgba(0,0,0,0.5) at 40% opacity → rgba(0,0,0,0.2) */
+body[data-tour="projectTabsTour"] [data-name="onborda-pointer"] {
+    border: 2px solid #10b981 !important;
+    border-radius: 4px !important;
+    background: transparent;
+    box-shadow: 0 2px 6px #10b981, 0 0 200vw 200vh rgba(0, 0, 0, 0.2) !important;
+}
+
+body[data-tour="projectTabsTour"] [data-name="onborda-arrow"] {
+    display: none !important;
+}
+
+/* Messages inbox / conversation tours — Figma 1644:13024 / 1644:15714
+   Highlight: 2px #10B981 + drop-shadow 0 2px 6px #10B981
+   Overlay: rgba(0,0,0,0.5) at 40% opacity → rgba(0,0,0,0.2) */
+body[data-tour="messagesInboxTour"] [data-name="onborda-pointer"],
+body[data-tour="messagesConversationTour"] [data-name="onborda-pointer"] {
+    border: 2px solid #10b981 !important;
+    border-radius: 4px !important;
+    background: transparent;
+    box-shadow: 0 2px 6px #10b981, 0 0 200vw 200vh rgba(0, 0, 0, 0.2) !important;
+}
+
+body[data-tour="messagesInboxTour"] [data-name="onborda-arrow"],
+body[data-tour="messagesConversationTour"] [data-name="onborda-arrow"] {
+    display: none !important;
+}

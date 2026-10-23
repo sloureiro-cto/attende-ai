@@ -1,0 +1,152 @@
+@tailwind utilities;
+
+/* Messages inbox type scale — applied via data-inbox-font on the page shell */
+[data-inbox-font="small"] [data-inbox-type="name"] {
+  font-size: 10px !important;
+}
+[data-inbox-font="small"] [data-inbox-type="preview"] {
+  font-size: 8px !important;
+}
+[data-inbox-font="small"] [data-inbox-type="meta"] {
+  font-size: 8px !important;
+}
+[data-inbox-font="medium"] [data-inbox-type="name"] {
+  font-size: 12px !important;
+}
+[data-inbox-font="medium"] [data-inbox-type="preview"] {
+  font-size: 10px !important;
+}
+[data-inbox-font="medium"] [data-inbox-type="meta"] {
+  font-size: 8px !important;
+}
+[data-inbox-font="large"] [data-inbox-type="name"] {
+  font-size: 14px !important;
+}
+[data-inbox-font="large"] [data-inbox-type="preview"] {
+  font-size: 12px !important;
+}
+[data-inbox-font="large"] [data-inbox-type="meta"] {
+  font-size: 10px !important;
+}
+
+/* CSS Custom Properties for viewport handling */
+:root {
+    --visual-viewport-height: 100dvh;
+    --visual-viewport-offset-top: 0px;
+    --safe-area-inset-top: env(safe-area-inset-top, 0px);
+    --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent auto-zoom on iOS when focusing inputs / contenteditable composers */
+@media screen and (max-width: 767px) {
+    input,
+    textarea,
+    select,
+    [contenteditable="true"],
+    .ProseMirror {
+        font-size: 16px !important;
+    }
+    
+    /* Prevent iOS from zooming on double-tap */
+    * {
+        touch-action: manipulation;
+    }
+}
+
+.cl-internal-11ttlho, .cl-footer{
+    display: none!important;
+}
+
+.bn-default-styles {
+    overflow: visible!important;
+}
+
+@supports (height: 100dvh) {
+    :root {
+        --viewport-height: 100dvh;
+    }
+    .h-screen {
+        height: 100dvh;
+    }
+    .max-h-screen {
+        max-height: 100dvh;
+    }
+}
+
+@supports (-webkit-touch-callout: none) and (not (height: 100dvh)) {
+    :root {
+        --viewport-height: -webkit-fill-available;
+    }
+    .h-screen {
+        height: -webkit-fill-available;
+    }
+    .max-h-screen {
+        max-height: -webkit-fill-available;
+    }
+}
+
+@supports (height: -webkit-fill-available) and (not (height: 100dvh)) {
+    :root {
+        --viewport-height: -webkit-fill-available;
+    }
+    .h-screen {
+        height: -webkit-fill-available;
+    }
+    .max-h-screen {
+        max-height: -webkit-fill-available;
+    }
+}
+
+/* Utility class for visual viewport height (set by JS) */
+.h-visual-viewport {
+    height: var(--visual-viewport-height, 100vh);
+}
+.max-h-visual-viewport {
+    max-height: var(--visual-viewport-height, 100vh);
+}
+
+/* Listas na resposta da transcrição Ask AI (backend envia HTML com ul/li) */
+.transcription-answer ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+.transcription-answer ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+.transcription-answer li {
+  display: list-item;
+  margin: 0.125rem 0;
+}
+
+/* Remove any red border/outline/ring from the meeting screen (e.g. when recording) */
+[data-lk-theme].meet-room-main,
+[data-lk-theme].meet-room-main .lk-video-conference,
+[data-lk-theme].meet-room-main .lk-video-conference-inner,
+[data-lk-theme].meet-room-main .lk-grid-layout-wrapper,
+[data-lk-theme].meet-room-main .lk-focus-layout-wrapper {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  --tw-ring-color: transparent !important;
+}
+[data-lk-theme].meet-room-main *:focus,
+[data-lk-theme].meet-room-main *:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+@layer utilities {
+  .no-spinner::-webkit-inner-spin-button,
+  .no-spinner::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .no-spinner {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}

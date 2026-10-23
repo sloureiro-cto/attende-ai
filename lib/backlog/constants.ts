@@ -1,0 +1,1 @@
+export const BACKLOG_CARDS_PAGE_SIZE = 20
