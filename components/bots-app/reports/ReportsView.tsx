@@ -86,7 +86,7 @@ export function ReportsView({ initial }: Props) {
   if (!data && error) {
     if (blocked) body = <ReportsBlocked t={t} />
     else if (error.status === 400) body = <ReportsInvalidFilters t={t} onReset={reset} />
-    else body = <ReportsError t={t} onRetry={reload} />
+    else body = <ReportsError t={t} onRetry={reload} code={error.reference} />
   } else if (!data) body = <ReportsSkeleton />
   else if (overview && isEmptyOverview(overview)) body = hasFilters ? <ReportsFilteredEmpty t={t} onReset={reset} /> : <ReportsFirstTime t={t} />
   else if (overview) {

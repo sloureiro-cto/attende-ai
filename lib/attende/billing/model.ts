@@ -8,31 +8,54 @@ export type AttendeBilling = {
   status: BillingStatus
   limits: Partial<AttendeTierLimits> | null
   trialEndsAt: string | null
+  /** Outbound messages allowed during the trial; 0 outside a trial or when the backend did not say. */
   trialOutboundCap: number
-  trialOutboundUsed: number
+  /** Outbound messages sent during the trial. `null` = not available right now (never shown as 0). */
+  trialOutboundUsed: number | null
 }
 
 const STATUSES: readonly BillingStatus[] = ["trialing", "active", "past_due", "canceled", "none"]
-const num = (value: unknown, fallback = 0): number => (typeof value === "number" && Number.isFinite(value) ? value : fallback)
+const num = (value: unknown, fallback = 0): number =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback
+const numOrNull = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null
+
+const NO_PLAN: AttendeBilling = {
+  tier: null,
+  status: "none",
+  limits: null,
+  trialEndsAt: null,
+  trialOutboundCap: 0,
+  trialOutboundUsed: null,
+}
 
 /**
- * `workspace.entitlements.attende`, read defensively: the field is optional upstream and a workspace that never had Attende-ai
- * simply has none (-> status "none"). Nothing here throws on odd data.
+ * Plan state from `GET /attende/entitlements` (Attende backend): the `entitlements` block (tier, status, limits, trial end)
+ * and the trial outbound counter of `usage.trialOutbound`. Read defensively: a workspace without an Attende-ai plan answers
+ * `entitlements: null` (-> status "none"). Nothing here throws on odd data.
  */
-export function parseAttendeBilling(workspace: unknown): AttendeBilling {
-  const block = (workspace as { entitlements?: { attende?: Record<string, unknown> } } | null | undefined)?.entitlements?.attende
-  if (!block || typeof block !== "object") return { tier: null, status: "none", limits: null, trialEndsAt: null, trialOutboundCap: 0, trialOutboundUsed: 0 }
+export function parseAttendeBilling(raw: unknown): AttendeBilling {
+  const body = raw as
+    | {
+        entitlements?: Record<string, unknown> | null
+        usage?: { trialOutbound?: { used?: unknown; cap?: unknown } | null } | null
+      }
+    | null
+    | undefined
+  const block = body?.entitlements
+  if (!block || typeof block !== "object") return NO_PLAN
 
   const status = STATUSES.includes(block.status as BillingStatus) ? (block.status as BillingStatus) : "none"
   const limits = block.limits && typeof block.limits === "object" ? (block.limits as Partial<AttendeTierLimits>) : null
-  const endsAt = typeof block.trialEndsAt === "string" || block.trialEndsAt instanceof Date ? new Date(block.trialEndsAt) : null
+  const endsAt = typeof block.trialEndsAt === "string" ? new Date(block.trialEndsAt) : null
+  const outbound = body?.usage?.trialOutbound
   return {
     tier: typeof block.tier === "string" ? block.tier : null,
     status,
     limits,
     trialEndsAt: endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt.toISOString() : null,
-    trialOutboundCap: num(block.trialOutboundCap),
-    trialOutboundUsed: num(block.trialOutboundUsed),
+    trialOutboundCap: num(outbound?.cap),
+    trialOutboundUsed: numOrNull(outbound?.used),
   }
 }
 
@@ -99,56 +122,55 @@ export function blockedBy(status: BillingStatus, clock: TrialClock): Subscriptio
 
 // ---- Attende subscription (Stripe) and usage ---------------------------------------------------
 
-/**
- * The workspace's Stripe subscription, only when it is an Attende-ai plan (`attende_*`). A JSYNQ subscription on the same
- * workspace is NOT shown here: managing it from this page would change the wrong product.
- */
+/** The workspace's Attende-ai subscription (the `subscription` block of `GET /attende/entitlements`). */
 export type AttendeSubscription = {
-  planSlug: string
+  planSlug: string | null
   status: string
   /** Price of the plan in major units with its own currency and period; null when the price can't be resolved. */
   price: { amount: number; currency: string; interval: "month" | "year"; intervalCount: number } | null
   trialEndsAt: string | null
   currentPeriodEnd: string | null
+  /** Not sent by the Attende backend today; kept so a cancellation date shows as soon as it is. */
   canceledAt: string | null
 }
 
-type RawPrice = { id?: unknown; amount?: unknown; currency?: unknown; interval?: unknown; intervalCount?: unknown }
-
 const iso = (value: unknown): string | null => {
-  if (typeof value !== "string" && !(value instanceof Date)) return null
+  if (typeof value !== "string") return null
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
 /**
- * Reads `/subscriptions/me`. `preferredCurrency` is the Stripe customer's currency when the session knows it: a price
- * that exists in several currencies (USD with a BRL option) is shown in the one the customer is billed in, never guessed
- * from the interface language. Amounts from Stripe are in minor units.
+ * Reads `subscription` from `GET /attende/entitlements`: `{planSlug, status, price: {amount, currency, interval,
+ * intervalCount} | null, trialEndsAt, currentPeriodEnd}`. The amount is already in major units. `null` = no subscription.
  */
-export function parseAttendeSubscription(raw: unknown, preferredCurrency?: string | null): AttendeSubscription | null {
-  const sub = raw as { plan?: { slug?: unknown; availablePrices?: RawPrice[] }; stripePriceId?: unknown; status?: unknown; trialEndDate?: unknown; currentPeriodEnd?: unknown; canceledAt?: unknown } | null
-  const slug = typeof sub?.plan?.slug === "string" ? sub.plan.slug : ""
-  if (!slug.startsWith("attende_")) return null
-  const candidates = (Array.isArray(sub?.plan?.availablePrices) ? sub!.plan!.availablePrices! : []).filter(
-    (p) => p && (p.id === sub?.stripePriceId || !sub?.stripePriceId) && typeof p.amount === "number" && typeof p.currency === "string"
-  )
-  const wanted = preferredCurrency?.toLowerCase()
-  const chosen = (wanted && candidates.find((p) => String(p.currency).toLowerCase() === wanted)) || (candidates.length === 1 ? candidates[0] : undefined)
+export function parseAttendeSubscription(raw: unknown): AttendeSubscription | null {
+  const sub = (raw as { subscription?: Record<string, unknown> | null } | null | undefined)?.subscription
+  if (!sub || typeof sub !== "object") return null
+  const price = sub.price as
+    | { amount?: unknown; currency?: unknown; interval?: unknown; intervalCount?: unknown }
+    | null
+    | undefined
+  const validPrice =
+    price &&
+    typeof price.amount === "number" &&
+    Number.isFinite(price.amount) &&
+    typeof price.currency === "string" &&
+    price.currency
   return {
-    planSlug: slug,
-    status: typeof sub?.status === "string" ? sub.status : "unknown",
-    price: chosen
+    planSlug: typeof sub.planSlug === "string" && sub.planSlug ? sub.planSlug : null,
+    status: typeof sub.status === "string" ? sub.status : "unknown",
+    price: validPrice
       ? {
-          amount: (chosen.amount as number) / 100,
-          currency: String(chosen.currency).toUpperCase(),
-          interval: chosen.interval === "year" ? "year" : "month",
-          intervalCount: typeof chosen.intervalCount === "number" && chosen.intervalCount > 0 ? chosen.intervalCount : 1,
+          amount: price.amount as number,
+          currency: String(price.currency).toUpperCase(),
+          interval: price.interval === "year" ? "year" : "month",
+          intervalCount: typeof price.intervalCount === "number" && price.intervalCount > 0 ? price.intervalCount : 1,
         }
       : null,
-    trialEndsAt: iso(sub?.trialEndDate),
-    currentPeriodEnd: iso(sub?.currentPeriodEnd),
-    canceledAt: iso(sub?.canceledAt),
+    trialEndsAt: iso(sub.trialEndsAt),
+    currentPeriodEnd: iso(sub.currentPeriodEnd),
+    canceledAt: iso(sub.canceledAt),
   }
 }
 
@@ -163,27 +185,23 @@ export function nextCharge(sub: AttendeSubscription | null): { date: string; pri
   return null
 }
 
-export type UsageMeterRow = { key: "aiReplies" | "lines" | "agents" | "docs"; used: number; limit: number | null }
-export type AttendeUsage = { month: string | null; rows: UsageMeterRow[]; trialOutbound: { used: number; cap: number } | null }
+/** One meter. `used: null` = the count is not available right now (the backend could not read it): never shown as 0. */
+export type UsageMeterRow = {
+  key: "aiReplies" | "lines" | "agents" | "docs"
+  used: number | null
+  limit: number | null
+}
+export type AttendeUsage = { month: string | null; rows: UsageMeterRow[] }
 
-/** `GET /api/attende/entitlements` -> `usage`. `null` when the API did not return usage (never shown as zeros). */
+/** `GET /attende/entitlements` -> `usage`. `null` when the API did not return usage (never shown as zeros). */
 export function parseAttendeUsage(raw: unknown): AttendeUsage | null {
   const usage = (raw as { usage?: Record<string, unknown> | null } | null)?.usage
   if (!usage || typeof usage !== "object") return null
-  const pair = (value: unknown): { used: number; limit: number | null } | null => {
-    const v = value as { used?: unknown; limit?: unknown } | null
-    if (!v || typeof v.used !== "number" || !Number.isFinite(v.used)) return null
-    return { used: v.used, limit: typeof v.limit === "number" && v.limit >= 0 ? v.limit : null }
-  }
   const rows: UsageMeterRow[] = []
   for (const key of ["aiReplies", "lines", "agents", "docs"] as const) {
-    const p = pair(usage[key])
-    if (p) rows.push({ key, ...p })
+    const v = usage[key] as { used?: unknown; limit?: unknown } | null | undefined
+    if (!v || typeof v !== "object") continue
+    rows.push({ key, used: numOrNull(v.used), limit: typeof v.limit === "number" && v.limit >= 0 ? v.limit : null })
   }
-  const outbound = usage.trialOutbound as { used?: unknown; cap?: unknown } | null
-  return {
-    month: typeof usage.month === "string" ? usage.month : null,
-    rows,
-    trialOutbound: outbound && typeof outbound.used === "number" && typeof outbound.cap === "number" ? { used: outbound.used, cap: outbound.cap } : null,
-  }
+  return { month: typeof usage.month === "string" ? usage.month : null, rows }
 }

@@ -3,7 +3,7 @@
 import { daysBetween, filtersToApiQuery, isDay, MAX_RANGE_DAYS, toDay } from "lib/attende/reports/model"
 import { type AgentBreakdownRow, type OverviewResponse, REPORT_CHANNELS, type ReportFilters } from "lib/attende/reports/types"
 import type { AttendeActionResult } from "lib/attende/result"
-import { attendeGet } from "lib/attende/serverApi"
+import { jsynqGet } from "lib/attende/serverApi"
 
 export type ReportData = {
   overview: OverviewResponse
@@ -22,13 +22,16 @@ function validate(filters: ReportFilters): boolean {
   return true
 }
 
-/** The dashboard in one round trip: the overview for the filters plus the agent list for the picker. */
+/**
+ * The dashboard in one round trip: the overview for the filters plus the agent list for the picker. Served by JSYNQ's
+ * conversation analytics (`/conversation-analytics/overview|agents`, user token; same shapes as the old reports API).
+ */
 export async function loadReportAction(filters: ReportFilters): Promise<AttendeActionResult<ReportData>> {
   if (!validate(filters)) return { success: false, status: 400, reference: "REPORT_INVALID_FILTERS" }
   const withoutAgent = { ...filters, agentId: null }
   const [overview, agents] = await Promise.all([
-    attendeGet<OverviewResponse>("/attende/reports/overview", filtersToApiQuery(filters)),
-    attendeGet<{ agents: AgentBreakdownRow[] }>("/attende/reports/agents", filtersToApiQuery(withoutAgent)),
+    jsynqGet<OverviewResponse>("/conversation-analytics/overview", filtersToApiQuery(filters)),
+    jsynqGet<{ agents: AgentBreakdownRow[] }>("/conversation-analytics/agents", filtersToApiQuery(withoutAgent)),
   ])
   if (!overview.success) return overview
   // The picker is a convenience: if only the agent list fails, the report still renders.

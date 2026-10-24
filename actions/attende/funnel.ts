@@ -42,9 +42,9 @@ import { DEFAULT_URL_STATE, filtersToApiQuery, type FunnelFilters, MAX_SEARCH_CH
 import { cleanStageName, type ColumnStatus, columnStatusOf, isStageKind, kindOfColumnStatus, sortStages, type StageSetting } from "lib/attende/funnel/stages"
 import type { ContactsPage, FunnelPage, FunnelStage, StageKind, StagesData } from "lib/attende/funnel/types"
 import type { AttendeActionResult } from "lib/attende/result"
-import { attendeGet, attendePatch } from "lib/attende/serverApi"
+import { funnelTablePath, onBoardResult } from "lib/attende/funnel/board"
+import { jsynqGet, jsynqPatch } from "lib/attende/serverApi"
 
-const BASE = "/attende/funnel"
 const ID_RE = /^[a-f0-9]{24}$/i
 /** Cursors are opaque base64url tokens minted by the backend; anything else is refused before a request. */
 const CURSOR_RE = /^[A-Za-z0-9_\-+/=]{1,2048}$/
@@ -64,30 +64,53 @@ const sanitize = (filters: FunnelFilters): FunnelFilters => parseFunnelParams(st
 /** One page of the deals table. Pass `nextCursor` back unchanged; a `partial` page can be short (see the contract). */
 export async function loadFunnelPageAction(filters: FunnelFilters, args: PageArgs = {}): Promise<AttendeActionResult<FunnelPage>> {
   if (!okCursor(args.cursor)) return invalid("FUNNEL_INVALID_CURSOR")
-  return attendeGet<FunnelPage>(BASE, filtersToApiQuery(sanitize(filters), { limit: okLimit(args.limit), cursor: args.cursor, maskPhone: args.maskPhone }))
+  const path = await funnelTablePath()
+  if (!path.success) return path
+  return onBoardResult(
+    await jsynqGet<FunnelPage>(
+      path.data,
+      filtersToApiQuery(sanitize(filters), {
+        limit: okLimit(args.limit),
+        cursor: args.cursor,
+        maskPhone: args.maskPhone,
+      })
+    )
+  )
 }
 
 /** Stages of the funnel board in board order, with (cached, up to 20 s stale) counts for the chips. */
 export async function loadFunnelStagesAction(): Promise<AttendeActionResult<StagesData>> {
-  return attendeGet<StagesData>(`${BASE}/stages`)
+  const path = await funnelTablePath()
+  if (!path.success) return path
+  return onBoardResult(await jsynqGet<StagesData>(`${path.data}/stages`))
 }
 
 /** Contact directory, ordered by name. */
 export async function loadFunnelContactsAction(q: string, args: PageArgs = {}): Promise<AttendeActionResult<ContactsPage>> {
   if (!okCursor(args.cursor)) return invalid("FUNNEL_INVALID_CURSOR")
+  const path = await funnelTablePath()
+  if (!path.success) return path
   const search = q.trim().slice(0, MAX_SEARCH_CHARS)
-  return attendeGet<ContactsPage>(`${BASE}/contacts`, {
-    q: search.length >= 2 ? search : undefined,
-    limit: okLimit(args.limit),
-    cursor: args.cursor ?? undefined,
-    maskPhone: args.maskPhone ? "true" : undefined,
-  })
+  return onBoardResult(
+    await jsynqGet<ContactsPage>(`${path.data}/contacts`, {
+      q: search.length >= 2 ? search : undefined,
+      limit: okLimit(args.limit),
+      cursor: args.cursor ?? undefined,
+      maskPhone: args.maskPhone ? "true" : undefined,
+    })
+  )
 }
 
-/** Moves a deal to another stage of the same board (same routine as a drag on the kanban: automations fire). */
-export async function moveFunnelDealAction(cardId: string, columnId: string): Promise<AttendeActionResult<{ cardId: string; stage: FunnelStage }>> {
+/**
+ * Moves a deal to another stage of its board (`PATCH /crm/cards/:id/column`, the same routine as a drag on the kanban:
+ * automations fire). `stage` is null when the new column has no stage info.
+ */
+export async function moveFunnelDealAction(
+  cardId: string,
+  columnId: string
+): Promise<AttendeActionResult<{ cardId: string; stage: FunnelStage | null }>> {
   if (!ID_RE.test(cardId) || !ID_RE.test(columnId)) return invalid("FUNNEL_INVALID_IDS")
-  return attendePatch<{ cardId: string; stage: FunnelStage }>(`${BASE}/${cardId}/stage`, { columnId })
+  return jsynqPatch<{ cardId: string; stage: FunnelStage | null }>(`/crm/cards/${cardId}/column`, { columnId })
 }
 
 /**

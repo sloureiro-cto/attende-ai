@@ -4,8 +4,8 @@ import { auth } from "auth"
 import { fetchBotsEntitlement } from "./botsEntitlement"
 
 /**
- * Server-side read of the `advancedAutomations` entitlement, memoized per request: the workspace's `entitlements.advancedAutomations`
- * from the backend. Fails closed: any error (backend down, no session) means "off".
+ * Server-side read of the workspace's Attende-ai entitlement (`GET /attende/entitlements`), memoized per request.
+ * No session means "off"; an unreachable backend means "on" (its own gate refuses the calls with a clear code).
  */
 export const isBotsEnabled = cache(async (): Promise<boolean> => {
   try {

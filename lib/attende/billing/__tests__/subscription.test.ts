@@ -1,28 +1,42 @@
 import { nextCharge, parseAttendeSubscription, parseAttendeUsage } from "../model"
 
-const plan = (slug: string) => ({
-  slug,
-  availablePrices: [
-    { id: "price_m", amount: 9900, currency: "usd", interval: "month" },
-    { id: "price_m", amount: 49700, currency: "brl", interval: "month" },
-    { id: "price_y", amount: 99000, currency: "usd", interval: "year" },
-  ],
+const subscription = (extra: Record<string, unknown> = {}) => ({
+  planSlug: "attende_growth",
+  status: "active",
+  price: { amount: 497, currency: "brl", interval: "month", intervalCount: 1 },
+  trialEndsAt: null,
+  currentPeriodEnd: "2026-11-22T00:00:00.000Z",
+  ...extra,
 })
 
 describe("parseAttendeSubscription", () => {
-  it("ignores another product's subscription on the same workspace", () => {
-    expect(parseAttendeSubscription({ plan: plan("pro"), stripePriceId: "price_m", status: "active" })).toBeNull()
+  it("reads the subscription block of /attende/entitlements (amount already in major units)", () => {
+    const sub = parseAttendeSubscription({ subscription: subscription() })
+    expect(sub).toEqual({
+      planSlug: "attende_growth",
+      status: "active",
+      price: { amount: 497, currency: "BRL", interval: "month", intervalCount: 1 },
+      trialEndsAt: null,
+      currentPeriodEnd: "2026-11-22T00:00:00.000Z",
+      canceledAt: null,
+    })
+  })
+  it("is null without a subscription", () => {
+    expect(parseAttendeSubscription({ subscription: null })).toBeNull()
     expect(parseAttendeSubscription(null)).toBeNull()
   })
-  it("uses the customer's billing currency, not the interface language", () => {
-    const brl = parseAttendeSubscription({ plan: plan("attende_growth"), stripePriceId: "price_m", status: "active" }, "brl")
-    expect(brl?.price).toEqual({ amount: 497, currency: "BRL", interval: "month", intervalCount: 1 })
-    const usd = parseAttendeSubscription({ plan: plan("attende_growth"), stripePriceId: "price_m", status: "active" }, "usd")
-    expect(usd?.price?.currency).toBe("USD")
-  })
-  it("leaves the price unknown when the currency can't be resolved instead of guessing", () => {
-    expect(parseAttendeSubscription({ plan: plan("attende_growth"), stripePriceId: "price_m", status: "active" })?.price).toBeNull()
-    expect(parseAttendeSubscription({ plan: plan("attende_growth"), stripePriceId: "price_y", status: "active" })?.price?.interval).toBe("year")
+  it("leaves the price unknown when the backend could not resolve it instead of guessing", () => {
+    expect(parseAttendeSubscription({ subscription: subscription({ price: null }) })?.price).toBeNull()
+    expect(
+      parseAttendeSubscription({
+        subscription: subscription({ price: { amount: 990, currency: "usd", interval: "year" } }),
+      })?.price
+    ).toEqual({
+      amount: 990,
+      currency: "USD",
+      interval: "year",
+      intervalCount: 1,
+    })
   })
 })
 
@@ -47,5 +61,14 @@ describe("parseAttendeUsage", () => {
     ])
     expect(parseAttendeUsage({ usage: null })).toBeNull()
     expect(parseAttendeUsage(undefined)).toBeNull()
+  })
+  it("keeps a meter whose count JSYNQ could not give as unavailable (null), never 0", () => {
+    const usage = parseAttendeUsage({
+      usage: { month: "2026-10", aiReplies: { used: null, limit: 1000 }, agents: { used: 2, limit: 3 } },
+    })
+    expect(usage?.rows).toEqual([
+      { key: "aiReplies", used: null, limit: 1000 },
+      { key: "agents", used: 2, limit: 3 },
+    ])
   })
 })

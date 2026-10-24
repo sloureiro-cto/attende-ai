@@ -13,6 +13,7 @@ import type { AutomationsTFn } from "components/automations/ui/useAutomationsT"
 import { copyName } from "lib/automations/copyName"
 import type { AutomationListItem, AdvancedAutomationListItem } from "lib/automations/types"
 import type { useHubData } from "./useHubData"
+import { automationErrorText, isServiceFailure } from "components/automations/ui/automationErrorText"
 
 type PendingDelete = { kind: "rule" | "bot"; id: string; name: string }
 
@@ -63,7 +64,14 @@ export function useHubActions(hub: HubActionsTarget, t: AutomationsTFn) {
       if (!res.success) {
         hub.patchBot(item.id, { status: item.status })
         // Activating an incomplete bot is refused with the reasons; say so instead of a generic error.
-        showToast("error", res.issues?.length ? t("automationsHubBotIncomplete") : t("automationsHubToggleError"))
+        showToast(
+          "error",
+          res.issues?.length
+            ? t("automationsHubBotIncomplete")
+            : isServiceFailure(res)
+            ? automationErrorText(res, t, "automationsHubToggleError")
+            : t("automationsHubToggleError")
+        )
         return
       }
       hub.patchBot(item.id, { status: res.data.status, updatedAt: res.data.updatedAt })

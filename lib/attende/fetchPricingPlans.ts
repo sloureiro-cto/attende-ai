@@ -5,7 +5,8 @@ import { parseSignupPlans, type SignupPlan } from "./signup/plans"
  * the page shows "price shown at checkout". Cached for five minutes by Next.
  */
 export async function fetchPricingPlans(): Promise<SignupPlan[]> {
-  const base = process.env.BACKEND_URL
+  // Attende backend (public route). Read directly so this file does not pull the session code in.
+  const base = process.env.ATTENDE_API_URL?.trim().replace(/\/+$/, "")
   if (!base) return []
   try {
     const res = await fetch(`${base}/attende/signup/plans`, { next: { revalidate: 300 }, signal: AbortSignal.timeout(4000) })

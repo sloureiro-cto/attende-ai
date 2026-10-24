@@ -21,6 +21,8 @@ describe("agent error mapping", () => {
     [{ status: 403, code: "ATTENDE_NOT_ENTITLED" }, "errorNotEntitled"],
     [{ status: 402, code: "ATTENDE_TRIAL_OUTBOUND_CAP" }, "errorTrialOutboundCap"],
     [{ status: 401, code: "AUTH_REQUIRED" }, "errorAuth"],
+    [{ status: 503, code: "JSYNQ_UNAVAILABLE" }, "errJsynqUnavailable"],
+    [{ status: 409, code: "WORKSPACE_TOKEN_MISMATCH" }, "errWorkspaceMismatch"],
     [{ status: 413 }, "errorFileSize"],
     [{ status: 0 }, "errorNetwork"],
     [{ status: 500 }, "errorGeneric"],

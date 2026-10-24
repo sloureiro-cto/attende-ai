@@ -1,6 +1,7 @@
 import { getWorkspaceInvites } from "actions/invites/getWorkspaceinvites"
 import { getWorkspaceRoles } from "actions/roles/getWorkspaceRoles"
 import { getUsersFromWorkspace } from "actions/users/getUsersFromWorkspace"
+import { attendeGet } from "./serverApi"
 import type { RoleLite } from "./team"
 import { inviteRoleName, resolveSeatLimit, TeamInvite, TeamMember } from "./team"
 
@@ -15,12 +16,16 @@ export type TeamData = {
   rolesFailed: boolean
 }
 
-/** One parallel read of everything the team page needs. Invites/roles failures degrade; members failure fails the page. */
-export async function loadTeam(workspaceId: string, workspace?: unknown): Promise<TeamData> {
-  const [members, invites, roles] = await Promise.all([
+/**
+ * One parallel read of everything the team page needs. Invites/roles failures degrade; members failure fails the page.
+ * The seat limit comes from the plan (`GET /attende/entitlements`); without it seats are not enforced here.
+ */
+export async function loadTeam(workspaceId: string): Promise<TeamData> {
+  const [members, invites, roles, entitlements] = await Promise.all([
     getUsersFromWorkspace(workspaceId),
     getWorkspaceInvites({ status: ["pending", "failed"], limit: 100, sortBy: "createdAt", sortOrder: "desc" }),
     getWorkspaceRoles({ workspaceId }),
+    attendeGet<unknown>("/attende/entitlements"),
   ])
 
   return {
@@ -38,8 +43,10 @@ export async function loadTeam(workspaceId: string, workspace?: unknown): Promis
             createdAt: i.createdAt,
           }))
       : [],
-    roles: roles.success ? (roles.data ?? []).map((r) => ({ _id: r._id, name: r.name, entityType: r.entityType, roleType: r.roleType })) : [],
-    seatLimit: resolveSeatLimit(workspace),
+    roles: roles.success
+      ? (roles.data ?? []).map((r) => ({ _id: r._id, name: r.name, entityType: r.entityType, roleType: r.roleType }))
+      : [],
+    seatLimit: entitlements.success ? resolveSeatLimit(entitlements.data) : null,
     failed: !members.success,
     rolesFailed: !roles.success,
   }

@@ -36,7 +36,7 @@ const sub = (over: Partial<AttendeSubscription> = {}): AttendeSubscription => ({
   canceledAt: null,
   ...over,
 })
-const usage: AttendeUsage = { month: "2026-10", rows: [{ key: "aiReplies", used: 1234, limit: 5000 }], trialOutbound: null }
+const usage: AttendeUsage = { month: "2026-10", rows: [{ key: "aiReplies", used: 1234, limit: 5000 }] }
 const load = (billing: Partial<Data["billing"]>, extra: Partial<Omit<Data, "billing">> = {}): BillingLoad => ({
   success: true,
   data: {
@@ -114,6 +114,41 @@ describe("BillingView: included vs used", () => {
     expect(screen.getByText(/Usage is not available right now\. It is not zero/)).toBeInTheDocument()
     expect(screen.queryByText("0 of 5,000")).not.toBeInTheDocument()
   })
+
+  it("marks one meter as unavailable when only its count could not be read", () => {
+    render(
+      <BillingView
+        initial={load(
+          {},
+          {
+            usage: {
+              month: "2026-10",
+              rows: [
+                { key: "aiReplies", used: null, limit: 5000 },
+                { key: "agents", used: 2, limit: 3 },
+              ],
+            },
+          }
+        )}
+      />
+    )
+    expect(screen.getByText("Not available right now")).toBeInTheDocument()
+    expect(screen.getByText("2 of 3")).toBeInTheDocument()
+    expect(screen.queryByText("0 of 5,000")).not.toBeInTheDocument()
+  })
+
+  it("does not show an unreadable trial counter as zero", () => {
+    render(
+      <BillingView
+        initial={load(
+          { status: "trialing", trialEndsAt: iso(5), trialOutboundCap: 50, trialOutboundUsed: null },
+          { subscription: sub({ status: "trialing", trialEndsAt: iso(5) }) }
+        )}
+      />
+    )
+    expect(screen.getByText(/Trial messages sent: not available right now \(limit 50\)/)).toBeInTheDocument()
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument()
+  })
 })
 
 describe("BillingView: managing", () => {
@@ -143,6 +178,21 @@ describe("BillingView: managing", () => {
     fireEvent.click(screen.getByRole("button", { name: "Update card" }))
     await waitFor(() => expect(mockToast).toHaveBeenCalledWith("error", "We could not open the billing portal. Try again."))
     expect(assign).not.toHaveBeenCalled()
+  })
+
+  it("says when the workspace has no subscription to manage", async () => {
+    mockPortal.mockResolvedValue({ success: false, error: "BILLING_NO_SUBSCRIPTION" })
+    render(<BillingView initial={load({})} />)
+    fireEvent.click(screen.getByRole("button", { name: "Update card" }))
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith("error", "This workspace has no subscription to manage yet.")
+    )
+  })
+
+  it("explains a temporarily unavailable service and offers a retry", () => {
+    render(<BillingView initial={{ success: false, error: "JSYNQ_UNAVAILABLE" }} />)
+    expect(screen.getByText("The service is temporarily unavailable. Wait a moment and try again.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument()
   })
 
   it("shows a retryable error when the data could not be loaded", async () => {

@@ -11,6 +11,7 @@ import { hasErrors, SignupAccountErrors, SignupAccountValues, validateSignupAcco
 import { PlanChoice } from "./PlanChoice"
 import { useAcquisitionT } from "../acquisition/useAcquisitionT"
 import { BOTS_ROUTES } from "../brand"
+import { existingAccountSignInUrl } from "lib/attende/signup/errors"
 
 type Props = {
   plans: SignupPlan[]
@@ -48,7 +49,7 @@ export function SignupAccountStep({ plans, planSlug, onPlanChange, initial, erro
             {emailInUse && (
               <>
                 {" "}
-                <Link href={BOTS_ROUTES.login} className="font-semibold underline">
+                <Link href={existingAccountSignInUrl(planSlug)} className="font-semibold underline">
                   {t("signupSignIn")}
                 </Link>
               </>

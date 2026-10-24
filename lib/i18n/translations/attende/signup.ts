@@ -1,3 +1,4 @@
+import { serviceErrorEntries } from "./serviceErrors"
 import type { ShellEntry } from "./shellTranslator"
 
 /** Public signup: account, e-mail code, card and trial start. Error entries are keyed by the backend `reference`. */
@@ -16,9 +17,9 @@ export const signupEntries = {
   signupEmail: { en: "Work e-mail", pt: "E-mail de trabalho", es: "E-mail de trabajo" },
   signupPassword: { en: "Password", pt: "Senha", es: "Contraseña" },
   signupPasswordHint: {
-    en: "At least 6 characters, with a number and a special character.",
-    pt: "No mínimo 6 caracteres, com um número e um caractere especial.",
-    es: "Mínimo 6 caracteres, con un número y un carácter especial.",
+    en: "At least 8 characters, with a number and a special character (like ! or #).",
+    pt: "No mínimo 8 caracteres, com um número e um caractere especial (como ! ou #).",
+    es: "Mínimo 8 caracteres, con un número y un carácter especial (como ! o #).",
   },
   signupBusiness: { en: "Business name", pt: "Nome da empresa", es: "Nombre de la empresa" },
   signupPlan: { en: "Plan", pt: "Plano", es: "Plan" },
@@ -39,9 +40,29 @@ export const signupEntries = {
   signupFieldRequired: { en: "Fill in this field.", pt: "Preencha este campo.", es: "Completa este campo." },
   signupEmailInvalid: { en: "Enter a valid e-mail.", pt: "Informe um e-mail válido.", es: "Introduce un e-mail válido." },
   signupPasswordInvalid: {
-    en: "The password needs 6+ characters, a number and a special character.",
-    pt: "A senha precisa de 6+ caracteres, um número e um caractere especial.",
-    es: "La contraseña necesita 6+ caracteres, un número y un carácter especial.",
+    en: "The password needs at least 8 characters, a number and a special character.",
+    pt: "A senha precisa de no mínimo 8 caracteres, um número e um caractere especial.",
+    es: "La contraseña necesita al menos 8 caracteres, un número y un carácter especial.",
+  },
+  signupPasswordTooShort: {
+    en: "Use at least 8 characters.",
+    pt: "Use no mínimo 8 caracteres.",
+    es: "Usa al menos 8 caracteres.",
+  },
+  signupPasswordTooLong: {
+    en: "Use at most 200 characters.",
+    pt: "Use no máximo 200 caracteres.",
+    es: "Usa como máximo 200 caracteres.",
+  },
+  signupPasswordNeedsNumber: {
+    en: "Add at least one number.",
+    pt: "Inclua pelo menos um número.",
+    es: "Incluye al menos un número.",
+  },
+  signupPasswordNeedsSymbol: {
+    en: "Add at least one special character, like ! or #.",
+    pt: "Inclua pelo menos um caractere especial, como ! ou #.",
+    es: "Incluye al menos un carácter especial, como ! o #.",
   },
 
   otpTitle: { en: "Check your e-mail", pt: "Verifique o seu e-mail", es: "Revisa tu e-mail" },
@@ -110,6 +131,16 @@ export const signupEntries = {
     pt: "A senha não pode conter o seu nome.",
     es: "La contraseña no puede contener tu nombre.",
   },
+  errUSER_EXISTS_UNMANAGED: {
+    en: "This e-mail already has an account. Sign in with it to start your trial.",
+    pt: "Este e-mail já tem uma conta. Entre com ela para começar seu teste.",
+    es: "Este e-mail ya tiene una cuenta. Inicia sesión con ella para empezar tu prueba.",
+  },
+  signupSignInToContinue: {
+    en: "Sign in to continue",
+    pt: "Entrar para continuar",
+    es: "Iniciar sesión para continuar",
+  },
   errSIGNUP_EMAIL_IN_USE: {
     en: "This e-mail already has an account. Sign in instead.",
     pt: "Este e-mail já tem uma conta. Entre na sua conta.",
@@ -176,6 +207,7 @@ export const signupEntries = {
     pt: "Não conseguimos falar com o servidor. Verifique a conexão e tente novamente.",
     es: "No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.",
   },
+  ...serviceErrorEntries,
 } satisfies Record<string, ShellEntry>
 
 export type SignupTranslationKey = keyof typeof signupEntries

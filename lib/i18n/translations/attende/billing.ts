@@ -1,3 +1,4 @@
+import { serviceErrorEntries } from "./serviceErrors"
 import type { ShellEntry } from "./shellTranslator"
 
 /** Billing page and the blocking screen shown when the trial ended or the subscription is inactive. */
@@ -83,6 +84,21 @@ export const billingEntries = {
   billUnlimited: { en: "Unlimited", pt: "Ilimitado", es: "Ilimitado" },
   billUsageOf: { en: "{used} of {limit}", pt: "{used} de {limit}", es: "{used} de {limit}" },
   billUsageCount: { en: "{used} in use", pt: "{used} em uso", es: "{used} en uso" },
+  billUsageValueUnavailable: {
+    en: "Not available right now",
+    pt: "Indisponível no momento",
+    es: "No disponible ahora",
+  },
+  billTrialOutboundUnavailable: {
+    en: "Trial messages sent: not available right now (limit {cap}). It is not zero: we just could not read it.",
+    pt: "Mensagens do teste enviadas: indisponível no momento (limite {cap}). Não é zero: só não conseguimos ler agora.",
+    es: "Mensajes de la prueba enviados: no disponible ahora (límite {cap}). No es cero: solo no pudimos leerlo.",
+  },
+  billNoSubscriptionPortal: {
+    en: "This workspace has no subscription to manage yet.",
+    pt: "Este workspace ainda não tem uma assinatura para gerenciar.",
+    es: "Este workspace aún no tiene una suscripción para gestionar.",
+  },
   billUsageUnavailable: {
     en: "Usage is not available right now. It is not zero: we just could not read it.",
     pt: "O consumo está indisponível no momento. Não é zero: só não conseguimos ler agora.",
@@ -166,6 +182,7 @@ export const billingEntries = {
   },
   gateChoosePlan: { en: "Choose a plan", pt: "Escolher um plano", es: "Elegir un plan" },
   gateTalk: { en: "Talk to us", pt: "Falar com a gente", es: "Hablar con nosotros" },
+  ...serviceErrorEntries,
 } satisfies Record<string, ShellEntry>
 
 export type BillingTranslationKey = keyof typeof billingEntries

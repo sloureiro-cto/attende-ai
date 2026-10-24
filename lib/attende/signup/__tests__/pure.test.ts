@@ -1,6 +1,21 @@
 import { isTerminalTrialError, sendsBackToAccountStep, signupErrorKey } from "../errors"
-import { DEFAULT_TRIAL, formatSignupPrice, normalizePlanSlug, parseSignupPlans, pickMonthlyPrice, preferredCurrency } from "../plans"
-import { hasErrors, isStrongEnoughPassword, passwordContainsName, resendCooldownLeft, sanitizeOtp, validateSignupAccount } from "../validate"
+import {
+  DEFAULT_TRIAL,
+  formatSignupPrice,
+  normalizePlanSlug,
+  parseSignupPlans,
+  pickMonthlyPrice,
+  preferredCurrency,
+} from "../plans"
+import {
+  hasErrors,
+  isStrongEnoughPassword,
+  passwordContainsName,
+  passwordProblem,
+  resendCooldownLeft,
+  sanitizeOtp,
+  validateSignupAccount,
+} from "../validate"
 
 describe("signupErrorKey", () => {
   it("maps every known reference to its own message", () => {
@@ -72,15 +87,20 @@ describe("validateSignupAccount", () => {
     expect(errors).toEqual({
       name: "signupFieldRequired",
       email: "signupEmailInvalid",
-      password: "signupPasswordInvalid",
+      password: "signupPasswordTooShort",
       businessName: "signupFieldRequired",
       acceptedTerms: "signupTermsRequired",
     })
   })
   it("applies the backend password rules, including the name rule without accents", () => {
-    expect(isStrongEnoughPassword("abc12!")).toBe(true)
-    expect(isStrongEnoughPassword("abcdef")).toBe(false)
-    expect(isStrongEnoughPassword("abc123")).toBe(false)
+    expect(isStrongEnoughPassword("abcd12!x")).toBe(true)
+    expect(isStrongEnoughPassword("abc12!")).toBe(false)
+    expect(isStrongEnoughPassword("abcdefgh")).toBe(false)
+    expect(isStrongEnoughPassword("abcd1234")).toBe(false)
+    expect(passwordProblem("abc12!")).toBe("signupPasswordTooShort")
+    expect(passwordProblem("abcdefg!")).toBe("signupPasswordNeedsNumber")
+    expect(passwordProblem("abcd1234")).toBe("signupPasswordNeedsSymbol")
+    expect(passwordProblem(`a1!${"x".repeat(200)}`)).toBe("signupPasswordTooLong")
     expect(passwordContainsName("josé#99x", "Jose Santos")).toBe(true)
     expect(passwordContainsName("Outra#1", "Jo Li")).toBe(false)
     expect(validateSignupAccount({ ...ok, password: "Maria#123" }).password).toBe("errSIGNUP_PASSWORD_CONTAINS_NAME")

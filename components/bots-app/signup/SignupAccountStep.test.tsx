@@ -57,17 +57,31 @@ describe("SignupAccountStep", () => {
     const onSubmit = jest.fn()
     render(<SignupAccountStep {...base} onSubmit={onSubmit} />)
     fill()
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "abcdef" } })
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "abc#12" } })
     fireEvent.click(screen.getByRole("checkbox"))
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     expect(onSubmit).not.toHaveBeenCalled()
-    expect(screen.getByText(/6\+ characters, a number and a special character/)).toBeInTheDocument()
+    expect(screen.getByText("Use at least 8 characters.")).toBeInTheDocument()
+  })
+
+  it("says which password rule is missing", () => {
+    const onSubmit = jest.fn()
+    render(<SignupAccountStep {...base} onSubmit={onSubmit} />)
+    fill()
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "abcdefgh1" } })
+    fireEvent.click(screen.getByRole("checkbox"))
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByText("Add at least one special character, like ! or #.")).toBeInTheDocument()
   })
 
   it("shows the server error and a sign-in link when the e-mail is taken", () => {
     render(<SignupAccountStep {...base} error="This e-mail already has an account." emailInUse onSubmit={jest.fn()} />)
     expect(screen.getByRole("alert")).toHaveTextContent("This e-mail already has an account.")
-    expect(screen.getAllByRole("link", { name: "Sign in" })[0]).toHaveAttribute("href", "/login")
+    // Signing in brings the person back to the card step of this signup.
+    expect(screen.getAllByRole("link", { name: "Sign in" })[0]!.getAttribute("href")).toMatch(
+      /^\/login\?callbackUrl=%2Fsignup%3Fexisting%3D1%26plan%3D/
+    )
   })
 
   it("lets the user pick a plan", () => {

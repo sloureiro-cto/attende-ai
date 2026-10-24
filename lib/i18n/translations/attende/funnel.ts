@@ -1,3 +1,5 @@
+import { serviceErrorEntries } from "./serviceErrors"
+
 /** Strings of the Attende-ai funnel table. Typed, en/pt/es, with `{name}`-style replacements. */
 type Entry = { en: string; pt: string; es: string }
 
@@ -374,6 +376,7 @@ const entries = {
   stageKindOpen: { en: "In progress", pt: "Em andamento", es: "En curso" },
   stageKindWon: { en: "Won", pt: "Ganho", es: "Ganado" },
   stageKindLost: { en: "Lost", pt: "Perdido", es: "Perdido" },
+  ...serviceErrorEntries,
 } satisfies Record<string, Entry>
 
 export type AttendeFunnelKey = keyof typeof entries

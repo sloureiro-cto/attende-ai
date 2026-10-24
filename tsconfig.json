@@ -1,10 +1,13 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "display": "Next.js",
-  
   "compilerOptions": {
     "target": "es6",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -19,9 +22,16 @@
     "jsx": "preserve",
     "incremental": true,
     "baseUrl": ".",
-    "types": ["node", "jest", "@testing-library/jest-dom"],
+    "types": [
+      "node",
+      "jest",
+      "@testing-library/jest-dom"
+    ],
     "paths": {
-      "@/*": ["./src/*", "./*"]
+      "@/*": [
+        "./src/*",
+        "./*"
+      ]
     },
     "plugins": [
       {
@@ -29,6 +39,17 @@
       }
     ]
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.mjs", "jest.config.js", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", ".next-build"]
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.mjs",
+    "jest.config.js",
+    ".next/types/**/*.ts",
+    ".next-build/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next-build"
+  ]
 }

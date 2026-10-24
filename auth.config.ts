@@ -1,6 +1,5 @@
 import jwt from "jsonwebtoken"
 import { ObjectId } from "mongodb"
-import { headers } from "next/headers"
 import type { NextAuthConfig, User } from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import Google from "next-auth/providers/google"
@@ -11,7 +10,6 @@ import { SIGNUP_VERIFY_PROOF_PURPOSE, type SignupVerifyProofPayload } from "lib/
 import { db } from "lib/db"
 import type { AuthUserLoginResponse, LoginStep1Response } from "types/auth/login"
 import { isLoginChallenge } from "types/auth/login"
-import { getDefaultCurrencyForOnboarding } from "utils/getDefaultCurrencyForOnboarding"
 import { loginSchema } from "validations/login"
 
 export interface UserResponse extends AuthUserLoginResponse {
@@ -175,13 +173,6 @@ export default {
 
         token.isVerified = user.isVerified ?? false
         token.homePageTourCompleted = user.homePageTourCompleted ?? false
-
-        // Set currency at login (Stripe > Geo) - stored in session for reuse
-        const headersList = await headers()
-        token.currency = await getDefaultCurrencyForOnboarding(
-          { user: { id: user.id, stripeCustomerId: user.stripeCustomerId } },
-          headersList
-        )
 
         // Pre-generate initial apiToken on first login
         token.apiToken = generateApiToken(token)

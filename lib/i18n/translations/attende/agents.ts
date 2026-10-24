@@ -1,3 +1,5 @@
+import { serviceErrorEntries } from "./serviceErrors"
+
 /**
  * Strings of the Attende-ai AI agents pages. Typed, en/pt/es, with `{name}`-style replacements. Zero jargon: no
  * prompt, RAG, binding or tool. Glossary: "Agentes de IA" / "AI agents", "Canais" / "Channels" (never "linhas"),
@@ -657,6 +659,7 @@ const entries = {
   errorNetwork: { en: "We could not reach the server. Check your connection.", pt: "Não foi possível falar com o servidor. Verifique a sua conexão.", es: "No pudimos conectar con el servidor. Revisa tu conexión." },
   errorGeneric: { en: "Something went wrong. Please try again.", pt: "Algo deu errado. Tente novamente.", es: "Algo salió mal. Inténtalo de nuevo." },
   errorServerDetail: { en: "Server response: {message}", pt: "Resposta do servidor: {message}", es: "Respuesta del servidor: {message}" },
+  ...serviceErrorEntries,
 } satisfies Record<string, Entry>
 
 export type AttendeAgentsKey = keyof typeof entries

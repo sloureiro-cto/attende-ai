@@ -1,4 +1,5 @@
 import { auth } from "auth"
+import { apiBaseUrl, missingBaseMessage, toApiError } from "lib/attende/serverApi"
 import type { AgentActionResult, AgentErrorDetails } from "./types"
 
 type Options = {
@@ -10,29 +11,29 @@ type Options = {
   timeoutMs?: number
 }
 
-const baseUrl = () => process.env.BACKEND_URL
-
-/** Backend error envelope: `{ message, details: { code, ...extras } }` (docs/attende/agents.md). */
+/**
+ * Error body `{ error, code, message, reference?, details: { code, ...extras } }`. The agent routes put the code in
+ * `details.code`; service-level errors (plan gate, `JSYNQ_UNAVAILABLE`, `WORKSPACE_TOKEN_MISMATCH`) may only set `reference`.
+ */
 function parseError(status: number, payload: unknown): AgentActionResult<never> {
-  const body = (payload && typeof payload === "object" ? payload : {}) as { message?: unknown; details?: unknown }
-  const details = (body.details && typeof body.details === "object" ? body.details : {}) as AgentErrorDetails & { code?: unknown }
-  const { code, ...rest } = details as AgentErrorDetails & { code?: unknown }
+  const parsed = toApiError(status, payload)
+  const { code: _code, ...rest } = (parsed.details ?? {}) as AgentErrorDetails & { code?: unknown }
   return {
     success: false,
     status,
-    code: typeof code === "string" ? code : undefined,
-    message: typeof body.message === "string" ? body.message : undefined,
+    code: parsed.reference,
+    message: parsed.message,
     details: Object.keys(rest).length > 0 ? (rest as AgentErrorDetails) : undefined,
   }
 }
 
 /**
- * Calls `/api/attende/agents*` with the signed-in user's token. The shared `FetchClient` keeps only the error message,
- * but this feature branches on the stable `details.code`, so it has its own thin client. Never throws.
+ * Calls `/attende/agents*` on the Attende backend (`ATTENDE_API_URL`) with the signed-in user's token. It supports
+ * multipart uploads and keeps the agent error details, so it has its own thin client. Never throws.
  */
 export async function agentsFetch<T>(path: string, options: Options = {}): Promise<AgentActionResult<T>> {
-  const base = baseUrl()
-  if (!base) return { success: false, status: 500, message: "BACKEND_URL is not configured" }
+  const base = apiBaseUrl("attende")
+  if (!base) return { success: false, status: 500, message: missingBaseMessage("attende") }
   const session = await auth()
   if (!session?.apiToken) return { success: false, status: 401, code: "AUTH_REQUIRED" }
 

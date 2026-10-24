@@ -2,10 +2,15 @@
 
 import { useAcquisitionT } from "../acquisition/useAcquisitionT"
 
-/** Outbound messages used during the trial, as a labelled progress bar (not color-only: the numbers are in the text). */
-export function TrialMeter({ used, cap }: { used: number; cap: number }) {
+/**
+ * Outbound messages used during the trial, as a labelled progress bar (not color-only: the numbers are in the text).
+ * `used: null` means the count could not be read: it says so instead of drawing an empty bar.
+ */
+export function TrialMeter({ used, cap }: { used: number | null; cap: number }) {
   const { t } = useAcquisitionT()
   if (cap <= 0) return null
+  if (used === null)
+    return <p className="text-body-13 text-neutral-700">{t("billTrialOutboundUnavailable", { cap })}</p>
   const percent = Math.min(100, Math.round((used / cap) * 100))
   return (
     <div className="flex flex-col gap-1.5">

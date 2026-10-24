@@ -1,5 +1,6 @@
 import { headers } from "next/headers"
 import { auth } from "auth"
+import { apiBaseUrl, missingBaseMessage, toApiError } from "lib/attende/serverApi"
 
 export type AttendeApiResult<T> =
   | { ok: true; status: number; data: T }
@@ -13,18 +14,16 @@ type Options = {
   timeoutMs?: number
 }
 
-const baseUrl = () => process.env.BACKEND_URL
-
 /**
- * Calls `/api/attende/*`. The platform's shared `FetchClient` keeps only the error message, but the signup contract
+ * Calls `/attende/*` on the Attende backend (`ATTENDE_API_URL`). The platform's shared `FetchClient` keeps only the error message, but the signup contract
  * branches on the stable `reference`, so this helper keeps it. It never throws: network problems become `status: 0`.
  *
  * Public calls forward the visitor's IP and country so the backend rate limits and picks the currency per visitor,
  * not per Next.js server.
  */
 export async function attendeFetch<T>(path: string, options: Options = {}): Promise<AttendeApiResult<T>> {
-  const base = baseUrl()
-  if (!base) return { ok: false, status: 500, message: "BACKEND_URL is not configured" }
+  const base = apiBaseUrl("attende")
+  if (!base) return { ok: false, status: 500, message: missingBaseMessage("attende") }
 
   const requestHeaders: Record<string, string> = { "Content-Type": "application/json" }
 
@@ -65,13 +64,8 @@ export async function attendeFetch<T>(path: string, options: Options = {}): Prom
   }
 
   if (!response.ok) {
-    const body = (payload && typeof payload === "object" ? payload : {}) as { message?: unknown; reference?: unknown }
-    return {
-      ok: false,
-      status: response.status,
-      reference: typeof body.reference === "string" ? body.reference : undefined,
-      message: typeof body.message === "string" ? body.message : undefined,
-    }
+    const error = toApiError(response.status, payload)
+    return { ok: false, status: response.status, reference: error.reference, message: error.message }
   }
   return { ok: true, status: response.status, data: payload as T }
 }

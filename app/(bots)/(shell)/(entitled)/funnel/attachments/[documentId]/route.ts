@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { isInlineSafe } from "lib/attende/funnel/attachments"
-import { attendeStream } from "lib/attende/serverApi"
+import { jsynqStream } from "lib/attende/serverApi"
 
 /**
  * A deal attachment's file, for "open" and "download" in the funnel drawer. The bots app exposes none of JSYNQ's
@@ -25,7 +25,7 @@ export async function GET(request: Request, { params }: { params: { documentId: 
   if (!ID_RE.test(documentId)) return NextResponse.json({ success: false, status: 400, reference: "FUNNEL_INVALID_IDS" }, { status: 400 })
   const download = new URL(request.url).searchParams.get("download") === "1"
 
-  const upstream = await attendeStream(`/documents/${documentId}/file`, undefined, request.signal)
+  const upstream = await jsynqStream(`/documents/${documentId}/file`, undefined, request.signal)
   if (!upstream) return NextResponse.json({ success: false, status: 401, reference: "AUTH_REQUIRED" }, { status: 401 })
   if (!upstream.ok || !upstream.body) {
     const status = upstream.status === 401 || upstream.status === 404 ? upstream.status : upstream.status === 403 ? 403 : 502

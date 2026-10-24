@@ -4,6 +4,7 @@ import { RotateCcw, Send, X } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import { previewAdvancedAutomationAction } from "actions/messaging-automations/advancedAutomations"
+import { automationErrorText } from "components/automations/ui/automationErrorText"
 import { automationsKey, useAutomationsT } from "components/automations/ui/useAutomationsT"
 import Button from "components/Button/Button"
 import IconButton from "components/IconButton/IconButton"
@@ -60,7 +61,7 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
       if (mine !== epoch.current) return
       setBusy(false)
       if (!res.success) {
-        setError(res.issues?.[0]?.message || res.error || t("advancedAutomationPreviewError"))
+        setError(res.issues?.[0]?.message || automationErrorText(res, t, "advancedAutomationPreviewError"))
         return
       }
       const next: Bubble[] = []

@@ -1,6 +1,7 @@
 "use client"
 
 import { ArrowLeft, Warning2 } from "iconsax-react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { signIn, useSession } from "next-auth/react"
 import { useReducer, useRef, useState } from "react"
@@ -8,7 +9,12 @@ import { createSignupAction, resendSignupAction, verifySignupAction } from "acti
 import { loginWithPassword } from "actions/auth/loginWithPassword"
 import IconButton from "components/IconButton/IconButton"
 import VerifyOtpForm from "components/VerifyOtpForm/VerifyOtpForm"
-import { sendsBackToAccountStep, signupErrorKey } from "lib/attende/signup/errors"
+import {
+  existingAccountSignInUrl,
+  isExistingAccount,
+  sendsBackToAccountStep,
+  signupErrorKey,
+} from "lib/attende/signup/errors"
 import { normalizePlanSlug, SignupPlansResponse } from "lib/attende/signup/plans"
 import type { StartTrialData } from "lib/attende/signup/types"
 import type { SignupAccountValues } from "lib/attende/signup/validate"
@@ -41,6 +47,8 @@ export function SignupFlow({ catalog, initialPlan, resumeAtCard = false }: Props
   const password = useRef("")
   const [error, setError] = useState<string | null>(null)
   const [emailInUse, setEmailInUse] = useState(false)
+  /** The e-mail already has an account this signup did not create: sign in with it, then start the trial. */
+  const [existingAccount, setExistingAccount] = useState(false)
   const [busy, setBusy] = useState(false)
   const [planSlug, setPlanSlug] = useState(state.planSlug)
 
@@ -50,6 +58,7 @@ export function SignupFlow({ catalog, initialPlan, resumeAtCard = false }: Props
   const fail = (reference: string | undefined, status: number) => {
     setError(t(signupErrorKey(reference, status)))
     setEmailInUse(reference === "SIGNUP_EMAIL_IN_USE")
+    setExistingAccount(isExistingAccount(reference))
     if (sendsBackToAccountStep(reference)) dispatch({ type: "back_to_account" })
   }
 
@@ -76,12 +85,18 @@ export function SignupFlow({ catalog, initialPlan, resumeAtCard = false }: Props
     }
   }
 
+  /** `verify` creates the account (the backend answers with its login); this then signs in with the same e-mail and password. */
   const verifyCode = async (otp: string) => {
     setBusy(true)
     setError(null)
+    setExistingAccount(false)
     try {
       const verified = await verifySignupAction({ email: state.email, otp })
-      if (!verified.success) return fail(verified.reference, verified.status)
+      if (!verified.success) {
+        // The password typed here is not the existing account's: drop it.
+        if (isExistingAccount(verified.reference)) password.current = ""
+        return fail(verified.reference, verified.status)
+      }
 
       const login = await loginWithPassword({ email: state.email, password: password.current })
       if (!login.success || isLoginChallenge(login.data)) {
@@ -142,10 +157,26 @@ export function SignupFlow({ catalog, initialPlan, resumeAtCard = false }: Props
           {error && (
             <div role="alert" className="flex items-start gap-2.5 rounded-[10px] border border-error-lighter bg-error-clean px-3.5 py-3 text-body-13 text-error-darkest">
               <Warning2 size={16} className="mt-0.5 shrink-0" aria-hidden />
-              <span>{error}</span>
+              <span className="flex flex-col gap-2">
+                {error}
+                {existingAccount && (
+                  <Link href={existingAccountSignInUrl(planSlug)} className="self-start font-semibold underline">
+                    {t("signupSignInToContinue")}
+                  </Link>
+                )}
+              </span>
             </div>
           )}
-          <VerifyOtpForm variant="verifyEmail" title={t("otpTitle")} handleVerifyCode={verifyCode} email={state.email} isPending={busy} onResend={resendCode} />
+          {!existingAccount && (
+            <VerifyOtpForm
+              variant="verifyEmail"
+              title={t("otpTitle")}
+              handleVerifyCode={verifyCode}
+              email={state.email}
+              isPending={busy}
+              onResend={resendCode}
+            />
+          )}
         </>
       )}
 

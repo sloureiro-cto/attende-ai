@@ -9,6 +9,7 @@ import { showToast } from "app/utils/showToast"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "components/ui/alert-dialog"
 import { type AttendeSubscription, blockedBy, limitRows, nextCharge, STATUS_KEY, tierName, trialClock, type UsageMeterRow } from "lib/attende/billing/model"
 import { formatDate, formatMoney, formatNumber } from "lib/attende/format"
+import { serviceErrorKey } from "lib/attende/result"
 import { BillingInvoices } from "./BillingInvoices"
 import { SubscriptionGate } from "./SubscriptionGate"
 import { TrialMeter } from "./TrialMeter"
@@ -55,7 +56,13 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
     try {
       const result = await openBillingPortalAction(kind)
       if (result.success) window.location.assign(result.url)
-      else showToast("error", t("billPortalFailed"))
+      else {
+        const service = serviceErrorKey(result.error)
+        showToast(
+          "error",
+          t(service ?? (result.error === "BILLING_NO_SUBSCRIPTION" ? "billNoSubscriptionPortal" : "billPortalFailed"))
+        )
+      }
     } catch {
       showToast("error", t("billPortalFailed"))
     } finally {
@@ -70,10 +77,12 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
   }
 
   if (!load.success) {
+    const service = serviceErrorKey(load.error)
     return (
       <EmptyState
         icon={<Danger size={22} />}
         title={t("billLoadError")}
+        description={service ? t(service) : undefined}
         action={
           <button type="button" className={actionClass({ variant: "secondary" })} disabled={busy === "reload"} onClick={() => void reload()}>
             {t("billRetry")}
@@ -84,7 +93,7 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
   }
 
   const { billing, workspaceId, usage } = load.data
-  const subscription = load.data.subscription === "error" ? null : load.data.subscription
+  const subscription = load.data.subscription
   const clock = trialClock(billing.status, billing.trialEndsAt)
   const blocked = blockedBy(billing.status, clock)
   const included = limitRows(billing.limits)
@@ -176,15 +185,21 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
                 {(["aiReplies", "lines", "agents", "docs"] as const).map((key) => {
                   const row = usageByKey.get(key)
                   if (!row) return null
-                  const ratio = row.limit && row.limit > 0 ? Math.min(1, row.used / row.limit) : null
+                  const used = row.used
+                  const ratio = used !== null && row.limit && row.limit > 0 ? Math.min(1, used / row.limit) : null
                   return (
                     <div key={key} className="flex flex-col gap-1.5 py-2 text-body-14">
                       <div className="flex items-center justify-between gap-3">
                         <dt className="text-neutral-700">{t(USAGE_KEY[key])}</dt>
                         <dd className="font-semibold text-neutral-900">
-                          {row.limit !== null
-                            ? t("billUsageOf", { used: formatNumber(row.used, language), limit: formatNumber(row.limit, language) })
-                            : t("billUsageCount", { used: formatNumber(row.used, language) })}
+                          {used === null
+                            ? t("billUsageValueUnavailable")
+                            : row.limit !== null
+                            ? t("billUsageOf", {
+                                used: formatNumber(used, language),
+                                limit: formatNumber(row.limit, language),
+                              })
+                            : t("billUsageCount", { used: formatNumber(used, language) })}
                         </dd>
                       </div>
                       {ratio !== null && (

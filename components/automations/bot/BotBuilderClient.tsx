@@ -15,6 +15,7 @@ import {
 } from "actions/messaging-automations/advancedAutomations"
 import type { IColumn } from "app/_types/Column"
 import { showToast } from "app/utils/showToast"
+import { automationErrorText } from "components/automations/ui/automationErrorText"
 import { useAutomationsT } from "components/automations/ui/useAutomationsT"
 import { useLeaveConfirm } from "components/automations/ui/useLeaveConfirm"
 import { useSavableDocument } from "components/automations/ui/useSavableDocument"
@@ -215,7 +216,7 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
         if (!res.success) {
           if (res.status !== 409) {
             if (res.issues?.length) setIssues(res.issues)
-            showToast("error", res.error || t("advancedAutomationSaveError"))
+            showToast("error", automationErrorText(res, t, "advancedAutomationSaveError"))
           }
           return
         }

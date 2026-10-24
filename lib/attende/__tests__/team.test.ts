@@ -68,10 +68,10 @@ describe("seatUsage / resolveSeatLimit", () => {
     expect(seatUsage({ members: 9, pendingInvites: 0 })).toEqual({ used: 9, limit: null, full: false, remaining: null })
     expect(seatUsage({ members: 9, pendingInvites: 0, limit: 0 }).limit).toBeNull()
   })
-  it("reads entitlements.attende.limits.seats defensively", () => {
-    expect(resolveSeatLimit({ entitlements: { attende: { limits: { seats: 5 } } } })).toBe(5)
-    expect(resolveSeatLimit({ entitlements: { advancedAutomations: true } })).toBeNull()
-    expect(resolveSeatLimit({ entitlements: { attende: { limits: { seats: "5" } } } })).toBeNull()
+  it("reads entitlements.limits.seats of /attende/entitlements defensively", () => {
+    expect(resolveSeatLimit({ entitlements: { limits: { seats: 5 } } })).toBe(5)
+    expect(resolveSeatLimit({ entitlements: null })).toBeNull()
+    expect(resolveSeatLimit({ entitlements: { limits: { seats: "5" } } })).toBeNull()
     expect(resolveSeatLimit(null)).toBeNull()
     expect(resolveSeatLimit(undefined)).toBeNull()
   })

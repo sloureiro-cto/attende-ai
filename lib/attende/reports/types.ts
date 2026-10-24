@@ -1,4 +1,4 @@
-/** Shapes of `GET /api/attende/reports/*` (see docs/attende/reports.md in the backend). */
+/** Shapes of JSYNQ conversation analytics (`GET /api/conversation-analytics/*`), the same as the old reports API. */
 export type ReportChannel = "whatsapp" | "instagram" | "sms"
 export const REPORT_CHANNELS: readonly ReportChannel[] = ["whatsapp", "instagram", "sms"]
 

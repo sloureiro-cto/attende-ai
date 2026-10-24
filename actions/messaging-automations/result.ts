@@ -7,6 +7,8 @@ export type ActionErr = {
   error: string
   /** HTTP status when the failure came from the API (409 = changed by someone else). */
   status?: number
+  /** Stable backend code (`reference`), e.g. `JSYNQ_UNAVAILABLE`, `WORKSPACE_TOKEN_MISMATCH`, `ATTENDE_TRIAL_EXPIRED`. */
+  code?: string
   /** Structured validation problems (advanced automations). */
   issues?: AdvancedAutomationIssue[]
 }

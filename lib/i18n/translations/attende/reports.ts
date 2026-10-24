@@ -1,3 +1,5 @@
+import { serviceErrorEntries } from "./serviceErrors"
+
 /**
  * Strings of the Attende-ai reports page. Typed, en/pt/es, with `{name}`-style replacements.
  * Plurals are `_one` / `_other` pairs picked with `plural()` from `lib/attende/format.ts`.
@@ -419,6 +421,7 @@ const entries = {
   csvHandoffPct: { en: "Handed to team (%)", pt: "Transferidas (%)", es: "Transferidas (%)" },
   csvResolutionPct: { en: "Possibly resolved by AI, estimate (%)", pt: "Possivelmente resolvidas pela IA, estimativa (%)", es: "Posiblemente resueltas por la IA, estimación (%)" },
   csvFirstResponseSec: { en: "AI 1st reply, estimated median (s)", pt: "1ª resposta da IA, mediana estimada (s)", es: "1ª respuesta de la IA, mediana estimada (s)" },
+  ...serviceErrorEntries,
 } satisfies Record<string, Entry>
 
 export type AttendeReportsKey = keyof typeof entries

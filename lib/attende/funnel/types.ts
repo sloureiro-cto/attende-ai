@@ -1,4 +1,4 @@
-/** Shapes of `GET /api/attende/funnel/*` (see docs/attende/funnel.md in the backend). */
+/** Shapes of the JSYNQ CRM board table (`GET /api/crm/boards/:id/table*`), the same as the old funnel API. */
 export type FunnelChannel = "whatsapp" | "instagram" | "sms"
 export const FUNNEL_CHANNELS: readonly FunnelChannel[] = ["whatsapp", "instagram", "sms"]
 

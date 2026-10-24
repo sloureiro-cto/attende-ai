@@ -602,7 +602,7 @@ type ListBodyProps<T> = {
 function ListBody<T>({ list, filtered, contacts = false, t, tn, onRetry, onClear, onLoadMore, children }: ListBodyProps<T>) {
   if (list.items.length === 0) {
     if (list.status === "idle" || list.status === "loading") return <FunnelTableSkeleton />
-    if (list.status === "error") return <FunnelError t={t} onRetry={onRetry} />
+    if (list.status === "error") return <FunnelError t={t} onRetry={onRetry} code={list.error?.reference} />
     // A partial page can be empty while more may match further down: offer to keep looking instead of "nothing".
     if (list.hasMore) {
       return (

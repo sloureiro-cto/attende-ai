@@ -24,6 +24,8 @@ export type AgentErrorKey =
   | "errorAuth"
   | "errorNetwork"
   | "errorGeneric"
+  | "errWorkspaceMismatch"
+  | "errJsynqUnavailable"
 
 export function agentErrorKey(error: Pick<AgentActionError, "status" | "code" | "details">): AgentErrorKey {
   switch (error.code) {
@@ -57,6 +59,10 @@ export function agentErrorKey(error: Pick<AgentActionError, "status" | "code" | 
       return "errorInactive"
     case "ATTENDE_NOT_ENTITLED":
       return "errorNotEntitled"
+    case "WORKSPACE_TOKEN_MISMATCH":
+      return "errWorkspaceMismatch"
+    case "JSYNQ_UNAVAILABLE":
+      return "errJsynqUnavailable"
     default:
       break
   }

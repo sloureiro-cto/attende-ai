@@ -7,6 +7,7 @@ import type { AttendeFunnelT } from "./useAttendeFunnelT"
 import { BOTS_ROUTES } from "../brand"
 import { actionClass } from "../ui/actionStyles"
 import { EmptyState } from "../ui/EmptyState"
+import { serviceErrorKey } from "lib/attende/result"
 
 export function FunnelTableSkeleton({ rows = 8 }: { rows?: number }) {
   return (
@@ -24,11 +25,13 @@ export function FunnelTableSkeleton({ rows = 8 }: { rows?: number }) {
   )
 }
 
-export function FunnelError({ t, onRetry }: { t: AttendeFunnelT; onRetry: () => void }) {
+export function FunnelError({ t, onRetry, code }: { t: AttendeFunnelT; onRetry: () => void; code?: string }) {
+  const service = serviceErrorKey(code)
   return (
     <EmptyState
       icon={<Danger size={22} />}
       title={t("errorTitle")}
+      description={service ? t(service) : undefined}
       action={
         <button type="button" className={actionClass({ variant: "secondary" })} onClick={onRetry}>
           {t("retry")}

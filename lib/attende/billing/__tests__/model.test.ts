@@ -1,12 +1,17 @@
 import { blockedBy, isSubscriptionBlockCode, limitRows, parseAttendeBilling, tierName, trialClock } from "../model"
 
 describe("parseAttendeBilling", () => {
-  it("reads the attende block of the workspace", () => {
+  it("reads the entitlements block and the trial outbound counter of /attende/entitlements", () => {
     const parsed = parseAttendeBilling({
+      status: true,
       entitlements: {
-        advancedAutomations: true,
-        attende: { tier: "attende_growth", status: "trialing", limits: { lines: 3, seats: 5 }, trialEndsAt: "2026-10-29T12:00:00.000Z", trialOutboundCap: 50, trialOutboundUsed: 12 },
+        tier: "attende_growth",
+        status: "trialing",
+        limits: { lines: 3, seats: 5 },
+        trialEndsAt: "2026-10-29T12:00:00.000Z",
+        trialDaysLeft: 5,
       },
+      usage: { trialOutbound: { used: 12, cap: 50 } },
     })
     expect(parsed).toEqual({
       tier: "attende_growth",
@@ -18,12 +23,33 @@ describe("parseAttendeBilling", () => {
     })
   })
 
-  it("never throws: a workspace without the block, or with odd data, is 'none'", () => {
-    const none = { tier: null, status: "none", limits: null, trialEndsAt: null, trialOutboundCap: 0, trialOutboundUsed: 0 }
+  it("keeps an unreadable trial counter as unavailable (null), never 0", () => {
+    const parsed = parseAttendeBilling({
+      entitlements: { tier: "attende_starter", status: "trialing", limits: null },
+      usage: { trialOutbound: { used: null, cap: 50 } },
+    })
+    expect(parsed.trialOutboundUsed).toBeNull()
+    expect(parsed.trialOutboundCap).toBe(50)
+  })
+
+  it("never throws: a workspace without a plan, or with odd data, is 'none'", () => {
+    const none = {
+      tier: null,
+      status: "none",
+      limits: null,
+      trialEndsAt: null,
+      trialOutboundCap: 0,
+      trialOutboundUsed: null,
+    }
     expect(parseAttendeBilling(null)).toEqual(none)
     expect(parseAttendeBilling({})).toEqual(none)
-    expect(parseAttendeBilling({ entitlements: { attende: "x" } })).toEqual(none)
-    expect(parseAttendeBilling({ entitlements: { attende: { status: "weird", trialEndsAt: "nope", limits: 3 } } })).toMatchObject({ status: "none", trialEndsAt: null, limits: null })
+    expect(parseAttendeBilling({ entitlements: null })).toEqual(none)
+    expect(parseAttendeBilling({ entitlements: "x" })).toEqual(none)
+    expect(parseAttendeBilling({ entitlements: { status: "weird", trialEndsAt: "nope", limits: 3 } })).toMatchObject({
+      status: "none",
+      trialEndsAt: null,
+      limits: null,
+    })
   })
 })
 

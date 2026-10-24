@@ -3,6 +3,9 @@
 
 export const automationsTranslations = {
   english: {
+    advancedAutomationErrServiceUnavailable: "The service is temporarily unavailable. Wait a moment and try again.",
+    advancedAutomationErrWorkspaceMismatch:
+      "This page was opened for another workspace than the one you are signed in to. Reload the page to continue.",
     automationsSimRunning: "Running the simulation",
     automationsHubTitle: "Automations",
     advancedAutomationPreviewError: "The preview could not run. Try again.",
@@ -582,6 +585,10 @@ export const automationsTranslations = {
     advancedAutomationPickAccount: "Select the accounts this automation runs on",
   },
   portuguese: {
+    advancedAutomationErrServiceUnavailable:
+      "O serviço está indisponível no momento. Aguarde um pouco e tente novamente.",
+    advancedAutomationErrWorkspaceMismatch:
+      "Esta página foi aberta para outro workspace, diferente do que você está usando. Recarregue a página para continuar.",
     automationsSimRunning: "Executando a simulação",
     automationsHubTitle: "Automações",
     advancedAutomationPreviewError: "Não foi possível executar a prévia. Tente novamente.",
@@ -1161,6 +1168,10 @@ export const automationsTranslations = {
     advancedAutomationPickAccount: "Selecione as contas em que esta automação é executada",
   },
   spanish: {
+    advancedAutomationErrServiceUnavailable:
+      "El servicio no está disponible en este momento. Espera un poco e inténtalo de nuevo.",
+    advancedAutomationErrWorkspaceMismatch:
+      "Esta página se abrió para otro workspace, distinto del que estás usando. Recarga la página para continuar.",
     automationsSimRunning: "Ejecutando la simulación",
     automationsHubTitle: "Automatizaciones",
     advancedAutomationPreviewError: "No se pudo ejecutar la vista previa. Inténtalo de nuevo.",

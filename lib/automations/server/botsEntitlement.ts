@@ -1,13 +1,20 @@
-import { FetchClient } from "lib/api"
-import type { WorkspaceEntitlements } from "../botsFlag"
+import { attendeGet } from "lib/attende/serverApi"
 
 /**
- * Standalone bots app: a workspace may use bots when the backend says so (`workspace.entitlements.advancedAutomations`,
- * set by us per customer). Anything but a literal `true` is "no": missing field, wrong type, errors.
+ * Access to the product comes from the Attende backend: `GET /attende/entitlements` answers `entitlements: null` for a
+ * workspace without an Attende-ai plan. Any plan state (trial, active, past due, even expired) gets into the app: the
+ * expired ones then see the plan gate, which the backend enforces on every call.
+ *
+ * - `true`: the workspace has an Attende-ai plan;
+ * - `false`: it has none, or the user is not a member (401/403);
+ * - `null`: the answer is unknown (backend down, `JSYNQ_UNAVAILABLE`...). Callers let the request through: the backend
+ *   gate is the real enforcement and its own error is more useful than a "not enabled" page.
  */
-export function readBotsEntitlement(workspace: unknown): boolean {
-  const entitlements = (workspace as { entitlements?: WorkspaceEntitlements } | null | undefined)?.entitlements
-  return entitlements?.advancedAutomations === true
+export async function readAttendeEntitlement(): Promise<boolean | null> {
+  const result = await attendeGet<{ entitlements?: unknown } | null>("/attende/entitlements")
+  if (result.success) return !!result.data && typeof result.data === "object" && !!result.data.entitlements
+  if (result.status === 401 || result.status === 403) return false
+  return null
 }
 
 const TTL_MS = 30_000
@@ -20,17 +27,16 @@ export function clearBotsEntitlementCache(): void {
 }
 
 /**
- * Reads the entitlement with the CALLER's token (so a non-member gets a 403 and therefore `false`).
- * Cached for a short time per user+workspace: every server action runs the gate, and the answer
- * changes only when we flip the flag for a customer.
+ * The entitlement for the session's user and workspace, read with the CALLER's token. Cached for a short time per
+ * user+workspace (every server action runs the gate). An unknown answer is never cached and counts as allowed.
  */
 export async function fetchBotsEntitlement(userId: string, workspaceId: string): Promise<boolean> {
   const key = `${userId}:${workspaceId}`
   const hit = cache.get(key)
   if (hit && hit.expires > Date.now()) return hit.value
 
-  const data = await FetchClient.get<{ workspace?: unknown }>(`${process.env.BACKEND_URL}/workspaces/${encodeURIComponent(workspaceId)}`)
-  const value = readBotsEntitlement(data?.workspace)
+  const value = await readAttendeEntitlement()
+  if (value === null) return true
 
   if (cache.size >= MAX_ENTRIES) cache.delete(cache.keys().next().value as string)
   cache.set(key, { value, expires: Date.now() + TTL_MS })

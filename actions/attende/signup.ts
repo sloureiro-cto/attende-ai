@@ -22,14 +22,29 @@ export async function getSignupPlansAction(): Promise<SignupPlansResponse> {
   return result.ok ? parseSignupPlans(result.data) : { trial: DEFAULT_TRIAL, plans: [] }
 }
 
-/** Public. Creates the unverified user and sends the e-mail code. */
+/** Public. Stores the pending signup and sends the e-mail code (the account itself is created by `verify`). */
 export async function createSignupAction(input: CreateSignupInput): Promise<SignupActionResult<CreateSignupData>> {
   return toResult(await attendeFetch<CreateSignupData>("/attende/signup", { method: "POST", body: input }))
 }
 
-/** Public. Verifies the code. The caller signs in with the e-mail and password afterwards. */
-export async function verifySignupAction(input: { email: string; otp: string }): Promise<SignupActionResult<VerifySignupData>> {
-  return toResult(await attendeFetch<VerifySignupData>("/attende/signup/verify", { method: "POST", body: input }))
+/**
+ * Public. Verifies the code and creates the account. The caller signs in with the e-mail and password afterwards.
+ * A 409 `USER_EXISTS_UNMANAGED` means the e-mail already has an account: the person signs in with it, then starts the trial.
+ * The backend also answers with an `accessToken`; it never leaves the server (the session comes from signing in).
+ */
+export async function verifySignupAction(input: {
+  email: string
+  otp: string
+}): Promise<SignupActionResult<VerifySignupData>> {
+  const result = toResult(
+    await attendeFetch<VerifySignupData & { accessToken?: unknown }>("/attende/signup/verify", {
+      method: "POST",
+      body: input,
+    })
+  )
+  if (!result.success) return result
+  const { accessToken: _token, ...data } = (result.data ?? {}) as VerifySignupData & { accessToken?: unknown }
+  return { success: true, data }
 }
 
 /** Public. Always answers success (the backend never reveals whether the e-mail exists). */

@@ -78,6 +78,42 @@ describe("SignupFlow", () => {
     expect(mockSignIn).toHaveBeenCalledWith("credentials", expect.objectContaining({ email: "maria@empresa.com.br", password: "Segura#1", redirect: false }))
   })
 
+  it("sends an e-mail that already has an account to sign in, then back to the card step", async () => {
+    mockCreate.mockResolvedValue({ success: true, data: { email: "maria@empresa.com.br", nextStep: "verify_email" } })
+    mockVerify.mockResolvedValue({ success: false, status: 409, reference: "USER_EXISTS_UNMANAGED" })
+    render(<SignupFlow catalog={catalog} initialPlan="growth" />)
+
+    fillAccount()
+    await screen.findByText("otp for maria@empresa.com.br")
+    fireEvent.click(screen.getByText("submit code"))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This e-mail already has an account. Sign in with it to start your trial."
+    )
+    const link = screen.getByRole("link", { name: "Sign in to continue" })
+    expect(link).toHaveAttribute(
+      "href",
+      `/login?callbackUrl=${encodeURIComponent("/signup?existing=1&plan=attende_growth")}`
+    )
+    // No sign-in with the password typed here, and no code form to retry.
+    expect(mockLogin).not.toHaveBeenCalled()
+    expect(mockSignIn).not.toHaveBeenCalled()
+    expect(screen.queryByText("submit code")).not.toBeInTheDocument()
+  })
+
+  it("explains a temporarily unavailable service on the code step", async () => {
+    mockCreate.mockResolvedValue({ success: true, data: { email: "maria@empresa.com.br", nextStep: "verify_email" } })
+    mockVerify.mockResolvedValue({ success: false, status: 503, reference: "JSYNQ_UNAVAILABLE" })
+    render(<SignupFlow catalog={catalog} />)
+    fillAccount()
+    await screen.findByText("otp for maria@empresa.com.br")
+    fireEvent.click(screen.getByText("submit code"))
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The service is temporarily unavailable. Wait a moment and try again."
+    )
+    expect(screen.getByText("submit code")).toBeInTheDocument()
+  })
+
   it("maps a backend reference to a friendly message and keeps the user on the account step", async () => {
     mockCreate.mockResolvedValue({ success: false, status: 409, reference: "SIGNUP_EMAIL_IN_USE" })
     render(<SignupFlow catalog={catalog} />)

@@ -7,6 +7,7 @@ import { BOTS_BRAND } from "../brand"
 import { actionClass } from "../ui/actionStyles"
 import { EmptyState } from "../ui/EmptyState"
 import { PremiumCard } from "../ui/PremiumCard"
+import { serviceErrorKey } from "lib/attende/result"
 
 /** First load: the shape of the page (tiles, then the chart), announced as busy. */
 export function ReportsSkeleton({ label }: { label?: string }) {
@@ -23,12 +24,13 @@ export function ReportsSkeleton({ label }: { label?: string }) {
 }
 
 /** The request failed (network, 5xx): nothing to show yet, the filters stay, one retry button. */
-export function ReportsError({ t, onRetry }: { t: AttendeReportsT; onRetry: () => void }) {
+export function ReportsError({ t, onRetry, code }: { t: AttendeReportsT; onRetry: () => void; code?: string }) {
+  const service = serviceErrorKey(code)
   return (
     <EmptyState
       icon={<Danger size={22} />}
       title={t("loadError")}
-      description={t("loadErrorHint")}
+      description={t(service ?? "loadErrorHint")}
       action={
         <button type="button" className={actionClass({ variant: "secondary" })} onClick={onRetry}>
           {t("retry")}

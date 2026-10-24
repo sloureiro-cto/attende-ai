@@ -6,9 +6,20 @@ export type SignupAccountErrors = Partial<Record<SignupAccountField, SignupTrans
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
-/** Backend rule: at least 6 characters, a digit and a special character. */
+export const PASSWORD_MIN = 8
+export const PASSWORD_MAX = 200
+
+/** The first rule the password breaks (backend rule: 8 to 200 characters, a digit and a special character), or null. */
+export function passwordProblem(password: string): SignupTranslationKey | null {
+  if (password.length < PASSWORD_MIN) return "signupPasswordTooShort"
+  if (password.length > PASSWORD_MAX) return "signupPasswordTooLong"
+  if (!/\d/.test(password)) return "signupPasswordNeedsNumber"
+  if (!/[^A-Za-z0-9]/.test(password)) return "signupPasswordNeedsSymbol"
+  return null
+}
+
 export function isStrongEnoughPassword(password: string): boolean {
-  return password.length >= 6 && /\d/.test(password) && /[^A-Za-z0-9]/.test(password)
+  return passwordProblem(password) === null
 }
 
 const normalize = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
@@ -29,7 +40,8 @@ export function validateSignupAccount(values: SignupAccountValues): SignupAccoun
   if (!values.email.trim()) errors.email = "signupFieldRequired"
   else if (!EMAIL.test(values.email.trim())) errors.email = "signupEmailInvalid"
   if (!values.password) errors.password = "signupFieldRequired"
-  else if (!isStrongEnoughPassword(values.password)) errors.password = "signupPasswordInvalid"
+  else if (passwordProblem(values.password))
+    errors.password = passwordProblem(values.password) ?? "signupPasswordInvalid"
   else if (passwordContainsName(values.password, values.name)) errors.password = "errSIGNUP_PASSWORD_CONTAINS_NAME"
   if (values.businessName.trim().length < 2) errors.businessName = "signupFieldRequired"
   if (!values.acceptedTerms) errors.acceptedTerms = "signupTermsRequired"

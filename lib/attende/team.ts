@@ -100,8 +100,9 @@ export function seatUsage(params: { members: number; pendingInvites: number; lim
   return { used, limit, full: limit !== null && used >= limit, remaining: limit === null ? null : Math.max(0, limit - used) }
 }
 
-/** `workspace.entitlements.attende.limits.seats`, read defensively (the field is optional and typed loosely upstream). */
-export function resolveSeatLimit(workspace: unknown): number | null {
-  const seats = (workspace as { entitlements?: { attende?: { limits?: { seats?: unknown } } } } | null | undefined)?.entitlements?.attende?.limits?.seats
+/** `entitlements.limits.seats` of `GET /attende/entitlements` (Attende backend), read defensively. */
+export function resolveSeatLimit(entitlementsResponse: unknown): number | null {
+  const seats = (entitlementsResponse as { entitlements?: { limits?: { seats?: unknown } } | null } | null | undefined)
+    ?.entitlements?.limits?.seats
   return typeof seats === "number" && Number.isFinite(seats) && seats > 0 ? seats : null
 }
