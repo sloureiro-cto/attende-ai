@@ -17,17 +17,17 @@ export function ConditionFields({ node, channels, ctx, lookups, patch, t }: Narr
   const rows = node.rows
   const channel = channels[0] ?? "whatsapp"
   return (
-    <FieldBlock label={t("salesBotFieldRules")} hint={t("salesBotRulesHint")}>
+    <FieldBlock label={t("advancedAutomationFieldRules")} hint={t("advancedAutomationRulesHint")}>
       <div className="flex flex-col gap-3">
         {rows.map((row, i) => (
           <div key={row.id} className="flex flex-col gap-2 rounded-md border border-neutral-50 p-3">
             <div className="flex items-center gap-2">
               <TextInput
                 size="small"
-                aria-label={t("salesBotRuleName", { n: i + 1 })}
+                aria-label={t("advancedAutomationRuleName", { n: i + 1 })}
                 value={row.name}
                 maxLength={40}
-                placeholder={t("salesBotRuleName", { n: i + 1 })}
+                placeholder={t("advancedAutomationRuleName", { n: i + 1 })}
                 containerClassName="min-w-0 flex-1"
                 hideErrorMessage
                 onChange={(e) =>
@@ -38,7 +38,7 @@ export function ConditionFields({ node, channels, ctx, lookups, patch, t }: Narr
                 type="button"
                 size="large"
                 variant="ghost"
-                aria-label={t("salesBotRemoveRule")}
+                aria-label={t("advancedAutomationRemoveRule")}
                 onClick={() => patch({ rows: rows.filter((r) => r.id !== row.id) })}
                 className="hover:text-error-darkest"
                 icon={<Trash2 />}
@@ -74,7 +74,7 @@ export function ConditionFields({ node, channels, ctx, lookups, patch, t }: Narr
             })
           }
         >
-          {t("salesBotAddRule")}
+          {t("advancedAutomationAddRule")}
         </Button>
       </div>
     </FieldBlock>

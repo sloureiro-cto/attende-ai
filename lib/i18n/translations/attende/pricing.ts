@@ -24,7 +24,7 @@ export const pricingEntries = {
   limitReplies: { en: "{count} AI replies per month", pt: "{count} respostas de IA por mês", es: "{count} respuestas de IA al mes" },
   limitSeats: { en: "{count} team seats", pt: "{count} usuários na equipe", es: "{count} usuarios en el equipo" },
   limitDocs: { en: "{count} knowledge documents", pt: "{count} documentos de conhecimento", es: "{count} documentos de conocimiento" },
-  includedAll: { en: "Inbox, funnel, reports and classic bots included", pt: "Caixa de conversas, funil, relatórios e bots clássicos inclusos", es: "Bandeja, embudo, informes y bots clásicos incluidos" },
+  includedAll: { en: "Inbox, funnel, reports and classic automations included", pt: "Caixa de conversas, funil, relatórios e automações clássicas inclusas", es: "Bandeja, embudo, informes y automatizaciones clásicas incluidas" },
   pricePending: { en: "Price shown at checkout", pt: "Preço exibido no checkout", es: "Precio visible al pagar" },
   perMonth: { en: "/ month", pt: "/ mês", es: "/ mes" },
   startTrial: { en: "Start 7-day free trial", pt: "Começar teste grátis de 7 dias", es: "Empezar prueba gratis de 7 días" },

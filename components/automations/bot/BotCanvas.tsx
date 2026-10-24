@@ -22,7 +22,7 @@ import { useAutomationsT } from "components/automations/ui/useAutomationsT"
 import IconButton from "components/IconButton/IconButton"
 import { type BotBuilderAction, type BotDraft, START_NODE_ID, startPillPosition } from "lib/automations/botBuilderState"
 import { nodeIssues, nodeOutputs } from "lib/automations/botGraph"
-import type { SalesBotNode, SalesBotNodeKind, SalesBotStatsSummary } from "lib/automations/types"
+import type { AdvancedAutomationNode, AdvancedAutomationNodeKind, AdvancedAutomationStatsSummary } from "lib/automations/types"
 import { NODE_TYPES, type StartNodeData, type StepNodeData } from "./BotNodes"
 import { PALETTE_DRAG_TYPE, PALETTE_PRESET_DRAG_TYPE } from "./BotPalette"
 
@@ -36,11 +36,11 @@ type Props = {
   draft: BotDraft
   selectedId: string | null
   unreachable: ReadonlySet<string>
-  stats: SalesBotStatsSummary | null
+  stats: AdvancedAutomationStatsSummary | null
   showStats: boolean
   dispatch: Dispatch<BotBuilderAction>
   /** Registers a function that adds a step at the visible center (used by the palette click). */
-  registerAdder: (add: ((kind: SalesBotNodeKind, preset?: Record<string, unknown>) => void) | null) => void
+  registerAdder: (add: ((kind: AdvancedAutomationNodeKind, preset?: Record<string, unknown>) => void) | null) => void
   onAutoLayout: () => void
   onToggleStats: () => void
   statsLoading: boolean
@@ -73,9 +73,9 @@ function CanvasInner({
   // Domain -> ReactFlow nodes. Unchanged steps keep their object so memoized cards don't re-render
   // while another step is being edited.
   const startCaption = useMemo(() => {
-    const kind = t(draft.trigger.kind === "manual" ? "salesBotTriggerManual" : "salesBotTriggerNewConversation")
+    const kind = t(draft.trigger.kind === "manual" ? "advancedAutomationTriggerManual" : "advancedAutomationTriggerNewConversation")
     return showStats && stats
-      ? `${kind}\n${t("salesBotStatsStarted", { count: stats.started })} · ${t("salesBotStatsRange")}`
+      ? `${kind}\n${t("advancedAutomationStatsStarted", { count: stats.started })} · ${t("advancedAutomationStatsRange")}`
       : kind
   }, [draft.trigger.kind, showStats, stats, t])
 
@@ -85,9 +85,9 @@ function CanvasInner({
     return set
   }, [draft.edges, draft.startNodeId])
 
-  const cache = useRef(new Map<string, { src: SalesBotNode; deps: string; node: Node<StepNodeData> }>())
+  const cache = useRef(new Map<string, { src: AdvancedAutomationNode; deps: string; node: Node<StepNodeData> }>())
   const derived = useMemo<Node[]>(() => {
-    const next = new Map<string, { src: SalesBotNode; deps: string; node: Node<StepNodeData> }>()
+    const next = new Map<string, { src: AdvancedAutomationNode; deps: string; node: Node<StepNodeData> }>()
     const out: Node[] = []
     for (const n of draft.nodes) {
       const stat = stats?.nodes[n.id]
@@ -227,7 +227,7 @@ function CanvasInner({
   )
 
   const addAtCenter = useCallback(
-    (kind: SalesBotNodeKind, preset?: Record<string, unknown>) => {
+    (kind: AdvancedAutomationNodeKind, preset?: Record<string, unknown>) => {
       const rect = wrapperRef.current?.getBoundingClientRect()
       const center = rect
         ? flow.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
@@ -252,7 +252,7 @@ function CanvasInner({
 
   const onDrop = useCallback(
     (e: DragEvent) => {
-      const kind = e.dataTransfer.getData(PALETTE_DRAG_TYPE) as SalesBotNodeKind
+      const kind = e.dataTransfer.getData(PALETTE_DRAG_TYPE) as AdvancedAutomationNodeKind
       if (!kind) return
       e.preventDefault()
       const p = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
@@ -300,7 +300,7 @@ function CanvasInner({
           pannable
           zoomable
           nodeStrokeWidth={0}
-          aria-label={t("salesBotMinimap")}
+          aria-label={t("advancedAutomationMinimap")}
           style={{ width: 180, height: 110, right: rightPanelOpen ? 372 : 16, bottom: 16, margin: 0 }}
           className="!rounded-md !border !border-neutral-border !bg-white"
           maskStrokeColor="#45ad7e"
@@ -311,28 +311,28 @@ function CanvasInner({
 
       <div className="absolute left-[264px] top-4 z-10 flex items-center gap-0.5 rounded-md border border-neutral-border bg-white p-[3px] shadow-lg">
         <ToolbarButton
-          label={t("salesBotFit")}
+          label={t("advancedAutomationFit")}
           onClick={() => void flow.fitView({ padding: 0.25, maxZoom: 1, duration: 200 })}
         >
           <Maximize className="size-[15px]" />
         </ToolbarButton>
-        <ToolbarButton label={t("salesBotZoomOut")} onClick={() => void flow.zoomOut({ duration: 150 })}>
+        <ToolbarButton label={t("advancedAutomationZoomOut")} onClick={() => void flow.zoomOut({ duration: 150 })}>
           <Minus className="size-[15px]" />
         </ToolbarButton>
         <ZoomLabel />
-        <ToolbarButton label={t("salesBotZoomIn")} onClick={() => void flow.zoomIn({ duration: 150 })}>
+        <ToolbarButton label={t("advancedAutomationZoomIn")} onClick={() => void flow.zoomIn({ duration: 150 })}>
           <Plus className="size-[15px]" />
         </ToolbarButton>
         <span className="mx-0.5 h-5 w-px bg-neutral-50" aria-hidden />
-        <ToolbarButton label={t("salesBotAutoLayout")} onClick={onAutoLayout}>
+        <ToolbarButton label={t("advancedAutomationAutoLayout")} onClick={onAutoLayout}>
           <LayoutGrid className="size-[15px]" />
         </ToolbarButton>
         <button
           type="button"
           aria-pressed={showStats}
-          aria-label={t("salesBotStats")}
+          aria-label={t("advancedAutomationStats")}
           disabled={statsLoading || !draft.id}
-          title={draft.id ? undefined : t("salesBotStatsNeedsSave")}
+          title={draft.id ? undefined : t("advancedAutomationStatsNeedsSave")}
           onClick={onToggleStats}
           className={cn(
             "flex h-8 items-center gap-1.5 rounded px-2.5 text-body-12 font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50",
@@ -340,7 +340,7 @@ function CanvasInner({
           )}
         >
           <ChartNoAxesColumn className="size-[15px]" aria-hidden />
-          {t("salesBotStats")}
+          {t("advancedAutomationStats")}
         </button>
       </div>
 
@@ -348,12 +348,12 @@ function CanvasInner({
         <div className="absolute bottom-4 left-[264px] z-10 flex flex-wrap items-center gap-3 rounded-full border border-neutral-border bg-white px-3.5 py-2 text-body-12 text-neutral-600">
           <span className="flex items-center gap-1.5 font-semibold">
             <span className="size-2 rounded-full bg-primary" aria-hidden />
-            {t("salesBotStatsRange")}
+            {t("advancedAutomationStatsRange")}
           </span>
-          <span className="text-neutral-400">{t("salesBotStatsStarted", { count: stats.started })}</span>
-          <span className="text-neutral-400">{t("salesBotStatsCompleted", { count: stats.completed })}</span>
+          <span className="text-neutral-400">{t("advancedAutomationStatsStarted", { count: stats.started })}</span>
+          <span className="text-neutral-400">{t("advancedAutomationStatsCompleted", { count: stats.completed })}</span>
           {stats.failed > 0 ? (
-            <span className="text-error">{t("salesBotStatsFailed", { count: stats.failed })}</span>
+            <span className="text-error">{t("advancedAutomationStatsFailed", { count: stats.failed })}</span>
           ) : null}
         </div>
       ) : null}

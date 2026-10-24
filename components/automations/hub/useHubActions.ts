@@ -7,11 +7,11 @@ import {
   getAutomationAction,
   updateAutomationAction,
 } from "actions/messaging-automations/automations"
-import { deleteSalesBotAction, updateSalesBotAction } from "actions/messaging-automations/salesBots"
+import { deleteAdvancedAutomationAction, updateAdvancedAutomationAction } from "actions/messaging-automations/advancedAutomations"
 import { showToast } from "app/utils/showToast"
 import type { AutomationsTFn } from "components/automations/ui/useAutomationsT"
 import { copyName } from "lib/automations/copyName"
-import type { AutomationListItem, SalesBotListItem } from "lib/automations/types"
+import type { AutomationListItem, AdvancedAutomationListItem } from "lib/automations/types"
 import type { useHubData } from "./useHubData"
 
 type PendingDelete = { kind: "rule" | "bot"; id: string; name: string }
@@ -55,11 +55,11 @@ export function useHubActions(hub: HubActionsTarget, t: AutomationsTFn) {
       hub.addActiveRules(nextStatus === "active" ? 1 : -1)
     })
 
-  const toggleBot = (item: SalesBotListItem) =>
+  const toggleBot = (item: AdvancedAutomationListItem) =>
     guarded(item.id, async () => {
       const nextStatus = item.status === "active" ? "paused" : "active"
       hub.patchBot(item.id, { status: nextStatus })
-      const res = await updateSalesBotAction(item.id, { status: nextStatus, expectedUpdatedAt: item.updatedAt })
+      const res = await updateAdvancedAutomationAction(item.id, { status: nextStatus, expectedUpdatedAt: item.updatedAt })
       if (!res.success) {
         hub.patchBot(item.id, { status: item.status })
         // Activating an incomplete bot is refused with the reasons; say so instead of a generic error.
@@ -94,7 +94,7 @@ export function useHubActions(hub: HubActionsTarget, t: AutomationsTFn) {
   const confirmDelete = async () => {
     if (!pendingDelete) return
     setDeleting(true)
-    const res = pendingDelete.kind === "rule" ? await deleteAutomationAction(pendingDelete.id) : await deleteSalesBotAction(pendingDelete.id)
+    const res = pendingDelete.kind === "rule" ? await deleteAutomationAction(pendingDelete.id) : await deleteAdvancedAutomationAction(pendingDelete.id)
     setDeleting(false)
     if (!res.success) return showToast("error", t("automationsHubDeleteError"))
     setPendingDelete(null)

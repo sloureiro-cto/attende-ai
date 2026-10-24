@@ -11,7 +11,7 @@ export function HandoffFields({ node, lookups, patch, t }: Narrow<"handoff">) {
     <>
       <TextArea
         id={`bot-handoff-${node.id}`}
-        label={t("salesBotFieldHandoffMessage")}
+        label={t("advancedAutomationFieldHandoffMessage")}
         size="small"
         minRows={2}
         maxRows={6}
@@ -19,10 +19,10 @@ export function HandoffFields({ node, lookups, patch, t }: Narrow<"handoff">) {
         maxLength={SALES_BOT_LIMITS.textChars}
         value={node.message ?? ""}
         onChange={(e) => patch({ message: e.target.value || undefined })}
-        helperText={t("salesBotHandoffMessageHint")}
+        helperText={t("advancedAutomationHandoffMessageHint")}
         hideErrorMessage
       />
-      <FieldBlock label={t("salesBotFieldAssign")}>
+      <FieldBlock label={t("advancedAutomationFieldAssign")}>
         <BotHandoffTarget
           value={{ assignMode: node.assignMode, userIds: node.userIds, specificUserId: node.specificUserId, workspaceRoleId: node.workspaceRoleId }}
           lookups={lookups}

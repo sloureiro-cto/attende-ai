@@ -22,8 +22,8 @@ export const BotChannelsPopover = memo(function BotChannelsPopover({ channels, s
       onChange={(next) => onChange(bindingsFromSelection(next))}
       sessions={sessions}
       t={t}
-      label={t("salesBotChannels")}
-      noneLabel={t("salesBotChannelsNone")}
+      label={t("advancedAutomationChannels")}
+      noneLabel={t("advancedAutomationChannelsNone")}
       requireAccount
     />
   )

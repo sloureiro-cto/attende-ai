@@ -102,9 +102,9 @@ export function DurationField({
           set(shown, u as keyof typeof UNIT_MINUTES)
         }}
         items={[
-          { value: "minutes", displayName: t("salesBotUnitMinutes") },
-          { value: "hours", displayName: t("salesBotUnitHours") },
-          { value: "days", displayName: t("salesBotUnitDays") },
+          { value: "minutes", displayName: t("advancedAutomationUnitMinutes") },
+          { value: "hours", displayName: t("advancedAutomationUnitHours") },
+          { value: "days", displayName: t("advancedAutomationUnitDays") },
         ]}
         containerClassNames="w-32"
       />
@@ -147,7 +147,7 @@ export function CardFieldPicker({
           size="small"
           value={projectId}
           onValueChange={setProjectId}
-          placeholder={t("salesBotPickProject")}
+          placeholder={t("advancedAutomationPickProject")}
           items={projects.map((p) => ({ value: p._id, displayName: p.title ?? p._id }))}
         />
       ) : null}
@@ -155,9 +155,9 @@ export function CardFieldPicker({
         size="small"
         value={value}
         onValueChange={onChange}
-        placeholder={loaded?.status === "loading" ? t("salesBotLoading") : placeholder}
+        placeholder={loaded?.status === "loading" ? t("advancedAutomationLoading") : placeholder}
         items={items}
-        emptyContent={<p className="px-3 py-2 text-body-12 text-neutral-500">{t("salesBotNoFields")}</p>}
+        emptyContent={<p className="px-3 py-2 text-body-12 text-neutral-500">{t("advancedAutomationNoFields")}</p>}
       />
     </div>
   )
@@ -208,9 +208,9 @@ export function StagePicker({
         value={projectId}
         onChange={(next) => onChange(selectProject(next))}
         items={projectItems}
-        placeholder={t("salesBotPickProject")}
-        searchPlaceholder={t("salesBotSearch")}
-        emptyLabel={t("salesBotNoProjects")}
+        placeholder={t("advancedAutomationPickProject")}
+        searchPlaceholder={t("advancedAutomationSearch")}
+        emptyLabel={t("advancedAutomationNoProjects")}
         triggerClassNames={cn(waTemplateSelectInputTriggerClassNames, "h-8")}
       />
       {!projectId ? null : boards.length > 0 ? (
@@ -221,19 +221,19 @@ export function StagePicker({
           boardValue={boardId}
           onChange={(id) => onChange(selectColumn(value, id, columns))}
           onBoardChange={(id) => onChange(selectBoard(value, id, columns))}
-          noneLabel={t("salesBotPickStage")}
-          boardPlaceholder={t("salesBotPickBoard")}
-          columnPlaceholder={t("salesBotPickStage")}
-          searchBoardPlaceholder={t("salesBotSearch")}
-          searchColumnPlaceholder={t("salesBotSearch")}
+          noneLabel={t("advancedAutomationPickStage")}
+          boardPlaceholder={t("advancedAutomationPickBoard")}
+          columnPlaceholder={t("advancedAutomationPickStage")}
+          searchBoardPlaceholder={t("advancedAutomationSearch")}
+          searchColumnPlaceholder={t("advancedAutomationSearch")}
           triggerClassNames={cn(waTemplateSelectInputTriggerClassNames, "h-8")}
         />
       ) : cache?.status === "loading" ? (
-        <p className="text-body-12 text-neutral-500">{t("salesBotStagesLoading")}</p>
+        <p className="text-body-12 text-neutral-500">{t("advancedAutomationStagesLoading")}</p>
       ) : (
-        <p className="text-body-12 text-neutral-500">{t("salesBotStagesEmpty")}</p>
+        <p className="text-body-12 text-neutral-500">{t("advancedAutomationStagesEmpty")}</p>
       )}
-      {cache?.status === "error" ? <p className="text-body-12 text-error-dark">{t("salesBotStagesError")}</p> : null}
+      {cache?.status === "error" ? <p className="text-body-12 text-error-dark">{t("advancedAutomationStagesError")}</p> : null}
     </div>
   )
 }

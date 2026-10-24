@@ -70,7 +70,7 @@ describe("seatUsage / resolveSeatLimit", () => {
   })
   it("reads entitlements.attende.limits.seats defensively", () => {
     expect(resolveSeatLimit({ entitlements: { attende: { limits: { seats: 5 } } } })).toBe(5)
-    expect(resolveSeatLimit({ entitlements: { bots: true } })).toBeNull()
+    expect(resolveSeatLimit({ entitlements: { advancedAutomations: true } })).toBeNull()
     expect(resolveSeatLimit({ entitlements: { attende: { limits: { seats: "5" } } } })).toBeNull()
     expect(resolveSeatLimit(null)).toBeNull()
     expect(resolveSeatLimit(undefined)).toBeNull()

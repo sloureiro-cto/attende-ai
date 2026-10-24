@@ -1,6 +1,6 @@
 import { listAttendeAgentsAction } from "actions/attende/agents"
 import { listInstagramSessionsAction } from "actions/instagram-lite/sessions"
-import { listSalesBotsAction } from "actions/messaging-automations/salesBots"
+import { listAdvancedAutomationsAction } from "actions/messaging-automations/advancedAutomations"
 import { listSmsSessionsAction } from "actions/sms-lite/sessions"
 import { listWhatsAppSessionsAction } from "actions/whatsapp-lite"
 import { loadLines } from "./loadLines"
@@ -8,13 +8,13 @@ import { loadLines } from "./loadLines"
 jest.mock("actions/whatsapp-lite", () => ({ listWhatsAppSessionsAction: jest.fn() }))
 jest.mock("actions/instagram-lite/sessions", () => ({ listInstagramSessionsAction: jest.fn() }))
 jest.mock("actions/sms-lite/sessions", () => ({ listSmsSessionsAction: jest.fn() }))
-jest.mock("actions/messaging-automations/salesBots", () => ({ listSalesBotsAction: jest.fn() }))
+jest.mock("actions/messaging-automations/advancedAutomations", () => ({ listAdvancedAutomationsAction: jest.fn() }))
 jest.mock("actions/attende/agents", () => ({ listAttendeAgentsAction: jest.fn() }))
 
 const wa = listWhatsAppSessionsAction as jest.Mock
 const ig = listInstagramSessionsAction as jest.Mock
 const sms = listSmsSessionsAction as jest.Mock
-const bots = listSalesBotsAction as jest.Mock
+const bots = listAdvancedAutomationsAction as jest.Mock
 const agents = listAttendeAgentsAction as jest.Mock
 
 const okWa = { success: true, data: [{ _id: "w1", label: "Sales", status: "connected", phoneNumber: "+55" }] }

@@ -1,10 +1,10 @@
-import type { SalesBotListItem, SalesBotListResponse } from "lib/automations/types"
+import type { AdvancedAutomationListItem, AdvancedAutomationListResponse } from "lib/automations/types"
 import { computeBotsHubMetrics } from "./botsHubMetrics"
 
-const bot = (id: string, started: number, completed: number): SalesBotListItem =>
-  ({ id, name: id, status: "active", channels: [], stepCount: 3, version: 1, updatedAt: "t", stats30d: { started, completed } }) as SalesBotListItem
+const bot = (id: string, started: number, completed: number): AdvancedAutomationListItem =>
+  ({ id, name: id, status: "active", channels: [], stepCount: 3, version: 1, updatedAt: "t", stats30d: { started, completed } }) as AdvancedAutomationListItem
 
-const list = (items: SalesBotListItem[], totals: Partial<SalesBotListResponse["totals"]> = {}): SalesBotListResponse => ({
+const list = (items: AdvancedAutomationListItem[], totals: Partial<AdvancedAutomationListResponse["totals"]> = {}): AdvancedAutomationListResponse => ({
   items,
   total: items.length,
   page: 1,

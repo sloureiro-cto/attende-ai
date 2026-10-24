@@ -21,10 +21,10 @@ export function SendMessageFields({ node, channels, ctx, lookups, patch, t }: Na
   const max = node.replyMode === "buttons" ? SALES_BOT_LIMITS.buttons : SALES_BOT_LIMITS.listRows
   const labelMax = node.replyMode === "buttons" ? SALES_BOT_LIMITS.buttonLabelChars : SALES_BOT_LIMITS.listLabelChars
   const modes: Array<{ id: typeof node.replyMode; key: AutomationsTranslationKey }> = [
-    { id: "none", key: "salesBotReplyNone" },
-    { id: "buttons", key: "salesBotReplyButtons" },
-    { id: "list", key: "salesBotReplyList" },
-    { id: "free", key: "salesBotReplyFree" },
+    { id: "none", key: "advancedAutomationReplyNone" },
+    { id: "buttons", key: "advancedAutomationReplyButtons" },
+    { id: "list", key: "advancedAutomationReplyList" },
+    { id: "free", key: "advancedAutomationReplyFree" },
   ]
 
   return (
@@ -32,7 +32,7 @@ export function SendMessageFields({ node, channels, ctx, lookups, patch, t }: Na
       <div className="flex flex-col gap-1.5">
         <TextArea
           id={`bot-msg-${node.id}`}
-          label={t("salesBotFieldMessage")}
+          label={t("advancedAutomationFieldMessage")}
           size="small"
           minRows={3}
           maxRows={10}
@@ -47,7 +47,7 @@ export function SendMessageFields({ node, channels, ctx, lookups, patch, t }: Na
           <Dropdown>
             <DropdownTrigger asChild>
               <Button type="button" size="small" variant="ghost" startIcon={<Variable aria-hidden />}>
-                {t("salesBotInsertVariable")}
+                {t("advancedAutomationInsertVariable")}
               </Button>
             </DropdownTrigger>
             <MenuContent align="start">
@@ -64,10 +64,10 @@ export function SendMessageFields({ node, channels, ctx, lookups, patch, t }: Na
         </div>
       </div>
 
-      <FieldBlock label={t("salesBotFieldReplyMode")}>
+      <FieldBlock label={t("advancedAutomationFieldReplyMode")}>
         <div
           role="group"
-          aria-label={t("salesBotFieldReplyMode")}
+          aria-label={t("advancedAutomationFieldReplyMode")}
           className="flex flex-wrap gap-1 rounded-md border border-neutral-50 bg-neutral-10 p-1"
         >
           {modes.map((m) => (
@@ -97,16 +97,16 @@ export function SendMessageFields({ node, channels, ctx, lookups, patch, t }: Na
       </FieldBlock>
 
       {listLike ? (
-        <FieldBlock label={t("salesBotFieldOptions", { count: options.length, max })} hint={t("salesBotOptionsHint")}>
+        <FieldBlock label={t("advancedAutomationFieldOptions", { count: options.length, max })} hint={t("advancedAutomationOptionsHint")}>
           <div className="flex flex-col gap-2">
             {options.map((o, i) => (
               <div key={o.id} className="flex items-center gap-2">
                 <TextInput
                   size="small"
-                  aria-label={t("salesBotOptionLabel", { n: i + 1 })}
+                  aria-label={t("advancedAutomationOptionLabel", { n: i + 1 })}
                   value={o.label}
                   maxLength={labelMax}
-                  error={o.label.trim() ? null : t("salesBotOptionEmpty")}
+                  error={o.label.trim() ? null : t("advancedAutomationOptionEmpty")}
                   hideErrorMessage
                   containerClassName="min-w-0 flex-1"
                   onChange={(e) =>
@@ -117,7 +117,7 @@ export function SendMessageFields({ node, channels, ctx, lookups, patch, t }: Na
                   type="button"
                   size="large"
                   variant="ghost"
-                  aria-label={t("salesBotRemoveOption")}
+                  aria-label={t("advancedAutomationRemoveOption")}
                   onClick={() => patch({ options: options.filter((x) => x.id !== o.id) })}
                   className="hover:text-error-darkest"
                   icon={<Trash2 />}
@@ -132,21 +132,21 @@ export function SendMessageFields({ node, channels, ctx, lookups, patch, t }: Na
               disabled={options.length >= max}
               onClick={() => patch({ options: [...options, { id: newBotId("o"), label: "" }] })}
             >
-              {t("salesBotAddOption")}
+              {t("advancedAutomationAddOption")}
             </Button>
           </div>
         </FieldBlock>
       ) : null}
 
       {node.replyMode === "free" || listLike ? (
-        <FieldBlock label={t("salesBotFieldSaveAnswer")} hint={t("salesBotSaveAnswerHint")}>
+        <FieldBlock label={t("advancedAutomationFieldSaveAnswer")} hint={t("advancedAutomationSaveAnswerHint")}>
           <CardFieldPicker
             value={node.saveAnswerTo ?? ""}
             onChange={(saveAnswerTo) => patch({ saveAnswerTo: saveAnswerTo || undefined })}
             projects={ctx.crmProjects}
             lookups={lookups}
             t={t}
-            placeholder={t("salesBotPickField")}
+            placeholder={t("advancedAutomationPickField")}
           />
         </FieldBlock>
       ) : null}
@@ -161,8 +161,8 @@ export function SendMessageFields({ node, channels, ctx, lookups, patch, t }: Na
                 noReplyBusinessHoursOnly: on ? node.noReplyBusinessHoursOnly : undefined,
               })
             }
-            label={t("salesBotNoReplyTitle")}
-            hint={t("salesBotNoReplyHint")}
+            label={t("advancedAutomationNoReplyTitle")}
+            hint={t("advancedAutomationNoReplyHint")}
           />
           {node.noReplyMinutes ? (
             <>
@@ -175,7 +175,7 @@ export function SendMessageFields({ node, channels, ctx, lookups, patch, t }: Na
               <SwitchRow
                 checked={!!node.noReplyBusinessHoursOnly}
                 onChange={(v) => patch({ noReplyBusinessHoursOnly: v })}
-                label={t("salesBotBusinessHoursOnly")}
+                label={t("advancedAutomationBusinessHoursOnly")}
               />
             </>
           ) : null}
@@ -184,7 +184,7 @@ export function SendMessageFields({ node, channels, ctx, lookups, patch, t }: Na
 
       {node.replyMode === "list" && options.length > 3 && channels.includes("instagram") ? (
         <p className="rounded-md bg-info-clean px-3 py-2 text-body-12 text-info-dark">
-          {t("salesBotInstagramListNote")}
+          {t("advancedAutomationInstagramListNote")}
         </p>
       ) : null}
     </>

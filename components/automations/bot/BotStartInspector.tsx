@@ -17,7 +17,7 @@ export const BotStartInspector = memo(function BotStartInspector({ draft, dispat
   const trigger = draft.trigger
   return (
     <aside
-      aria-label={t("salesBotInspectorTitle")}
+      aria-label={t("advancedAutomationInspectorTitle")}
       className="absolute inset-y-4 right-4 z-20 flex w-[340px] flex-col overflow-hidden rounded-lg border border-neutral-border bg-white shadow-xl"
     >
       <div className="flex items-center gap-2 border-b border-neutral-50 p-3">
@@ -28,13 +28,13 @@ export const BotStartInspector = memo(function BotStartInspector({ draft, dispat
           <Play className="size-4 fill-current" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-body-12 text-neutral-400">{t("salesBotInspectorStartKind")}</p>
-          <p className="truncate text-body-14 font-semibold text-neutral-800">{t("salesBotStart")}</p>
+          <p className="text-body-12 text-neutral-400">{t("advancedAutomationInspectorStartKind")}</p>
+          <p className="truncate text-body-14 font-semibold text-neutral-800">{t("advancedAutomationStart")}</p>
         </div>
-        <IconButton type="button" size="large" variant="ghost" aria-label={t("salesBotClose")} onClick={onClose} icon={<X />} />
+        <IconButton type="button" size="large" variant="ghost" aria-label={t("advancedAutomationClose")} onClick={onClose} icon={<X />} />
       </div>
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
-        <FieldBlock label={t("salesBotFieldStartsWhen")}>
+        <FieldBlock label={t("advancedAutomationFieldStartsWhen")}>
           <BotSelect
             size="small"
             value={trigger.kind}
@@ -42,22 +42,22 @@ export const BotStartInspector = memo(function BotStartInspector({ draft, dispat
               dispatch({ type: "meta", patch: { trigger: { ...trigger, kind: kind as typeof trigger.kind } } })
             }
             items={[
-              { value: "new_conversation", displayName: t("salesBotTriggerNewConversation") },
-              { value: "manual", displayName: t("salesBotTriggerManual") },
+              { value: "new_conversation", displayName: t("advancedAutomationTriggerNewConversation") },
+              { value: "manual", displayName: t("advancedAutomationTriggerManual") },
             ]}
           />
         </FieldBlock>
         {trigger.kind === "manual" ? (
-          <p className="text-body-12 text-neutral-500">{t("salesBotTriggerManualHint")}</p>
+          <p className="text-body-12 text-neutral-500">{t("advancedAutomationTriggerManualHint")}</p>
         ) : null}
         <TextInput
           size="small"
           type="number"
           min={0}
           max={365}
-          label={t("salesBotFieldDedupe")}
+          label={t("advancedAutomationFieldDedupe")}
           value={String(trigger.dedupeDays)}
-          helperText={t("salesBotDedupeHint")}
+          helperText={t("advancedAutomationDedupeHint")}
           onChange={(e) =>
             dispatch({
               type: "meta",
@@ -75,8 +75,8 @@ export const BotStartInspector = memo(function BotStartInspector({ draft, dispat
         <SwitchRow
           checked={draft.stopOnHumanReply}
           onChange={(stopOnHumanReply) => dispatch({ type: "meta", patch: { stopOnHumanReply } })}
-          label={t("salesBotStopOnHuman")}
-          hint={t("salesBotStopOnHumanHint")}
+          label={t("advancedAutomationStopOnHuman")}
+          hint={t("advancedAutomationStopOnHumanHint")}
         />
       </div>
     </aside>

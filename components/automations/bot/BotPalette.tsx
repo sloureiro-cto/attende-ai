@@ -5,7 +5,7 @@ import { memo, useMemo, useState } from "react"
 import { cn } from "@/lib/utils"
 import { useAutomationsT } from "components/automations/ui/useAutomationsT"
 import TextInput from "components/TextInput/TextInput"
-import type { SalesBotNodeKind } from "lib/automations/types"
+import type { AdvancedAutomationNodeKind } from "lib/automations/types"
 import { PALETTE_GROUPS } from "./botNodeMeta"
 
 export const PALETTE_DRAG_TYPE = "application/x-salesbot-kind"
@@ -13,7 +13,7 @@ export const PALETTE_DRAG_TYPE = "application/x-salesbot-kind"
 export const PALETTE_PRESET_DRAG_TYPE = "application/x-salesbot-preset"
 
 type Props = {
-  onAdd: (kind: SalesBotNodeKind, preset?: Record<string, unknown>) => void
+  onAdd: (kind: AdvancedAutomationNodeKind, preset?: Record<string, unknown>) => void
   disabled?: boolean
 }
 
@@ -32,26 +32,26 @@ export const BotPalette = memo(function BotPalette({ onAdd, disabled }: Props) {
 
   return (
     <aside
-      aria-label={t("salesBotPaletteTitle")}
+      aria-label={t("advancedAutomationPaletteTitle")}
       className="absolute inset-y-4 left-4 z-10 flex w-[232px] flex-col overflow-hidden rounded-lg border border-neutral-border bg-white shadow-lg"
     >
       <div className="flex flex-col gap-2.5 border-b border-neutral-50 px-3.5 pb-2.5 pt-3.5">
-        <h2 className="text-body-14 font-semibold text-neutral-800">{t("salesBotPaletteTitle")}</h2>
+        <h2 className="text-body-14 font-semibold text-neutral-800">{t("advancedAutomationPaletteTitle")}</h2>
         <TextInput
           type="search"
           size="small"
           startIcon={<SearchNormal1 size={14} aria-hidden />}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          aria-label={t("salesBotPaletteSearch")}
-          placeholder={t("salesBotPaletteSearch")}
+          aria-label={t("advancedAutomationPaletteSearch")}
+          placeholder={t("advancedAutomationPaletteSearch")}
           hideErrorMessage
           removeOptionalText
         />
       </div>
       <div className="flex flex-1 flex-col gap-px overflow-y-auto px-2 pb-3 pt-1">
         {groups.length === 0 ? (
-          <p className="px-1.5 py-6 text-center text-body-12 text-neutral-400">{t("salesBotPaletteEmpty")}</p>
+          <p className="px-1.5 py-6 text-center text-body-12 text-neutral-400">{t("advancedAutomationPaletteEmpty")}</p>
         ) : null}
         {groups.map((g) => (
           <div key={g.titleKey} className="flex flex-col gap-px">

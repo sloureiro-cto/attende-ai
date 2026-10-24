@@ -1,6 +1,6 @@
-import type { SalesBotEdge, SalesBotNode, SalesBotNodeKind } from "./types"
+import type { AdvancedAutomationEdge, AdvancedAutomationNode, AdvancedAutomationNodeKind } from "./types"
 
-/** Limits shared with the backend validation (src/modules/sales-bots/types.ts). */
+/** Limits shared with the backend validation (src/modules/messaging-automations/advanced/types.ts). */
 export const SALES_BOT_LIMITS = {
   nodes: 200,
   textChars: 4096,
@@ -26,7 +26,7 @@ export function newBotId(prefix: string): string {
 }
 
 /** The exits a step can leave through. Edges reference these ids (same rules as the backend). */
-export function nodeOutputs(node: SalesBotNode): string[] {
+export function nodeOutputs(node: AdvancedAutomationNode): string[] {
   switch (node.kind) {
     case "send_message": {
       const outs: string[] = []
@@ -51,7 +51,7 @@ export function nodeOutputs(node: SalesBotNode): string[] {
     case "webhook":
     case "send_meta_template":
       return ["next"]
-    case "goto_bot":
+    case "goto_automation":
     case "stop":
     case "handoff":
       return []
@@ -60,18 +60,18 @@ export function nodeOutputs(node: SalesBotNode): string[] {
 
 /** Human label key of an exit (fixed exits). Option/row/path exits use the author's own name. */
 export const FIXED_EXIT_LABEL_KEYS = {
-  next: "salesBotExitNext",
-  answered: "salesBotExitAnswered",
-  other: "salesBotExitOther",
-  no_reply: "salesBotExitNoReply",
-  send_failed: "salesBotExitSendFailed",
-  none: "salesBotExitNone",
-  else: "salesBotExitElse",
-  understood: "salesBotExitUnderstood",
-  not_understood: "salesBotExitNotUnderstood",
+  next: "advancedAutomationExitNext",
+  answered: "advancedAutomationExitAnswered",
+  other: "advancedAutomationExitOther",
+  no_reply: "advancedAutomationExitNoReply",
+  send_failed: "advancedAutomationExitSendFailed",
+  none: "advancedAutomationExitNone",
+  else: "advancedAutomationExitElse",
+  understood: "advancedAutomationExitUnderstood",
+  not_understood: "advancedAutomationExitNotUnderstood",
 } as const
 
-export function exitDisplayName(node: SalesBotNode, exitId: string): { fixedKey?: keyof typeof FIXED_EXIT_LABEL_KEYS; name?: string } {
+export function exitDisplayName(node: AdvancedAutomationNode, exitId: string): { fixedKey?: keyof typeof FIXED_EXIT_LABEL_KEYS; name?: string } {
   if (exitId in FIXED_EXIT_LABEL_KEYS && !(node.kind === "send_message" && (node.options ?? []).some((o) => o.id === exitId))) {
     return { fixedKey: exitId as keyof typeof FIXED_EXIT_LABEL_KEYS }
   }
@@ -84,7 +84,7 @@ export function exitDisplayName(node: SalesBotNode, exitId: string): { fixedKey?
 const hex24 = (v: unknown) => typeof v === "string" && /^[0-9a-f]{24}$/i.test(v)
 
 /** Defaults for a freshly dropped step. */
-export function createBotNode(kind: SalesBotNodeKind, x: number, y: number): SalesBotNode {
+export function createBotNode(kind: AdvancedAutomationNodeKind, x: number, y: number): AdvancedAutomationNode {
   const base = { id: newBotId(kind.slice(0, 6)), x, y }
   switch (kind) {
     case "send_message":
@@ -95,8 +95,8 @@ export function createBotNode(kind: SalesBotNodeKind, x: number, y: number): Sal
       return { ...base, kind, minutes: 60 }
     case "split":
       return { ...base, kind, paths: [{ id: newBotId("a"), name: "A", percent: 50 }, { id: newBotId("b"), name: "B", percent: 50 }] }
-    case "goto_bot":
-      return { ...base, kind, botId: "" }
+    case "goto_automation":
+      return { ...base, kind, automationId: "" }
     case "stop":
       return { ...base, kind }
     case "set_field":
@@ -119,12 +119,12 @@ export function createBotNode(kind: SalesBotNodeKind, x: number, y: number): Sal
 }
 
 /** Fields a preset (palette drag payload) may set per node kind. Identity and canvas position are never overridable. */
-const PRESET_FIELDS: Record<SalesBotNodeKind, readonly string[]> = {
+const PRESET_FIELDS: Record<AdvancedAutomationNodeKind, readonly string[]> = {
   send_message: ["text", "replyMode", "options", "noReplyMinutes", "noReplyBusinessHoursOnly", "saveAnswerTo", "attachmentUrl", "label"],
   condition: ["rows", "label"],
   wait: ["minutes", "label"],
   split: ["paths", "label"],
-  goto_bot: ["botId", "label"],
+  goto_automation: ["automationId", "label"],
   stop: ["label"],
   set_field: ["fieldId", "value", "label"],
   move_stage: ["columnId", "projectId", "boardId", "label"],
@@ -137,7 +137,7 @@ const PRESET_FIELDS: Record<SalesBotNodeKind, readonly string[]> = {
 }
 
 /** A preset comes from a drag-and-drop payload, which anything on the page (or outside it) can forge: keep only known fields. */
-export function sanitizeNodePreset(kind: SalesBotNodeKind, preset: unknown): Record<string, unknown> {
+export function sanitizeNodePreset(kind: AdvancedAutomationNodeKind, preset: unknown): Record<string, unknown> {
   if (!preset || typeof preset !== "object" || Array.isArray(preset)) return {}
   const allowed = PRESET_FIELDS[kind]
   if (!allowed) return {}
@@ -159,7 +159,7 @@ type NodeIssueCode =
   | "rows_missing"
   | "row_condition_missing"
   | "split_total_over_100"
-  | "target_bot_missing"
+  | "target_automation_missing"
   | "field_missing"
   | "column_missing"
   | "label_missing"
@@ -170,7 +170,7 @@ type NodeIssueCode =
   | "handoff_target_missing"
 
 /** Per-step completeness check used to show "needs setup" on the canvas and block activation. */
-export function nodeIssues(node: SalesBotNode): NodeIssueCode[] {
+export function nodeIssues(node: AdvancedAutomationNode): NodeIssueCode[] {
   const issues: NodeIssueCode[] = []
   switch (node.kind) {
     case "send_message": {
@@ -194,8 +194,8 @@ export function nodeIssues(node: SalesBotNode): NodeIssueCode[] {
     case "split":
       if (node.paths.reduce((n, p) => n + p.percent, 0) > 100) issues.push("split_total_over_100")
       return issues
-    case "goto_bot":
-      if (!hex24(node.botId)) issues.push("target_bot_missing")
+    case "goto_automation":
+      if (!hex24(node.automationId)) issues.push("target_automation_missing")
       return issues
     case "set_field":
       if (!node.fieldId.trim()) issues.push("field_missing")
@@ -232,7 +232,7 @@ export function nodeIssues(node: SalesBotNode): NodeIssueCode[] {
 }
 
 /** Edges whose exit no longer exists (e.g. an option was removed) must be dropped on edit. */
-export function pruneDanglingEdges(nodes: SalesBotNode[], edges: SalesBotEdge[]): SalesBotEdge[] {
+export function pruneDanglingEdges(nodes: AdvancedAutomationNode[], edges: AdvancedAutomationEdge[]): AdvancedAutomationEdge[] {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   return edges.filter((e) => {
     const from = byId.get(e.from)
@@ -241,7 +241,7 @@ export function pruneDanglingEdges(nodes: SalesBotNode[], edges: SalesBotEdge[])
 }
 
 /** Steps nobody can reach from the start (shown as a warning; they are harmless but dead). */
-export function unreachableNodeIds(startNodeId: string, nodes: SalesBotNode[], edges: SalesBotEdge[]): string[] {
+export function unreachableNodeIds(startNodeId: string, nodes: AdvancedAutomationNode[], edges: AdvancedAutomationEdge[]): string[] {
   const reach = new Set<string>()
   const queue = [startNodeId]
   while (queue.length) {

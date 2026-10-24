@@ -15,26 +15,26 @@ import {
   Tag,
   UserRound,
 } from "lucide-react"
-import type { SalesBotNodeKind } from "lib/automations/types"
+import type { AdvancedAutomationNodeKind } from "lib/automations/types"
 import type { AutomationsTranslationKey } from "lib/i18n/translations/automations"
 
 type NodeTone = "primary" | "neutral" | "warning" | "error" | "info"
 
-export const NODE_META: Record<SalesBotNodeKind, { icon: LucideIcon; labelKey: AutomationsTranslationKey; tone: NodeTone }> = {
-  send_message: { icon: MessageSquare, labelKey: "salesBotKindSendMessage", tone: "primary" },
-  send_meta_template: { icon: FileText, labelKey: "salesBotKindSendTemplate", tone: "primary" },
-  condition: { icon: Filter, labelKey: "salesBotKindCondition", tone: "info" },
-  split: { icon: Shuffle, labelKey: "salesBotKindSplit", tone: "info" },
-  wait: { icon: Clock, labelKey: "salesBotKindWait", tone: "info" },
-  ai_agent: { icon: Bot, labelKey: "salesBotKindAiAgent", tone: "warning" },
-  goto_bot: { icon: CornerDownRight, labelKey: "salesBotKindGotoBot", tone: "info" },
-  set_field: { icon: PenLine, labelKey: "salesBotKindSetField", tone: "neutral" },
-  move_stage: { icon: MoveRight, labelKey: "salesBotKindMoveStage", tone: "neutral" },
-  add_label: { icon: Tag, labelKey: "salesBotKindAddLabel", tone: "neutral" },
-  create_task: { icon: ListChecks, labelKey: "salesBotKindCreateTask", tone: "neutral" },
-  webhook: { icon: Globe, labelKey: "salesBotKindWebhook", tone: "neutral" },
-  handoff: { icon: UserRound, labelKey: "salesBotKindHandoff", tone: "error" },
-  stop: { icon: CircleStop, labelKey: "salesBotKindStop", tone: "neutral" },
+export const NODE_META: Record<AdvancedAutomationNodeKind, { icon: LucideIcon; labelKey: AutomationsTranslationKey; tone: NodeTone }> = {
+  send_message: { icon: MessageSquare, labelKey: "advancedAutomationKindSendMessage", tone: "primary" },
+  send_meta_template: { icon: FileText, labelKey: "advancedAutomationKindSendTemplate", tone: "primary" },
+  condition: { icon: Filter, labelKey: "advancedAutomationKindCondition", tone: "info" },
+  split: { icon: Shuffle, labelKey: "advancedAutomationKindSplit", tone: "info" },
+  wait: { icon: Clock, labelKey: "advancedAutomationKindWait", tone: "info" },
+  ai_agent: { icon: Bot, labelKey: "advancedAutomationKindAiAgent", tone: "warning" },
+  goto_automation: { icon: CornerDownRight, labelKey: "advancedAutomationKindGotoBot", tone: "info" },
+  set_field: { icon: PenLine, labelKey: "advancedAutomationKindSetField", tone: "neutral" },
+  move_stage: { icon: MoveRight, labelKey: "advancedAutomationKindMoveStage", tone: "neutral" },
+  add_label: { icon: Tag, labelKey: "advancedAutomationKindAddLabel", tone: "neutral" },
+  create_task: { icon: ListChecks, labelKey: "advancedAutomationKindCreateTask", tone: "neutral" },
+  webhook: { icon: Globe, labelKey: "advancedAutomationKindWebhook", tone: "neutral" },
+  handoff: { icon: UserRound, labelKey: "advancedAutomationKindHandoff", tone: "error" },
+  stop: { icon: CircleStop, labelKey: "advancedAutomationKindStop", tone: "neutral" },
 }
 
 /** Tailwind classes for the icon chip of each tone (same pairings as the design). */
@@ -49,7 +49,7 @@ export const TONE_CHIP: Record<NodeTone, string> = {
 export type PaletteItem = {
   /** Unique within the palette (the question preset shares `send_message` with the plain message). */
   id: string
-  kind: SalesBotNodeKind
+  kind: AdvancedAutomationNodeKind
   labelKey: AutomationsTranslationKey
   /** Fields merged into the new step (e.g. a question starts in free-text reply mode). */
   preset?: Record<string, unknown>
@@ -58,41 +58,41 @@ export type PaletteItem = {
 /** Same four groups as the design; the swatch tints match the group, not the step's own tone. */
 export const PALETTE_GROUPS: Array<{ titleKey: AutomationsTranslationKey; swatch: string; items: PaletteItem[] }> = [
   {
-    titleKey: "salesBotGroupConversation",
+    titleKey: "advancedAutomationGroupConversation",
     swatch: "border-primary-lighter bg-primary-clean",
     items: [
-      { id: "send_message", kind: "send_message", labelKey: "salesBotKindSendMessage" },
-      { id: "question", kind: "send_message", labelKey: "salesBotKindQuestion", preset: { replyMode: "free" } },
-      { id: "send_meta_template", kind: "send_meta_template", labelKey: "salesBotKindSendTemplate" },
+      { id: "send_message", kind: "send_message", labelKey: "advancedAutomationKindSendMessage" },
+      { id: "question", kind: "send_message", labelKey: "advancedAutomationKindQuestion", preset: { replyMode: "free" } },
+      { id: "send_meta_template", kind: "send_meta_template", labelKey: "advancedAutomationKindSendTemplate" },
     ],
   },
   {
-    titleKey: "salesBotGroupFlow",
+    titleKey: "advancedAutomationGroupFlow",
     swatch: "border-info-lighter bg-info-clean",
     items: [
-      { id: "condition", kind: "condition", labelKey: "salesBotKindCondition" },
-      { id: "wait", kind: "wait", labelKey: "salesBotKindWait" },
-      { id: "split", kind: "split", labelKey: "salesBotKindSplit" },
-      { id: "goto_bot", kind: "goto_bot", labelKey: "salesBotKindGotoBot" },
-      { id: "stop", kind: "stop", labelKey: "salesBotKindStop" },
+      { id: "condition", kind: "condition", labelKey: "advancedAutomationKindCondition" },
+      { id: "wait", kind: "wait", labelKey: "advancedAutomationKindWait" },
+      { id: "split", kind: "split", labelKey: "advancedAutomationKindSplit" },
+      { id: "goto_automation", kind: "goto_automation", labelKey: "advancedAutomationKindGotoBot" },
+      { id: "stop", kind: "stop", labelKey: "advancedAutomationKindStop" },
     ],
   },
   {
-    titleKey: "salesBotGroupCrm",
+    titleKey: "advancedAutomationGroupCrm",
     swatch: "border-neutral-border bg-neutral-10",
     items: [
-      { id: "set_field", kind: "set_field", labelKey: "salesBotKindSetField" },
-      { id: "move_stage", kind: "move_stage", labelKey: "salesBotKindMoveStage" },
-      { id: "add_label", kind: "add_label", labelKey: "salesBotKindAddLabel" },
+      { id: "set_field", kind: "set_field", labelKey: "advancedAutomationKindSetField" },
+      { id: "move_stage", kind: "move_stage", labelKey: "advancedAutomationKindMoveStage" },
+      { id: "add_label", kind: "add_label", labelKey: "advancedAutomationKindAddLabel" },
     ],
   },
   {
-    titleKey: "salesBotGroupAiTeam",
+    titleKey: "advancedAutomationGroupAiTeam",
     swatch: "border-warning-lighter bg-warning-clean",
     items: [
-      { id: "ai_agent", kind: "ai_agent", labelKey: "salesBotKindAiAgent" },
-      { id: "handoff", kind: "handoff", labelKey: "salesBotKindHandoff" },
-      { id: "webhook", kind: "webhook", labelKey: "salesBotKindWebhook" },
+      { id: "ai_agent", kind: "ai_agent", labelKey: "advancedAutomationKindAiAgent" },
+      { id: "handoff", kind: "handoff", labelKey: "advancedAutomationKindHandoff" },
+      { id: "webhook", kind: "webhook", labelKey: "advancedAutomationKindWebhook" },
     ],
   },
 ]

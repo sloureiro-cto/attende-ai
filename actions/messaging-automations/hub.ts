@@ -4,17 +4,17 @@ import { HUB_PAGE_SIZE } from "lib/automations/hubConstants"
 import type {
   AutomationChannel,
   AutomationListResponse,
-  SalesBotListResponse,
+  AdvancedAutomationListResponse,
 } from "lib/automations/types"
 import { listAutomationsAction } from "./automations"
 import { BOTS_DISABLED_MESSAGE, botsGate } from "./gate"
-import { listSalesBotsAction } from "./salesBots"
+import { listAdvancedAutomationsAction } from "./advancedAutomations"
 
 export type HubTab = "rules" | "bots"
 
 export type HubData = {
   rules: AutomationListResponse | null
-  bots: SalesBotListResponse | null
+  bots: AdvancedAutomationListResponse | null
   /** Both counts are always present so the tab badges don't depend on which tab is open; `null` = could not be loaded. */
   counts: { rules: number | null; bots: number | null }
   /** Set when the REQUESTED tab's list failed (the other tab's failure only makes its count `null`). */
@@ -41,7 +41,7 @@ export async function loadAutomationsHubAction(params: {
       page: params.tab === "rules" ? page : 1,
       limit: params.tab === "rules" ? HUB_PAGE_SIZE : 1,
     }),
-    listSalesBotsAction({
+    listAdvancedAutomationsAction({
       q: params.tab === "bots" ? params.q : undefined,
       channel: params.tab === "bots" ? params.channel : undefined,
       page: params.tab === "bots" ? page : 1,

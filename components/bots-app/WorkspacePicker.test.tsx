@@ -11,8 +11,8 @@ jest.mock("context/UserLanguageContext", () => ({ useUserLanguage: () => ({ user
 jest.mock("app/utils/showToast", () => ({ showToast: jest.fn() }))
 
 const workspaces = [
-  { _id: "a", name: "Alpha", entitlements: { bots: true }, members: [1, 2] },
-  { _id: "b", name: "Beta", entitlements: { bots: false }, members: [] },
+  { _id: "a", name: "Alpha", entitlements: { advancedAutomations: true }, members: [1, 2] },
+  { _id: "b", name: "Beta", entitlements: { advancedAutomations: false }, members: [] },
   { _id: "c", name: "Gamma", members: [1] },
 ]
 

@@ -1,11 +1,11 @@
 import type { AutomationsTFn } from "components/automations/ui/useAutomationsT"
 import type { EditorContextData } from "lib/automations/editorContext"
-import type { AutomationChannel, SalesBotNode } from "lib/automations/types"
+import type { AutomationChannel, AdvancedAutomationNode } from "lib/automations/types"
 import type { BotLookups } from "../useBotLookups"
 
 /** What every per-kind field group receives from the inspector shell. */
 export type KindProps = {
-  node: SalesBotNode
+  node: AdvancedAutomationNode
   channels: AutomationChannel[]
   ctx: EditorContextData
   lookups: BotLookups
@@ -14,4 +14,4 @@ export type KindProps = {
 }
 
 /** `KindProps` with the node narrowed to one kind. */
-export type Narrow<K extends SalesBotNode["kind"]> = Omit<KindProps, "node"> & { node: Extract<SalesBotNode, { kind: K }> }
+export type Narrow<K extends AdvancedAutomationNode["kind"]> = Omit<KindProps, "node"> & { node: Extract<AdvancedAutomationNode, { kind: K }> }

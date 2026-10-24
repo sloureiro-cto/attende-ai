@@ -82,7 +82,7 @@ export const BotLabelPicker = memo(function BotLabelPicker({ labelText, projectI
     })
     setBusy(false)
     if (!res.success || !res.data) {
-      setError(res.success ? t("salesBotLabelCreateError") : res.error || t("salesBotLabelCreateError"))
+      setError(res.success ? t("advancedAutomationLabelCreateError") : res.error || t("advancedAutomationLabelCreateError"))
       return
     }
     addLabel(pid, res.data)
@@ -128,15 +128,15 @@ export const BotLabelPicker = memo(function BotLabelPicker({ labelText, projectI
           onChange({ labelText, projectId: next })
         }}
         items={projectItems}
-        placeholder={t("salesBotPickProject")}
-        searchPlaceholder={t("salesBotSearch")}
-        emptyLabel={t("salesBotNoProjects")}
+        placeholder={t("advancedAutomationPickProject")}
+        searchPlaceholder={t("advancedAutomationSearch")}
+        emptyLabel={t("advancedAutomationNoProjects")}
         triggerClassNames={cn(waTemplateSelectInputTriggerClassNames, "h-8")}
       />
 
       {hasSelection ? (
-        <div className="flex items-center gap-2" aria-label={t("salesBotLabelSelected")}>
-          <span className="text-body-12 text-neutral-500">{t("salesBotLabelSelected")}</span>
+        <div className="flex items-center gap-2" aria-label={t("advancedAutomationLabelSelected")}>
+          <span className="text-body-12 text-neutral-500">{t("advancedAutomationLabelSelected")}</span>
           <LabelChip label={{ text: labelText, color: selectedInProject?.color ?? "" }} />
         </div>
       ) : null}
@@ -147,12 +147,12 @@ export const BotLabelPicker = memo(function BotLabelPicker({ labelText, projectI
             size="small"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("salesBotSearch")}
-            aria-label={t("salesBotSearch")}
+            placeholder={t("advancedAutomationSearch")}
+            aria-label={t("advancedAutomationSearch")}
             hideErrorMessage
             removeOptionalText
           />
-          <div className="flex max-h-44 flex-col gap-1 overflow-y-auto rounded-md border border-neutral-50 p-1.5" role="listbox" aria-label={t("salesBotFieldLabel")}>
+          <div className="flex max-h-44 flex-col gap-1 overflow-y-auto rounded-md border border-neutral-50 p-1.5" role="listbox" aria-label={t("advancedAutomationFieldLabel")}>
             {cache?.status === "loading" && labels.length === 0 ? (
               <>
                 <Skeleton className="h-7 w-24" />
@@ -160,13 +160,13 @@ export const BotLabelPicker = memo(function BotLabelPicker({ labelText, projectI
               </>
             ) : cache?.status === "error" ? (
               <div className="flex items-center justify-between gap-2 p-1">
-                <span className="text-body-12 text-error-dark">{t("salesBotLabelsError")}</span>
+                <span className="text-body-12 text-error-dark">{t("advancedAutomationLabelsError")}</span>
                 <Button size="small" variant="secondary" style="outline" onClick={() => loadLabels(pid)}>
-                  {t("salesBotRetry")}
+                  {t("advancedAutomationRetry")}
                 </Button>
               </div>
             ) : labels.length === 0 ? (
-              <p className="px-1 py-1.5 text-body-12 text-neutral-500">{query ? t("salesBotLabelsNoMatch") : t("salesBotLabelsEmpty")}</p>
+              <p className="px-1 py-1.5 text-body-12 text-neutral-500">{query ? t("advancedAutomationLabelsNoMatch") : t("advancedAutomationLabelsEmpty")}</p>
             ) : (
               labels.map((l) => {
                 const active = isSameLabel(l.text, labelText)
@@ -199,12 +199,12 @@ export const BotLabelPicker = memo(function BotLabelPicker({ labelText, projectI
               setCreating(true)
             }}
           >
-            {t("salesBotLabelCreate")}
+            {t("advancedAutomationLabelCreate")}
           </Button>
         </>
       ) : null}
 
-      <p className="text-body-11 text-neutral-500">{t("salesBotLabelRuntimeNote")}</p>
+      <p className="text-body-11 text-neutral-500">{t("advancedAutomationLabelRuntimeNote")}</p>
     </div>
   )
 })

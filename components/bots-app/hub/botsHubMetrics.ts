@@ -1,4 +1,4 @@
-import type { SalesBotListResponse } from "lib/automations/types"
+import type { AdvancedAutomationListResponse } from "lib/automations/types"
 
 export type BotsHubMetrics = {
   active: number
@@ -17,7 +17,7 @@ export type BotsHubMetrics = {
  * Header numbers of the automations hub. The list endpoint gives status totals for ALL automations, but per-item
  * stats only for the loaded page; the 30-day figures are shown only when that page is the whole list.
  */
-export function computeBotsHubMetrics(data: SalesBotListResponse | null): BotsHubMetrics | null {
+export function computeBotsHubMetrics(data: AdvancedAutomationListResponse | null): BotsHubMetrics | null {
   if (!data) return null
   const { totals } = data
   const complete = data.items.length === totals.all

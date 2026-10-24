@@ -1,9 +1,9 @@
 import { filterEntitled, isWorkspaceEntitled } from "./entitlement"
 
 describe("isWorkspaceEntitled", () => {
-  it("is true only when entitlements.bots is true", () => {
-    expect(isWorkspaceEntitled({ _id: "1", entitlements: { bots: true } })).toBe(true)
-    expect(isWorkspaceEntitled({ _id: "1", entitlements: { bots: false } })).toBe(false)
+  it("is true only when entitlements.advancedAutomations is true", () => {
+    expect(isWorkspaceEntitled({ _id: "1", entitlements: { advancedAutomations: true } })).toBe(true)
+    expect(isWorkspaceEntitled({ _id: "1", entitlements: { advancedAutomations: false } })).toBe(false)
     expect(isWorkspaceEntitled({ _id: "1", entitlements: {} })).toBe(false)
   })
 
@@ -21,8 +21,8 @@ describe("isWorkspaceEntitled", () => {
 describe("filterEntitled", () => {
   it("keeps entitled workspaces only", () => {
     const list = [
-      { _id: "a", entitlements: { bots: true } },
-      { _id: "b", entitlements: { bots: false } },
+      { _id: "a", entitlements: { advancedAutomations: true } },
+      { _id: "b", entitlements: { advancedAutomations: false } },
       { _id: "c" },
     ]
     expect(filterEntitled(list).map((w) => w._id)).toEqual(["a", "c"])

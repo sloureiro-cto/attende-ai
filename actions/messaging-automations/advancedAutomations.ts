@@ -4,13 +4,13 @@ import { pickData } from "actions/parseBackendEnvelope"
 import { FetchClient, HttpError } from "lib/api"
 import type {
   AutomationChannel,
-  SalesBotDetail,
-  SalesBotIssue,
-  SalesBotListResponse,
-  SalesBotPreviewResult,
-  SalesBotStatsSummary,
-  SalesBotStatus,
-  SaveSalesBotInput,
+  AdvancedAutomationDetail,
+  AdvancedAutomationIssue,
+  AdvancedAutomationListResponse,
+  AdvancedAutomationPreviewResult,
+  AdvancedAutomationStatsSummary,
+  AdvancedAutomationStatus,
+  SaveAdvancedAutomationInput,
 } from "lib/automations/types"
 import { botsGate } from "./gate"
 import type { ActionResult } from "./result"
@@ -18,27 +18,27 @@ import type { ActionResult } from "./result"
 const base = () => {
   const u = process.env.BACKEND_URL
   if (!u) throw new Error("BACKEND_URL is not defined")
-  return `${u}/sales-bots`
+  return `${u}/messaging-automations/advanced`
 }
 
-function fail(e: unknown): { success: false; error: string; status?: number; issues?: SalesBotIssue[] } {
+function fail(e: unknown): { success: false; error: string; status?: number; issues?: AdvancedAutomationIssue[] } {
   if (e instanceof HttpError) {
-    const details = e.details as { issues?: SalesBotIssue[]; details?: { issues?: SalesBotIssue[] } } | undefined
+    const details = e.details as { issues?: AdvancedAutomationIssue[]; details?: { issues?: AdvancedAutomationIssue[] } } | undefined
     const issues = details?.issues ?? details?.details?.issues
     return { success: false, error: e.message, status: e.status, ...(Array.isArray(issues) ? { issues } : {}) }
   }
   return { success: false, error: "" }
 }
 
-type ListSalesBotsParams = {
+type ListAdvancedAutomationsParams = {
   q?: string
   channel?: AutomationChannel
-  status?: SalesBotStatus
+  status?: AdvancedAutomationStatus
   page?: number
   limit?: number
 }
 
-export async function listSalesBotsAction(params: ListSalesBotsParams = {}): Promise<ActionResult<SalesBotListResponse>> {
+export async function listAdvancedAutomationsAction(params: ListAdvancedAutomationsParams = {}): Promise<ActionResult<AdvancedAutomationListResponse>> {
   const off = await botsGate()
   if (off) return off
   try {
@@ -51,7 +51,7 @@ export async function listSalesBotsAction(params: ListSalesBotsParams = {}): Pro
         ...(params.limit ? { limit: params.limit } : {}),
       },
     })
-    const data = pickData<SalesBotListResponse>(raw)
+    const data = pickData<AdvancedAutomationListResponse>(raw)
     if (!data || !Array.isArray(data.items)) return { success: false, error: "" }
     return { success: true, data }
   } catch (e) {
@@ -59,12 +59,12 @@ export async function listSalesBotsAction(params: ListSalesBotsParams = {}): Pro
   }
 }
 
-export async function getSalesBotAction(id: string): Promise<ActionResult<SalesBotDetail>> {
+export async function getAdvancedAutomationAction(id: string): Promise<ActionResult<AdvancedAutomationDetail>> {
   const off = await botsGate()
   if (off) return off
   try {
     const raw = await FetchClient.get<unknown>(`${base()}/${encodeURIComponent(id)}`)
-    const data = pickData<SalesBotDetail>(raw)
+    const data = pickData<AdvancedAutomationDetail>(raw)
     if (!data?.id) return { success: false, error: "", status: 404 }
     return { success: true, data }
   } catch (e) {
@@ -72,12 +72,12 @@ export async function getSalesBotAction(id: string): Promise<ActionResult<SalesB
   }
 }
 
-export async function createSalesBotAction(input: SaveSalesBotInput): Promise<ActionResult<SalesBotDetail>> {
+export async function createAdvancedAutomationAction(input: SaveAdvancedAutomationInput): Promise<ActionResult<AdvancedAutomationDetail>> {
   const off = await botsGate()
   if (off) return off
   try {
     const raw = await FetchClient.post<unknown>(base(), input)
-    const data = pickData<SalesBotDetail>(raw)
+    const data = pickData<AdvancedAutomationDetail>(raw)
     if (!data?.id) return { success: false, error: "" }
     return { success: true, data }
   } catch (e) {
@@ -85,15 +85,15 @@ export async function createSalesBotAction(input: SaveSalesBotInput): Promise<Ac
   }
 }
 
-export async function updateSalesBotAction(
+export async function updateAdvancedAutomationAction(
   id: string,
-  input: Partial<SaveSalesBotInput> & { expectedUpdatedAt?: string }
-): Promise<ActionResult<SalesBotDetail>> {
+  input: Partial<SaveAdvancedAutomationInput> & { expectedUpdatedAt?: string }
+): Promise<ActionResult<AdvancedAutomationDetail>> {
   const off = await botsGate()
   if (off) return off
   try {
     const raw = await FetchClient.patch<unknown>(`${base()}/${encodeURIComponent(id)}`, input)
-    const data = pickData<SalesBotDetail>(raw)
+    const data = pickData<AdvancedAutomationDetail>(raw)
     if (!data?.id) return { success: false, error: "" }
     return { success: true, data }
   } catch (e) {
@@ -101,7 +101,7 @@ export async function updateSalesBotAction(
   }
 }
 
-export async function deleteSalesBotAction(id: string): Promise<ActionResult<null>> {
+export async function deleteAdvancedAutomationAction(id: string): Promise<ActionResult<null>> {
   const off = await botsGate()
   if (off) return off
   try {
@@ -112,12 +112,12 @@ export async function deleteSalesBotAction(id: string): Promise<ActionResult<nul
   }
 }
 
-export async function getSalesBotStatsAction(id: string, days = 30): Promise<ActionResult<SalesBotStatsSummary>> {
+export async function getAdvancedAutomationStatsAction(id: string, days = 30): Promise<ActionResult<AdvancedAutomationStatsSummary>> {
   const off = await botsGate()
   if (off) return off
   try {
     const raw = await FetchClient.get<unknown>(`${base()}/${encodeURIComponent(id)}/stats`, { query: { days } })
-    const data = pickData<SalesBotStatsSummary>(raw)
+    const data = pickData<AdvancedAutomationStatsSummary>(raw)
     if (!data) return { success: false, error: "" }
     return { success: true, data }
   } catch (e) {
@@ -125,19 +125,19 @@ export async function getSalesBotStatsAction(id: string, days = 30): Promise<Act
   }
 }
 
-export async function previewSalesBotAction(input: {
-  botId?: string
-  bot?: { startNodeId: string; nodes: SaveSalesBotInput["nodes"]; edges: SaveSalesBotInput["edges"] }
+export async function previewAdvancedAutomationAction(input: {
+  automationId?: string
+  automation?: { startNodeId: string; nodes: SaveAdvancedAutomationInput["nodes"]; edges: SaveAdvancedAutomationInput["edges"] }
   channel: AutomationChannel
   event: { type: "start" } | { type: "inbound"; text: string; optionId?: string } | { type: "timer" }
   state?: Record<string, unknown>
   simulatedAt?: string
-}): Promise<ActionResult<SalesBotPreviewResult>> {
+}): Promise<ActionResult<AdvancedAutomationPreviewResult>> {
   const off = await botsGate()
   if (off) return off
   try {
     const raw = await FetchClient.post<unknown>(`${base()}/preview`, input)
-    const data = pickData<SalesBotPreviewResult>(raw)
+    const data = pickData<AdvancedAutomationPreviewResult>(raw)
     if (!data?.state) return { success: false, error: "" }
     return { success: true, data }
   } catch (e) {

@@ -2,7 +2,7 @@ import type { IInstagramSession } from "actions/instagram-lite/types"
 import type { ISmsSession } from "actions/sms-lite/types"
 import type { WhatsAppSession } from "actions/whatsapp-lite/types"
 import type { AgentStatus, AgentView } from "lib/attende/agents/types"
-import type { AutomationChannel, SalesBotListItem, SalesBotStatus } from "lib/automations/types"
+import type { AutomationChannel, AdvancedAutomationListItem, AdvancedAutomationStatus } from "lib/automations/types"
 
 /**
  * Pure model of the "Channels" feature (the route stays `/lines` and the code still says "line"): the three channel
@@ -32,8 +32,8 @@ export type BotsLineChoiceDelivery = "buttons" | "text_menu" | "quick_replies"
 
 export type BotsLineTransport = "whatsapp_qr" | "whatsapp_cloud" | "instagram" | "sms"
 
-/** An automation (sales bot) that lists this line in its channel bindings. */
-export type BotsLineBot = { id: string; name: string; status: SalesBotStatus }
+/** An advanced automation that lists this line in its channel bindings. */
+export type BotsLineBot = { id: string; name: string; status: AdvancedAutomationStatus }
 
 /** An AI agent bound to this line. `active` is the binding's own state: the agent answers on this line. */
 export type BotsLineAgent = { id: string; name: string; status: AgentStatus; active: boolean }
@@ -142,7 +142,7 @@ export function mapSmsSession(s: ISmsSession): BotsLine {
 }
 
 /** An automation runs on a line when one of its channel bindings lists that exact session. */
-export function attachBots(lines: BotsLine[], bots: SalesBotListItem[]): BotsLine[] {
+export function attachBots(lines: BotsLine[], bots: AdvancedAutomationListItem[]): BotsLine[] {
   return lines.map((line) => {
     const onLine = bots
       .filter((bot) => bot.channels.some((c) => c.channel === line.channel && c.enabledSessionIds.includes(line.id)))

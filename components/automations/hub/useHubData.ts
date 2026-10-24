@@ -6,8 +6,8 @@ import type { ChannelFilterValue } from "components/automations/ui/ChannelFilter
 import type {
   AutomationListItem,
   AutomationListResponse,
-  SalesBotListItem,
-  SalesBotListResponse,
+  AdvancedAutomationListItem,
+  AdvancedAutomationListResponse,
 } from "lib/automations/types"
 
 /** Debounce for the search box: one server round trip per pause, not per keystroke. */
@@ -18,7 +18,7 @@ const filterKey = (f: Filters) => `${f.q.trim()}|${f.channel}|${f.page}`
 
 type HubState = {
   rules: AutomationListResponse | null
-  bots: SalesBotListResponse | null
+  bots: AdvancedAutomationListResponse | null
   /** Tab badges; `null` = that count could not be loaded (never shown as 0). */
   counts: HubData["counts"]
   /** The filter each tab's list was loaded with; `null` = never loaded (only a 1-item count peek exists). */
@@ -103,7 +103,7 @@ export function useHubData(initial: HubData) {
   const patchRule = useCallback((id: string, patch: Partial<AutomationListItem>) => {
     setState((s) => (s.rules ? { ...s, rules: { ...s.rules, items: s.rules.items.map((r) => (r.id === id ? { ...r, ...patch } : r)) } } : s))
   }, [])
-  const patchBot = useCallback((id: string, patch: Partial<SalesBotListItem>) => {
+  const patchBot = useCallback((id: string, patch: Partial<AdvancedAutomationListItem>) => {
     setState((s) => (s.bots ? { ...s, bots: { ...s.bots, items: s.bots.items.map((b) => (b.id === id ? { ...b, ...patch } : b)) } } : s))
   }, [])
   const addActiveRules = useCallback((delta: number) => {

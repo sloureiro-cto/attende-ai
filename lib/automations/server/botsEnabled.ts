@@ -4,7 +4,7 @@ import { auth } from "auth"
 import { fetchBotsEntitlement } from "./botsEntitlement"
 
 /**
- * Server-side read of the `bots` entitlement, memoized per request: the workspace's `entitlements.bots`
+ * Server-side read of the `advancedAutomations` entitlement, memoized per request: the workspace's `entitlements.advancedAutomations`
  * from the backend. Fails closed: any error (backend down, no session) means "off".
  */
 export const isBotsEnabled = cache(async (): Promise<boolean> => {

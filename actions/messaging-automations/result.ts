@@ -1,4 +1,4 @@
-import type { SalesBotIssue } from "lib/automations/types"
+import type { AdvancedAutomationIssue } from "lib/automations/types"
 
 type ActionOk<T> = { success: true; data: T }
 export type ActionErr = {
@@ -7,7 +7,7 @@ export type ActionErr = {
   error: string
   /** HTTP status when the failure came from the API (409 = changed by someone else). */
   status?: number
-  /** Structured validation problems (sales bots). */
-  issues?: SalesBotIssue[]
+  /** Structured validation problems (advanced automations). */
+  issues?: AdvancedAutomationIssue[]
 }
 export type ActionResult<T> = ActionOk<T> | ActionErr

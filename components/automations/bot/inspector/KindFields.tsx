@@ -33,19 +33,19 @@ export function KindFields(props: KindProps) {
           minutes={node.minutes}
           max={SALES_BOT_LIMITS.waitMinutesMax}
           t={props.t}
-          label={props.t("salesBotFieldWait")}
+          label={props.t("advancedAutomationFieldWait")}
           onChange={(minutes) => props.patch({ minutes })}
         />
       )
     case "ai_agent":
       return <AiAgentFields {...props} node={node} />
-    case "goto_bot":
+    case "goto_automation":
       return <GotoBotFields {...props} node={node} />
     case "set_field":
       return <SetFieldFields {...props} node={node} />
     case "move_stage":
       return (
-        <FieldBlock label={props.t("salesBotFieldStage")}>
+        <FieldBlock label={props.t("advancedAutomationFieldStage")}>
           <StagePicker
             value={stageOfNode(node)}
             projects={props.ctx.crmProjects}
@@ -57,7 +57,7 @@ export function KindFields(props: KindProps) {
       )
     case "add_label":
       return (
-        <FieldBlock label={props.t("salesBotFieldLabel")}>
+        <FieldBlock label={props.t("advancedAutomationFieldLabel")}>
           <BotLabelPicker
             labelText={node.labelText}
             projectId={node.projectId}
@@ -73,7 +73,7 @@ export function KindFields(props: KindProps) {
         <div className="flex flex-col gap-3">
           <TextInput
             size="small"
-            label={props.t("salesBotFieldTaskTitle")}
+            label={props.t("advancedAutomationFieldTaskTitle")}
             value={node.title}
             maxLength={140}
             onChange={(e) => props.patch({ title: e.target.value })}
@@ -81,16 +81,16 @@ export function KindFields(props: KindProps) {
             removeOptionalText
           />
           <p className="rounded-md bg-warning-clean px-3 py-2 text-body-12 text-warning-darkest">
-            {props.t("salesBotTaskUnsupported")}
+            {props.t("advancedAutomationTaskUnsupported")}
           </p>
         </div>
       )
     case "webhook":
       return (
-        <FieldBlock hint={props.t("salesBotWebhookHint")}>
+        <FieldBlock hint={props.t("advancedAutomationWebhookHint")}>
           <TextInput
             size="small"
-            label={props.t("salesBotFieldUrl")}
+            label={props.t("advancedAutomationFieldUrl")}
             value={node.url}
             placeholder="https://"
             maxLength={2000}
@@ -103,6 +103,6 @@ export function KindFields(props: KindProps) {
     case "handoff":
       return <HandoffFields {...props} node={node} />
     case "stop":
-      return <p className="text-body-12 text-neutral-500">{props.t("salesBotStopHint")}</p>
+      return <p className="text-body-12 text-neutral-500">{props.t("advancedAutomationStopHint")}</p>
   }
 }

@@ -31,7 +31,7 @@ type Props = {
   t: AutomationsTFn
   /** Channels that cannot be selected (e.g. comment trigger is Instagram only). */
   disabledChannels?: AutomationChannel[]
-  /** Sales bots always run on explicit accounts: there is no "all accounts" default. */
+  /** Advanced automations always run on explicit accounts: there is no "all accounts" default. */
   requireAccount?: boolean
 }
 
@@ -104,7 +104,7 @@ export function ChannelPicker({ value, onChange, sessions, t, disabledChannels =
                   <p className="text-body-12 text-neutral-500">{t("automationsEditorAccountUnavailable")}</p>
                 )}
                 <p className="text-body-12 text-neutral-500">
-                  {selected.length === 0 ? t(requireAccount ? "salesBotPickAccount" : "automationsEditorAllAccounts") : t("automationsEditorSomeAccounts", { count: selected.length })}
+                  {selected.length === 0 ? t(requireAccount ? "advancedAutomationPickAccount" : "automationsEditorAllAccounts") : t("automationsEditorSomeAccounts", { count: selected.length })}
                 </p>
               </div>
             )}

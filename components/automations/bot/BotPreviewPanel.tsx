@@ -3,13 +3,13 @@
 import { RotateCcw, Send, X } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { previewSalesBotAction } from "actions/messaging-automations/salesBots"
+import { previewAdvancedAutomationAction } from "actions/messaging-automations/advancedAutomations"
 import { automationsKey, useAutomationsT } from "components/automations/ui/useAutomationsT"
 import Button from "components/Button/Button"
 import IconButton from "components/IconButton/IconButton"
 import TextInput from "components/TextInput/TextInput"
 import type { BotDraft } from "lib/automations/botBuilderState"
-import type { AutomationChannel, PreviewEffect, SalesBotChoice } from "lib/automations/types"
+import type { AutomationChannel, PreviewEffect, AdvancedAutomationChoice } from "lib/automations/types"
 
 type Bubble =
   | { id: number; side: "bot"; text: string; warnings: string[] }
@@ -26,7 +26,7 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
   const channel: AutomationChannel = draft.channels[0]?.channel ?? "whatsapp"
   const [bubbles, setBubbles] = useState<Bubble[]>([])
   const [state, setState] = useState<Record<string, unknown> | undefined>()
-  const [choices, setChoices] = useState<SalesBotChoice[]>([])
+  const [choices, setChoices] = useState<AdvancedAutomationChoice[]>([])
   const [replyMode, setReplyMode] = useState<"none" | "buttons" | "list" | "free">("none")
   const [finished, setFinished] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -41,7 +41,7 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })
   }, [bubbles])
 
-  const systemLabel = useCallback((effect: PreviewEffect) => t(automationsKey(`salesBotEffect_${effect.type}`)), [t])
+  const systemLabel = useCallback((effect: PreviewEffect) => t(automationsKey(`advancedAutomationEffect_${effect.type}`)), [t])
 
   const run = useCallback(
     async (
@@ -51,8 +51,8 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
       const mine = epoch.current
       setBusy(true)
       setError(null)
-      const res = await previewSalesBotAction({
-        bot: { startNodeId: draft.startNodeId, nodes: draft.nodes, edges: draft.edges },
+      const res = await previewAdvancedAutomationAction({
+        automation: { startNodeId: draft.startNodeId, nodes: draft.nodes, edges: draft.edges },
         channel,
         event,
         ...(prev ? { state: prev } : {}),
@@ -60,11 +60,11 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
       if (mine !== epoch.current) return
       setBusy(false)
       if (!res.success) {
-        setError(res.issues?.[0]?.message || res.error || t("salesBotPreviewError"))
+        setError(res.issues?.[0]?.message || res.error || t("advancedAutomationPreviewError"))
         return
       }
       const next: Bubble[] = []
-      let lastChoices: SalesBotChoice[] = []
+      let lastChoices: AdvancedAutomationChoice[] = []
       let lastMode: typeof replyMode = "none"
       for (const effect of res.data.effects) {
         if (SILENT_EFFECTS.has(effect.type)) continue
@@ -124,16 +124,16 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
 
   return (
     <aside
-      aria-label={t("salesBotPreviewTitle")}
+      aria-label={t("advancedAutomationPreviewTitle")}
       className="absolute inset-y-4 right-4 z-20 flex w-[340px] flex-col overflow-hidden rounded-lg border border-neutral-border bg-white shadow-xl"
     >
       <div className="flex items-center gap-2 border-b border-neutral-50 p-3">
         <div className="min-w-0 flex-1">
-          <p className="text-body-14 font-semibold text-neutral-900">{t("salesBotPreviewTitle")}</p>
-          <p className="text-body-11 text-neutral-500">{t("salesBotPreviewHint")}</p>
+          <p className="text-body-14 font-semibold text-neutral-900">{t("advancedAutomationPreviewTitle")}</p>
+          <p className="text-body-11 text-neutral-500">{t("advancedAutomationPreviewHint")}</p>
         </div>
-        <IconButton type="button" size="large" variant="ghost" aria-label={t("salesBotPreviewRestart")} onClick={restart} icon={<RotateCcw />} />
-        <IconButton type="button" size="large" variant="ghost" aria-label={t("salesBotClose")} onClick={onClose} icon={<X />} />
+        <IconButton type="button" size="large" variant="ghost" aria-label={t("advancedAutomationPreviewRestart")} onClick={restart} icon={<RotateCcw />} />
+        <IconButton type="button" size="large" variant="ghost" aria-label={t("advancedAutomationClose")} onClick={onClose} icon={<X />} />
       </div>
 
       <div ref={scroller} className="flex flex-1 flex-col gap-2 overflow-y-auto bg-neutral-10 p-3" aria-live="polite">
@@ -162,7 +162,7 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
           )
         )}
         {finished ? (
-          <p className="self-center text-body-12 font-medium text-neutral-500">{t("salesBotPreviewEnded")}</p>
+          <p className="self-center text-body-12 font-medium text-neutral-500">{t("advancedAutomationPreviewEnded")}</p>
         ) : null}
         {error ? <p className="rounded-md bg-error-clean px-3 py-2 text-body-12 text-error-darkest">{error}</p> : null}
       </div>
@@ -187,8 +187,8 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
           >
             <TextInput
               size="small"
-              aria-label={t("salesBotPreviewReply")}
-              placeholder={t("salesBotPreviewReply")}
+              aria-label={t("advancedAutomationPreviewReply")}
+              placeholder={t("advancedAutomationPreviewReply")}
               value={text}
               onChange={(e) => setText(e.target.value)}
               containerClassName="min-w-0 flex-1"
@@ -199,7 +199,7 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
               type="submit"
               disabled={busy || !text.trim()}
               startIcon={<Send className="size-3.5" />}
-              aria-label={t("salesBotPreviewSend")}
+              aria-label={t("advancedAutomationPreviewSend")}
             />
           </form>
         ) : null}
@@ -211,14 +211,14 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
             disabled={busy}
             onClick={() => void run({ type: "timer" }, state)}
           >
-            {t("salesBotPreviewTimer")}
+            {t("advancedAutomationPreviewTimer")}
           </Button>
         ) : (
           <Button size="small" variant="secondary" style="outline" onClick={restart}>
-            {t("salesBotPreviewRestart")}
+            {t("advancedAutomationPreviewRestart")}
           </Button>
         )}
-        <p className="text-body-11 text-neutral-500">{t("salesBotPreviewCaveat")}</p>
+        <p className="text-body-11 text-neutral-500">{t("advancedAutomationPreviewCaveat")}</p>
       </div>
     </aside>
   )

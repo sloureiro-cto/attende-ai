@@ -21,7 +21,7 @@ type Props = {
   /** Optional heading inside the popover. */
   title?: string
   disabledChannels?: AutomationChannel[]
-  /** Sales bots always run on explicit accounts: there is no "all accounts" default. */
+  /** Advanced automations always run on explicit accounts: there is no "all accounts" default. */
   requireAccount?: boolean
 }
 

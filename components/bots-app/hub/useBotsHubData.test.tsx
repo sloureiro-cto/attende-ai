@@ -1,13 +1,13 @@
 import { act, renderHook, waitFor } from "@testing-library/react"
-import type { SalesBotListItem, SalesBotListResponse } from "lib/automations/types"
+import type { AdvancedAutomationListItem, AdvancedAutomationListResponse } from "lib/automations/types"
 import { useBotsHubData } from "./useBotsHubData"
 
 const listAction = jest.fn()
-jest.mock("actions/messaging-automations/salesBots", () => ({ listSalesBotsAction: (...args: unknown[]) => listAction(...args) }))
+jest.mock("actions/messaging-automations/advancedAutomations", () => ({ listAdvancedAutomationsAction: (...args: unknown[]) => listAction(...args) }))
 
-const bot = (id: string, status = "active"): SalesBotListItem =>
-  ({ id, name: id, status, channels: [], stepCount: 1, version: 1, updatedAt: "t", stats30d: { started: 0, completed: 0 } }) as SalesBotListItem
-const page = (ids: string[], total = ids.length): SalesBotListResponse => ({
+const bot = (id: string, status = "active"): AdvancedAutomationListItem =>
+  ({ id, name: id, status, channels: [], stepCount: 1, version: 1, updatedAt: "t", stats30d: { started: 0, completed: 0 } }) as AdvancedAutomationListItem
+const page = (ids: string[], total = ids.length): AdvancedAutomationListResponse => ({
   items: ids.map((id) => bot(id)),
   total,
   page: 1,

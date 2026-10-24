@@ -12,13 +12,13 @@ export function SplitFields({ node, patch, t }: Narrow<"split">) {
   const total = node.paths.reduce((n, p) => n + p.percent, 0)
   const remainder = Math.max(0, 100 - total)
   return (
-    <FieldBlock label={t("salesBotFieldPaths")} hint={t("salesBotSplitHint", { percent: remainder })}>
+    <FieldBlock label={t("advancedAutomationFieldPaths")} hint={t("advancedAutomationSplitHint", { percent: remainder })}>
       <div className="flex flex-col gap-2">
         {node.paths.map((p, i) => (
           <div key={p.id} className="flex items-center gap-2">
             <TextInput
               size="small"
-              aria-label={t("salesBotPathName", { n: i + 1 })}
+              aria-label={t("advancedAutomationPathName", { n: i + 1 })}
               value={p.name}
               maxLength={30}
               containerClassName="min-w-0 flex-1"
@@ -32,7 +32,7 @@ export function SplitFields({ node, patch, t }: Narrow<"split">) {
               type="number"
               min={0}
               max={100}
-              aria-label={t("salesBotPathPercent", { n: i + 1 })}
+              aria-label={t("advancedAutomationPathPercent", { n: i + 1 })}
               value={String(p.percent)}
               containerClassName="w-20"
               hideErrorMessage
@@ -50,7 +50,7 @@ export function SplitFields({ node, patch, t }: Narrow<"split">) {
               type="button"
               size="large"
               variant="ghost"
-              aria-label={t("salesBotRemovePath")}
+              aria-label={t("advancedAutomationRemovePath")}
               disabled={node.paths.length <= 1}
               onClick={() => patch({ paths: node.paths.filter((x) => x.id !== p.id) })}
               className="hover:text-error-darkest"
@@ -58,7 +58,7 @@ export function SplitFields({ node, patch, t }: Narrow<"split">) {
             />
           </div>
         ))}
-        {total > 100 ? <p className="text-body-12 text-error-darkest">{t("salesBotSplitOver")}</p> : null}
+        {total > 100 ? <p className="text-body-12 text-error-darkest">{t("advancedAutomationSplitOver")}</p> : null}
         <Button
           size="small"
           variant="secondary"
@@ -74,7 +74,7 @@ export function SplitFields({ node, patch, t }: Narrow<"split">) {
             })
           }
         >
-          {t("salesBotAddPath")}
+          {t("advancedAutomationAddPath")}
         </Button>
       </div>
     </FieldBlock>

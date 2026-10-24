@@ -1,6 +1,6 @@
 import { listAttendeAgentsAction } from "actions/attende/agents"
 import { listInstagramSessionsAction } from "actions/instagram-lite/sessions"
-import { listSalesBotsAction } from "actions/messaging-automations/salesBots"
+import { listAdvancedAutomationsAction } from "actions/messaging-automations/advancedAutomations"
 import { listSmsSessionsAction } from "actions/sms-lite/sessions"
 import { listWhatsAppSessionsAction } from "actions/whatsapp-lite"
 import type { AutomationChannel } from "lib/automations/types"
@@ -42,7 +42,7 @@ export async function loadLines({ withBots = true }: Options = {}): Promise<Line
     listWhatsAppSessionsAction(),
     listInstagramSessionsAction(),
     listSmsSessionsAction(),
-    withBots ? settle(listSalesBotsAction({ limit: BOTS_PAGE_LIMIT })) : Promise.resolve(null),
+    withBots ? settle(listAdvancedAutomationsAction({ limit: BOTS_PAGE_LIMIT })) : Promise.resolve(null),
     withBots ? settle(listAttendeAgentsAction()) : Promise.resolve(null),
   ])
 

@@ -1,8 +1,8 @@
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { getSalesBotAction, getSalesBotStatsAction } from "actions/messaging-automations/salesBots"
+import { getAdvancedAutomationAction, getAdvancedAutomationStatsAction } from "actions/messaging-automations/advancedAutomations"
 import { BotStatsView } from "components/bots-app/stats/BotStatsView"
-import { getSalesBotStatsSeriesAction } from "components/bots-app/stats/statsActions"
+import { getAdvancedAutomationStatsSeriesAction } from "components/bots-app/stats/statsActions"
 import { parseStatsRange } from "components/bots-app/stats/statsMath"
 
 export const metadata: Metadata = { title: "Automation performance" }
@@ -15,9 +15,9 @@ export default async function BotStatsPage({ params, searchParams }: Props) {
 
   // The bot, the funnel totals and the daily series are independent: ask for all three at once.
   const [bot, stats, series] = await Promise.all([
-    getSalesBotAction(id),
-    getSalesBotStatsAction(id, days),
-    getSalesBotStatsSeriesAction(id, days),
+    getAdvancedAutomationAction(id),
+    getAdvancedAutomationStatsAction(id, days),
+    getAdvancedAutomationStatsSeriesAction(id, days),
   ])
 
   if (!bot.success) {

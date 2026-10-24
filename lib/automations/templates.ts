@@ -3,7 +3,7 @@ import {
   createVisualWhenForType,
 } from "lib/whatsapp-lite/whatsappTemplateRuleBuilder"
 import { createEmptyFlow, createPath, createRouter, type EditorFlow, newStep } from "./flowModel"
-import type { SalesBotEdge, SalesBotNode } from "./types"
+import type { AdvancedAutomationEdge, AdvancedAutomationNode } from "./types"
 
 export type RuleTemplateId = "human" | "afterHours" | "distribute"
 export type BotTemplateId = "quote"
@@ -53,13 +53,13 @@ type BotTemplateLabels = {
   info: string
 }
 
-type BotGraph = { startNodeId: string; nodes: SalesBotNode[]; edges: SalesBotEdge[] }
+type BotGraph = { startNodeId: string; nodes: AdvancedAutomationNode[]; edges: AdvancedAutomationEdge[] }
 
-const edge = (from: string, output: string, to: string): SalesBotEdge => ({ id: `e_${from}_${output}`, from, output, to })
+const edge = (from: string, output: string, to: string): AdvancedAutomationEdge => ({ id: `e_${from}_${output}`, from, output, to })
 
 export function buildBotTemplate(id: BotTemplateId, labels: BotTemplateLabels): BotGraph {
   void id // only one template today
-  const nodes: SalesBotNode[] = [
+  const nodes: AdvancedAutomationNode[] = [
     {
       id: "welcome",
       kind: "send_message",
@@ -81,7 +81,7 @@ export function buildBotTemplate(id: BotTemplateId, labels: BotTemplateLabels): 
     { id: "info", kind: "send_message", x: 520, y: 460, text: labels.info, replyMode: "none" },
     { id: "stop", kind: "stop", x: 920, y: 260 },
   ]
-  const edges: SalesBotEdge[] = [
+  const edges: AdvancedAutomationEdge[] = [
     edge("welcome", "quote", "ask_details"),
     edge("welcome", "human", "handoff"),
     edge("welcome", "info", "info"),

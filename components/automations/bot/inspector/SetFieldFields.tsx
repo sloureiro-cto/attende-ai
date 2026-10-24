@@ -7,23 +7,23 @@ import { CardFieldPicker, FieldBlock } from "../BotInspectorControls"
 export function SetFieldFields({ node, ctx, lookups, patch, t }: Narrow<"set_field">) {
   return (
     <>
-      <FieldBlock label={t("salesBotFieldField")}>
+      <FieldBlock label={t("advancedAutomationFieldField")}>
         <CardFieldPicker
           value={node.fieldId}
           onChange={(fieldId) => patch({ fieldId })}
           projects={ctx.crmProjects}
           lookups={lookups}
           t={t}
-          placeholder={t("salesBotPickField")}
+          placeholder={t("advancedAutomationPickField")}
         />
       </FieldBlock>
       <TextInput
         size="small"
-        label={t("salesBotFieldValue")}
+        label={t("advancedAutomationFieldValue")}
         value={node.value}
         maxLength={1000}
         onChange={(e) => patch({ value: e.target.value })}
-        helperText={t("salesBotValueHint")}
+        helperText={t("advancedAutomationValueHint")}
         hideErrorMessage
         removeOptionalText
       />

@@ -8,11 +8,11 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import {
-  createSalesBotAction,
-  getSalesBotAction,
-  getSalesBotStatsAction,
-  updateSalesBotAction,
-} from "actions/messaging-automations/salesBots"
+  createAdvancedAutomationAction,
+  getAdvancedAutomationAction,
+  getAdvancedAutomationStatsAction,
+  updateAdvancedAutomationAction,
+} from "actions/messaging-automations/advancedAutomations"
 import type { IColumn } from "app/_types/Column"
 import { showToast } from "app/utils/showToast"
 import { useAutomationsT } from "components/automations/ui/useAutomationsT"
@@ -47,10 +47,10 @@ import type { EditorContextData } from "lib/automations/editorContext"
 import { type BotTemplateId, buildBotTemplate } from "lib/automations/templates"
 import type {
   AutomationChannel,
-  SalesBotDetail,
-  SalesBotIssue,
-  SalesBotNodeKind,
-  SalesBotStatsSummary,
+  AdvancedAutomationDetail,
+  AdvancedAutomationIssue,
+  AdvancedAutomationNodeKind,
+  AdvancedAutomationStatsSummary,
 } from "lib/automations/types"
 import type { AutomationsTranslationKey } from "lib/i18n/translations/automations"
 import { BotCanvas } from "./BotCanvas"
@@ -67,14 +67,14 @@ const BotPreviewPanel = dynamic(() => import("./BotPreviewPanel").then((m) => m.
 
 type Props = {
   /** Saved bot, or null when creating. */
-  initial: SalesBotDetail | null
+  initial: AdvancedAutomationDetail | null
   context: EditorContextData
   /** Query-string seeds for a new bot (from the "New automation" modal). */
   seed?: { channel?: AutomationChannel; template?: BotTemplateId }
 }
 
 function buildInitialDraft(
-  initial: SalesBotDetail | null,
+  initial: AdvancedAutomationDetail | null,
   seed: Props["seed"],
   t: ReturnType<typeof useAutomationsT>["t"]
 ): BotDraft {
@@ -85,17 +85,17 @@ function buildInitialDraft(
   })
   if (seed?.template) {
     const graph = buildBotTemplate(seed.template, {
-      name: t("salesBotTplName"),
-      welcome: t("salesBotTplWelcome"),
-      optionQuote: t("salesBotTplOptionQuote"),
-      optionHuman: t("salesBotTplOptionHuman"),
-      optionInfo: t("salesBotTplOptionInfo"),
-      askDetails: t("salesBotTplAskDetails"),
-      thanks: t("salesBotTplThanks"),
-      handoff: t("salesBotTplHandoff"),
-      info: t("salesBotTplInfo"),
+      name: t("advancedAutomationTplName"),
+      welcome: t("advancedAutomationTplWelcome"),
+      optionQuote: t("advancedAutomationTplOptionQuote"),
+      optionHuman: t("advancedAutomationTplOptionHuman"),
+      optionInfo: t("advancedAutomationTplOptionInfo"),
+      askDetails: t("advancedAutomationTplAskDetails"),
+      thanks: t("advancedAutomationTplThanks"),
+      handoff: t("advancedAutomationTplHandoff"),
+      info: t("advancedAutomationTplInfo"),
     })
-    return { ...base, name: t("salesBotTplName"), ...graph }
+    return { ...base, name: t("advancedAutomationTplName"), ...graph }
   }
   return base
 }
@@ -108,22 +108,22 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
   )
   const { draft, selectedId, dirty } = state
 
-  const botId = draft.id
+  const automationId = draft.id
   const fetchUpdatedAt = useCallback(async () => {
-    if (!botId) return null
-    const res = await getSalesBotAction(botId)
+    if (!automationId) return null
+    const res = await getAdvancedAutomationAction(automationId)
     return res.success ? res.data.updatedAt : null
-  }, [botId])
-  const { saving, conflict, setConflict, save: runSave, overwrite } = useSavableDocument<SalesBotDetail, { issues?: SalesBotIssue[] }>({
+  }, [automationId])
+  const { saving, conflict, setConflict, save: runSave, overwrite } = useSavableDocument<AdvancedAutomationDetail, { issues?: AdvancedAutomationIssue[] }>({
     initialUpdatedAt: initial?.updatedAt,
     fetchUpdatedAt,
   })
-  const [issues, setIssues] = useState<SalesBotIssue[]>([])
+  const [issues, setIssues] = useState<AdvancedAutomationIssue[]>([])
   const [previewOpen, setPreviewOpen] = useState(false)
   // `?stats=1` (e.g. from the stats page) opens the builder with the stats overlay already on.
   const statsRequested = useSearchParams()?.get("stats") === "1"
   const [showStats, setShowStats] = useState(statsRequested)
-  const [stats, setStats] = useState<SalesBotStatsSummary | null>(null)
+  const [stats, setStats] = useState<AdvancedAutomationStatsSummary | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
   const lookups = useBotLookups(context.workspaceId, draft.id)
   // Name the move-stage cards ("Sales · Won"): columns of the referenced boards load in the background.
@@ -142,8 +142,8 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
   // Stable identity: cards re-render only when a name actually resolves or changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content on purpose
   const stageLabels = useMemo(() => stageLabelsRaw, [stageLabelsKey])
-  const adder = useRef<((kind: SalesBotNodeKind, preset?: Record<string, unknown>) => void) | null>(null)
-  const registerAdder = useCallback((fn: ((kind: SalesBotNodeKind, preset?: Record<string, unknown>) => void) | null) => {
+  const adder = useRef<((kind: AdvancedAutomationNodeKind, preset?: Record<string, unknown>) => void) | null>(null)
+  const registerAdder = useCallback((fn: ((kind: AdvancedAutomationNodeKind, preset?: Record<string, unknown>) => void) | null) => {
     adder.current = fn
   }, [])
 
@@ -158,19 +158,19 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
   )
   const blockers = useMemo(() => {
     const list: AutomationsTranslationKey[] = []
-    if (!draft.name.trim()) list.push("salesBotBlockName")
-    if (draft.channels.length === 0) list.push("salesBotBlockChannels")
+    if (!draft.name.trim()) list.push("advancedAutomationBlockName")
+    if (draft.channels.length === 0) list.push("advancedAutomationBlockChannels")
     // The backend refuses to activate a bot that runs on no account (unlike rules, there is no "all accounts").
-    else if (!draft.channels.some((c) => c.enabledSessionIds.length > 0)) list.push("salesBotBlockAccounts")
-    if (draft.nodes.length === 0) list.push("salesBotBlockNoSteps")
-    else if (!draft.startNodeId) list.push("salesBotBlockNoStart")
-    if (problemNodeIds.length > 0) list.push("salesBotBlockSteps")
+    else if (!draft.channels.some((c) => c.enabledSessionIds.length > 0)) list.push("advancedAutomationBlockAccounts")
+    if (draft.nodes.length === 0) list.push("advancedAutomationBlockNoSteps")
+    else if (!draft.startNodeId) list.push("advancedAutomationBlockNoStart")
+    if (problemNodeIds.length > 0) list.push("advancedAutomationBlockSteps")
     return list
   }, [draft.name, draft.channels, draft.nodes.length, draft.startNodeId, problemNodeIds.length])
 
   const { confirmLeave, leaveDialog } = useLeaveConfirm({
     dirty,
-    title: t("salesBotLeaveConfirm"),
+    title: t("advancedAutomationLeaveConfirm"),
     cancelLabel: t("automationsCancel"),
     leaveLabel: t("automationsLeave"),
   })
@@ -189,7 +189,7 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
   const active = draft.status === "active"
   const toggleActive = (next: boolean) => {
     if (next && blockers.length > 0) {
-      showToast("error", t("salesBotCannotActivate", { reason: t(blockers[0]!) }))
+      showToast("error", t("advancedAutomationCannotActivate", { reason: t(blockers[0]!) }))
       return
     }
     dispatch({ type: "meta", patch: { status: next ? "active" : "paused" } })
@@ -198,11 +198,11 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
   const save = async () => {
     if (saving) return
     if (!draft.name.trim()) {
-      showToast("error", t("salesBotBlockName"))
+      showToast("error", t("advancedAutomationBlockName"))
       return
     }
     if (draft.status === "active" && blockers.length > 0) {
-      showToast("error", t("salesBotCannotActivate", { reason: t(blockers[0]!) }))
+      showToast("error", t("advancedAutomationCannotActivate", { reason: t(blockers[0]!) }))
       return
     }
     setIssues([])
@@ -210,17 +210,17 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
     const input = draftToInput(sent)
     await runSave(
       (expectedUpdatedAt) =>
-        sent.id ? updateSalesBotAction(sent.id, { ...input, ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}) }) : createSalesBotAction(input),
+        sent.id ? updateAdvancedAutomationAction(sent.id, { ...input, ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}) }) : createAdvancedAutomationAction(input),
       (res) => {
         if (!res.success) {
           if (res.status !== 409) {
             if (res.issues?.length) setIssues(res.issues)
-            showToast("error", res.error || t("salesBotSaveError"))
+            showToast("error", res.error || t("advancedAutomationSaveError"))
           }
           return
         }
         dispatch({ type: "saved", sent, id: res.data.id, status: res.data.status })
-        showToast("success", t("salesBotSaved"))
+        showToast("success", t("advancedAutomationSaved"))
         if (!sent.id) router.replace(STUDIO_ROUTES.bot(res.data.id))
       }
     )
@@ -229,10 +229,10 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
   const loadStats = useCallback(async () => {
     if (!draft.id) return
     setStatsLoading(true)
-    const res = await getSalesBotStatsAction(draft.id, 30)
+    const res = await getAdvancedAutomationStatsAction(draft.id, 30)
     setStatsLoading(false)
     if (res.success) setStats(res.data)
-    else showToast("error", t("salesBotStatsError"))
+    else showToast("error", t("advancedAutomationStatsError"))
   }, [draft.id, t])
 
   useEffect(() => {
@@ -257,7 +257,7 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
   const closeInspector = useCallback(() => dispatch({ type: "select", id: null }), [])
   const channelList = useMemo(() => draft.channels.map((c) => c.channel), [draft.channels])
   const addStep = useCallback(
-    (kind: SalesBotNodeKind, preset?: Record<string, unknown>) => adder.current?.(kind, preset),
+    (kind: AdvancedAutomationNodeKind, preset?: Record<string, unknown>) => adder.current?.(kind, preset),
     []
   )
   const setChannels = useCallback(
@@ -272,19 +272,19 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
           <Link
             href={STUDIO_ROUTES.hub}
             onClick={confirmLeave}
-            aria-label={t("salesBotBack")}
+            aria-label={t("advancedAutomationBack")}
             className="flex size-9 items-center justify-center rounded border border-neutral-50 text-neutral-700 hover:bg-neutral-10"
           >
             <ArrowLeft className="size-4" />
           </Link>
           <div className="flex min-w-0 flex-col">
-            <span className="text-body-12 text-neutral-400">{t("salesBotBreadcrumb")}</span>
+            <span className="text-body-12 text-neutral-400">{t("advancedAutomationBreadcrumb")}</span>
             <label className="flex items-center gap-1.5">
-              <span className="sr-only">{t("salesBotNameLabel")}</span>
+              <span className="sr-only">{t("advancedAutomationNameLabel")}</span>
               <Input
                 value={draft.name}
                 maxLength={80}
-                placeholder={t("salesBotNamePlaceholder")}
+                placeholder={t("advancedAutomationNamePlaceholder")}
                 onChange={(e) => dispatch({ type: "meta", patch: { name: e.target.value } })}
                 className="-ml-1.5 h-8 w-64 border-transparent bg-transparent px-1.5 text-body-16 font-semibold text-neutral-800 hover:border-neutral-50 focus:border-primary"
               />
@@ -302,19 +302,19 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
               startIcon={<TriangleAlert aria-hidden />}
               onClick={() => dispatch({ type: "select", id: problemNodeIds[0]! })}
             >
-              {t("salesBotProblems", { count: problemNodeIds.length })}
+              {t("advancedAutomationProblems", { count: problemNodeIds.length })}
             </Button>
           ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex h-9 cursor-pointer items-center gap-2 rounded border border-neutral-50 bg-white px-3 text-body-13 font-semibold text-neutral-900">
-            <Switch size="sm" checked={active} onCheckedChange={toggleActive} aria-label={t("salesBotActiveToggle")} />
+            <Switch size="sm" checked={active} onCheckedChange={toggleActive} aria-label={t("advancedAutomationActiveToggle")} />
             {active
-              ? t("salesBotStatusActive")
+              ? t("advancedAutomationStatusActive")
               : draft.status === "draft"
-              ? t("salesBotStatusDraft")
-              : t("salesBotStatusPaused")}
+              ? t("advancedAutomationStatusDraft")
+              : t("advancedAutomationStatusPaused")}
           </label>
           <Button
             size="medium"
@@ -327,14 +327,14 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
               setPreviewOpen((o) => !o)
             }}
           >
-            {t("salesBotPreview")}
+            {t("advancedAutomationPreview")}
           </Button>
           <Link
             href={STUDIO_ROUTES.hub}
             onClick={confirmLeave}
             className="flex h-9 items-center rounded border border-neutral-50 bg-white px-4 text-body-14 font-semibold text-neutral-900 hover:bg-neutral-10"
           >
-            {t("salesBotCancel")}
+            {t("advancedAutomationCancel")}
           </Link>
           <Button
             size="medium"
@@ -342,7 +342,7 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
             disabled={saving || (!dirty && !!draft.id)}
             onClick={() => void save()}
           >
-            {t("salesBotSave")}
+            {t("advancedAutomationSave")}
           </Button>
         </div>
       </header>
@@ -352,7 +352,7 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
           role="alert"
           className="border-b border-error-lighter bg-error-clean px-5 py-2 text-body-12 text-error-darkest"
         >
-          <p className="font-semibold">{t("salesBotServerIssues")}</p>
+          <p className="font-semibold">{t("advancedAutomationServerIssues")}</p>
           <ul className="list-disc pl-5">
             {issues.slice(0, 5).map((i, n) => (
               <li key={`${i.path}-${n}`}>{i.message}</li>
@@ -399,11 +399,11 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
       <AlertDialog open={conflict} onOpenChange={setConflict}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("salesBotConflictTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("salesBotConflictBody")}</AlertDialogDescription>
+            <AlertDialogTitle>{t("advancedAutomationConflictTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("advancedAutomationConflictBody")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => window.location.reload()}>{t("salesBotConflictReload")}</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => window.location.reload()}>{t("advancedAutomationConflictReload")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => void overwrite()}>{t("automationsConflictOverwrite")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -417,10 +417,10 @@ function EmptyHint({ onAddFirst, t }: { onAddFirst: () => void; t: ReturnType<ty
   return (
     <div className={cn("pointer-events-none absolute inset-y-0 left-[248px] right-0 z-10 flex items-center justify-center")}>
       <div className="pointer-events-auto flex max-w-sm flex-col items-center gap-2 rounded-lg border border-neutral-50 bg-white p-6 text-center shadow-md">
-        <p className="text-body-14 font-semibold text-neutral-900">{t("salesBotEmptyTitle")}</p>
-        <p className="text-body-12 text-neutral-500">{t("salesBotEmptyHint")}</p>
+        <p className="text-body-14 font-semibold text-neutral-900">{t("advancedAutomationEmptyTitle")}</p>
+        <p className="text-body-12 text-neutral-500">{t("advancedAutomationEmptyHint")}</p>
         <Button size="small" onClick={onAddFirst}>
-          {t("salesBotEmptyAction")}
+          {t("advancedAutomationEmptyAction")}
         </Button>
       </div>
     </div>

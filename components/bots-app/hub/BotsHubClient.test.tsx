@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react"
-import type { SalesBotListItem, SalesBotListResponse } from "lib/automations/types"
+import type { AdvancedAutomationListItem, AdvancedAutomationListResponse } from "lib/automations/types"
 import { BotsHubClient } from "./BotsHubClient"
 
 const push = jest.fn()
@@ -18,17 +18,17 @@ jest.mock("components/automations/ui/ChannelFilter", () => ({
     </button>
   ),
 }))
-jest.mock("actions/messaging-automations/salesBots", () => ({
-  listSalesBotsAction: jest.fn().mockResolvedValue({ success: false, error: "" }),
-  updateSalesBotAction: jest.fn(),
-  deleteSalesBotAction: jest.fn(),
+jest.mock("actions/messaging-automations/advancedAutomations", () => ({
+  listAdvancedAutomationsAction: jest.fn().mockResolvedValue({ success: false, error: "" }),
+  updateAdvancedAutomationAction: jest.fn(),
+  deleteAdvancedAutomationAction: jest.fn(),
 }))
 jest.mock("actions/messaging-automations/automations", () => ({}))
 jest.mock("app/utils/showToast", () => ({ showToast: jest.fn() }))
 
-const bot = (id: string): SalesBotListItem =>
-  ({ id, name: `Bot ${id}`, status: "active", channels: [{ channel: "whatsapp", enabledSessionIds: [] }], stepCount: 4, version: 1, updatedAt: new Date().toISOString(), stats30d: { started: 10, completed: 5 } }) as SalesBotListItem
-const page = (items: SalesBotListItem[]): SalesBotListResponse => ({
+const bot = (id: string): AdvancedAutomationListItem =>
+  ({ id, name: `Bot ${id}`, status: "active", channels: [{ channel: "whatsapp", enabledSessionIds: [] }], stepCount: 4, version: 1, updatedAt: new Date().toISOString(), stats30d: { started: 10, completed: 5 } }) as AdvancedAutomationListItem
+const page = (items: AdvancedAutomationListItem[]): AdvancedAutomationListResponse => ({
   items,
   total: items.length,
   page: 1,

@@ -8,7 +8,7 @@ import { channelLabelKey } from "components/automations/ui/ChannelFilter"
 import type { AutomationsTFn } from "components/automations/ui/useAutomationsT"
 import { Switch } from "components/ui/switch"
 import { formatRelative } from "lib/automations/relativeTime"
-import type { SalesBotListItem } from "lib/automations/types"
+import type { AdvancedAutomationListItem } from "lib/automations/types"
 import { HubMessage } from "./HubParts"
 import { RowMenu } from "./RowMenu"
 
@@ -23,14 +23,14 @@ export function BotsGrid({
   onDelete,
   onNew,
 }: {
-  items: SalesBotListItem[]
+  items: AdvancedAutomationListItem[]
   loading: boolean
   filtering: boolean
   language: string
   t: AutomationsTFn
   onEdit: (id: string) => void
-  onToggle: (item: SalesBotListItem) => void
-  onDelete: (item: SalesBotListItem) => void
+  onToggle: (item: AdvancedAutomationListItem) => void
+  onDelete: (item: AdvancedAutomationListItem) => void
   onNew: () => void
 }) {
   if (items.length === 0 && filtering) return <HubMessage title={t("automationsHubEmptySearch")} />

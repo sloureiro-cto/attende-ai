@@ -12,7 +12,7 @@ jest.mock("next-auth/react", () => ({
 jest.mock("context/UserLanguageContext", () => ({ useUserLanguage: () => ({ userLanguage: "english" }) }))
 jest.mock("context/WorkspaceContext", () => ({
   useWorkspace: () => ({
-    workspaces: [{ _id: "a", name: "Alpha", entitlements: { bots: true } }],
+    workspaces: [{ _id: "a", name: "Alpha", entitlements: { advancedAutomations: true } }],
     selectedWorkspace: { _id: "a", name: "Alpha" },
   }),
 }))

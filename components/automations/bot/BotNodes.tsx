@@ -6,14 +6,14 @@ import { Handle, type NodeProps, Position, useUpdateNodeInternals } from "reactf
 import { cn } from "@/lib/utils"
 import { type AutomationsTFn, useAutomationsT } from "components/automations/ui/useAutomationsT"
 import { exitDisplayName, FIXED_EXIT_LABEL_KEYS, nodeOutputs } from "lib/automations/botGraph"
-import type { SalesBotNode } from "lib/automations/types"
+import type { AdvancedAutomationNode } from "lib/automations/types"
 import { minutesParts, NODE_META, TONE_CHIP } from "./botNodeMeta"
 import { BotStageLabelsContext } from "./botStageLabels"
 
 type NodeStat = { reached: number; reachedPct: number; exits: Record<string, number> }
 
 export type StepNodeData = {
-  node: SalesBotNode
+  node: AdvancedAutomationNode
   issues: number
   unreachable: boolean
   isStart: boolean
@@ -25,38 +25,38 @@ export type StepNodeData = {
 
 const HANDLE_CLASS = "!size-2.5 !border-2 !bg-white"
 
-function summarize(node: SalesBotNode, t: AutomationsTFn, stageLabel?: string): string {
+function summarize(node: AdvancedAutomationNode, t: AutomationsTFn, stageLabel?: string): string {
   switch (node.kind) {
     case "send_message":
-      return node.text.trim() || t("salesBotSummaryNoText")
+      return node.text.trim() || t("advancedAutomationSummaryNoText")
     case "send_meta_template":
-      return node.templateId ? t("salesBotSummaryTemplateSet") : t("salesBotSummaryNotSet")
+      return node.templateId ? t("advancedAutomationSummaryTemplateSet") : t("advancedAutomationSummaryNotSet")
     case "condition":
-      return t("salesBotSummaryRules", { count: node.rows.length })
+      return t("advancedAutomationSummaryRules", { count: node.rows.length })
     case "split":
       return node.paths.map((p) => `${p.name} ${p.percent}%`).join(" · ")
     case "wait": {
       const { value, unit } = minutesParts(node.minutes)
       return `${value} ${t(
-        unit === "days" ? "salesBotUnitDays" : unit === "hours" ? "salesBotUnitHours" : "salesBotUnitMinutes"
+        unit === "days" ? "advancedAutomationUnitDays" : unit === "hours" ? "advancedAutomationUnitHours" : "advancedAutomationUnitMinutes"
       )}`
     }
     case "ai_agent":
-      return node.instruction.trim() || t("salesBotSummaryNotSet")
-    case "goto_bot":
-      return node.botId ? t("salesBotSummaryBotSet") : t("salesBotSummaryNotSet")
+      return node.instruction.trim() || t("advancedAutomationSummaryNotSet")
+    case "goto_automation":
+      return node.automationId ? t("advancedAutomationSummaryBotSet") : t("advancedAutomationSummaryNotSet")
     case "set_field":
-      return node.fieldId ? node.value || t("salesBotSummaryEmptyValue") : t("salesBotSummaryNotSet")
+      return node.fieldId ? node.value || t("advancedAutomationSummaryEmptyValue") : t("advancedAutomationSummaryNotSet")
     case "move_stage":
-      return node.columnId ? stageLabel || t("salesBotSummaryStageSet") : t("salesBotSummaryNotSet")
+      return node.columnId ? stageLabel || t("advancedAutomationSummaryStageSet") : t("advancedAutomationSummaryNotSet")
     case "add_label":
-      return node.labelText.trim() || t("salesBotSummaryNotSet")
+      return node.labelText.trim() || t("advancedAutomationSummaryNotSet")
     case "create_task":
-      return node.title.trim() || t("salesBotSummaryNotSet")
+      return node.title.trim() || t("advancedAutomationSummaryNotSet")
     case "webhook":
-      return node.url.trim() || t("salesBotSummaryNotSet")
+      return node.url.trim() || t("advancedAutomationSummaryNotSet")
     case "handoff":
-      return t(`salesBotAssign_${node.assignMode ?? "all_crm_members"}`)
+      return t(`advancedAutomationAssign_${node.assignMode ?? "all_crm_members"}`)
     case "stop":
       return ""
   }
@@ -186,10 +186,10 @@ const StepNodeImpl = ({ data, selected }: NodeProps<StepNodeData>) => {
         {issues > 0 ? (
           <span
             className="flex shrink-0 items-center gap-1 rounded-full bg-warning-clean px-1.5 py-0.5 text-body-11 font-semibold text-warning-darkest"
-            title={t("salesBotNeedsSetup")}
+            title={t("advancedAutomationNeedsSetup")}
           >
             <AlertTriangle className="size-3" aria-hidden />
-            {t("salesBotNeedsSetup")}
+            {t("advancedAutomationNeedsSetup")}
           </span>
         ) : null}
         {showStats && stat ? (
@@ -205,7 +205,7 @@ const StepNodeImpl = ({ data, selected }: NodeProps<StepNodeData>) => {
           </p>
         ) : inlineExit ? (
           <div className="relative flex h-8 items-center justify-between gap-2 px-2.5 text-body-12 text-neutral-600">
-            <span className="line-clamp-1">{summary || t("salesBotSummaryNotSet")}</span>
+            <span className="line-clamp-1">{summary || t("advancedAutomationSummaryNotSet")}</span>
             {showStats && stat?.exits[inlineExit] !== undefined ? (
               <span className="text-body-11 text-neutral-400">{stat.exits[inlineExit]}</span>
             ) : null}
@@ -243,7 +243,7 @@ const StartNodeImpl = ({ data }: NodeProps<StartNodeData>) => {
         )}
       >
         <Play className="size-3 fill-current" aria-hidden />
-        {t("salesBotStart")}
+        {t("advancedAutomationStart")}
         <Handle type="source" position={Position.Right} id="start" className={cn(HANDLE_CLASS, "!border-primary")} />
       </div>
       {data.caption ? (

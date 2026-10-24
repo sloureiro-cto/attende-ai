@@ -1,27 +1,27 @@
 import { createBotNode, newBotId, nodeOutputs, pruneDanglingEdges, SALES_BOT_LIMITS, sanitizeNodePreset } from "./botGraph"
 import type {
   AutomationChannelBinding,
-  SalesBotDetail,
-  SalesBotEdge,
-  SalesBotNode,
-  SalesBotNodeKind,
-  SalesBotStatus,
-  SalesBotTrigger,
-  SaveSalesBotInput,
+  AdvancedAutomationDetail,
+  AdvancedAutomationEdge,
+  AdvancedAutomationNode,
+  AdvancedAutomationNodeKind,
+  AdvancedAutomationStatus,
+  AdvancedAutomationTrigger,
+  SaveAdvancedAutomationInput,
 } from "./types"
 
 /** Everything the builder edits. `id` is absent until the first save. */
 export type BotDraft = {
   id?: string
   name: string
-  status: SalesBotStatus
+  status: AdvancedAutomationStatus
   channels: AutomationChannelBinding[]
-  trigger: SalesBotTrigger
+  trigger: AdvancedAutomationTrigger
   stopOnHumanReply: boolean
   /** "" while nothing is connected to the start pill. */
   startNodeId: string
-  nodes: SalesBotNode[]
-  edges: SalesBotEdge[]
+  nodes: AdvancedAutomationNode[]
+  edges: AdvancedAutomationEdge[]
 }
 
 type BotBuilderState = {
@@ -32,7 +32,7 @@ type BotBuilderState = {
 
 export type BotBuilderAction =
   | { type: "meta"; patch: Partial<Pick<BotDraft, "name" | "status" | "channels" | "trigger" | "stopOnHumanReply">> }
-  | { type: "add"; kind: SalesBotNodeKind; x: number; y: number; preset?: Record<string, unknown> }
+  | { type: "add"; kind: AdvancedAutomationNodeKind; x: number; y: number; preset?: Record<string, unknown> }
   | { type: "patch"; id: string; patch: Record<string, unknown> }
   | { type: "move"; id: string; x: number; y: number }
   | { type: "remove"; id: string }
@@ -60,7 +60,7 @@ export function emptyDraft(over: Partial<BotDraft> = {}): BotDraft {
   }
 }
 
-export function draftFromDetail(d: SalesBotDetail): BotDraft {
+export function draftFromDetail(d: AdvancedAutomationDetail): BotDraft {
   return {
     id: d.id,
     name: d.name,
@@ -78,7 +78,7 @@ export function initialBuilderState(draft: BotDraft): BotBuilderState {
   return { draft, selectedId: null, dirty: false }
 }
 
-export function draftToInput(draft: BotDraft): SaveSalesBotInput {
+export function draftToInput(draft: BotDraft): SaveAdvancedAutomationInput {
   return {
     name: draft.name.trim(),
     status: draft.status,
@@ -111,7 +111,7 @@ export function botBuilderReducer(state: BotBuilderState, action: BotBuilderActi
 
     case "add": {
       if (draft.nodes.length >= SALES_BOT_LIMITS.nodes) return state
-      const node = { ...createBotNode(action.kind, action.x, action.y), ...sanitizeNodePreset(action.kind, action.preset) } as SalesBotNode
+      const node = { ...createBotNode(action.kind, action.x, action.y), ...sanitizeNodePreset(action.kind, action.preset) } as AdvancedAutomationNode
       const first = draft.nodes.length === 0
       return touch(
         state,
@@ -129,7 +129,7 @@ export function botBuilderReducer(state: BotBuilderState, action: BotBuilderActi
       const nodes = draft.nodes.map((n) => {
         if (n.id !== action.id) return n
         changed = true
-        return { ...n, ...action.patch } as SalesBotNode
+        return { ...n, ...action.patch } as AdvancedAutomationNode
       })
       if (!changed) return state
       return touch(state, withPrunedEdges({ ...draft, nodes }))
@@ -159,7 +159,7 @@ export function botBuilderReducer(state: BotBuilderState, action: BotBuilderActi
         id: newBotId(src.kind.slice(0, 6)),
         x: src.x + 40,
         y: src.y + 60,
-      } as SalesBotNode
+      } as AdvancedAutomationNode
       return touch(state, { ...draft, nodes: [...draft.nodes, copy] }, copy.id)
     }
 
@@ -203,8 +203,8 @@ export function botBuilderReducer(state: BotBuilderState, action: BotBuilderActi
   }
 }
 
-function structuredCloneNode(n: SalesBotNode): SalesBotNode {
-  return JSON.parse(JSON.stringify(n)) as SalesBotNode
+function structuredCloneNode(n: AdvancedAutomationNode): AdvancedAutomationNode {
+  return JSON.parse(JSON.stringify(n)) as AdvancedAutomationNode
 }
 
 // --- layout ----------------------------------------------------------------------------------
@@ -215,7 +215,7 @@ const ORIGIN_X = 320
 const ORIGIN_Y = 80
 
 /** Estimated card height (matches the node card: header + body + one row per exit). */
-function estimateNodeHeight(node: SalesBotNode): number {
+function estimateNodeHeight(node: AdvancedAutomationNode): number {
   return 96 + nodeOutputs(node).length * 32
 }
 
@@ -225,8 +225,8 @@ function estimateNodeHeight(node: SalesBotNode): number {
  */
 export function autoLayoutPositions(
   startNodeId: string,
-  nodes: SalesBotNode[],
-  edges: SalesBotEdge[]
+  nodes: AdvancedAutomationNode[],
+  edges: AdvancedAutomationEdge[]
 ): Record<string, { x: number; y: number }> {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const depth = new Map<string, number>()
@@ -269,7 +269,7 @@ export function autoLayoutPositions(
 }
 
 /** Start pill position: left of the start step, vertically centered on its header. */
-export function startPillPosition(nodes: SalesBotNode[], startNodeId: string): { x: number; y: number } {
+export function startPillPosition(nodes: AdvancedAutomationNode[], startNodeId: string): { x: number; y: number } {
   const target = nodes.find((n) => n.id === startNodeId) ?? nodes[0]
   return target ? { x: target.x - 200, y: target.y + 8 } : { x: 80, y: ORIGIN_Y }
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react"
 import { getLabelsAction } from "actions/labels/getLabels"
-import { listSalesBotsAction } from "actions/messaging-automations/salesBots"
+import { listAdvancedAutomationsAction } from "actions/messaging-automations/advancedAutomations"
 import { getCardFieldDefinitionsAction, type ICardFieldDefinition } from "actions/projects/cardFieldDefinitions"
 import { getWorkspaceRoles } from "actions/roles/getWorkspaceRoles"
 import { getUsersFromWorkspace, type WorkspaceUser } from "actions/users/getUsersFromWorkspace"
@@ -13,7 +13,7 @@ import type { ILabel } from "app/_types/Label"
 import type { IProject } from "app/_types/Project"
 import type { IRole } from "app/_types/Role"
 import { useProjectColumns } from "components/automations/ui/useProjectColumns"
-import type { SalesBotListItem } from "lib/automations/types"
+import type { AdvancedAutomationListItem } from "lib/automations/types"
 
 type Loadable<T> = { status: "idle" | "loading" | "ready" | "error"; data: T }
 
@@ -25,7 +25,7 @@ const idle = <T>(data: T): Loadable<T> => ({ status: "idle", data })
  */
 export function useBotLookups(workspaceId: string, currentBotId?: string) {
   const [templates, setTemplates] = useState<Loadable<WhatsAppCloudTemplate[]>>(idle([]))
-  const [allBots, setBots] = useState<Loadable<SalesBotListItem[]>>(idle([]))
+  const [allBots, setBots] = useState<Loadable<AdvancedAutomationListItem[]>>(idle([]))
   const [users, setUsers] = useState<Loadable<WorkspaceUser[]>>(idle([]))
   const [roles, setRoles] = useState<Loadable<IRole[]>>(idle([]))
   const [fields, setFields] = useState<Record<string, Loadable<ICardFieldDefinition[]>>>({})
@@ -63,7 +63,7 @@ export function useBotLookups(workspaceId: string, currentBotId?: string) {
     () =>
       once("bots", async () => {
         setBots({ status: "loading", data: [] })
-        const res = await listSalesBotsAction({ limit: 200 })
+        const res = await listAdvancedAutomationsAction({ limit: 200 })
         setBots(
           res.success
             ? { status: "ready", data: res.data.items }
@@ -151,7 +151,7 @@ export function useBotLookups(workspaceId: string, currentBotId?: string) {
 
   // A bot is never offered as its own "go to bot" target. Derived at render, because a new bot gets its id only after the
   // first save, long after the list was cached.
-  const bots = useMemo<Loadable<SalesBotListItem[]>>(
+  const bots = useMemo<Loadable<AdvancedAutomationListItem[]>>(
     () => (currentBotId ? { ...allBots, data: allBots.data.filter((b) => b.id !== currentBotId) } : allBots),
     [allBots, currentBotId]
   )

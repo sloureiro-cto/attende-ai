@@ -2,7 +2,7 @@ import type { IInstagramSession } from "actions/instagram-lite/types"
 import type { ISmsSession } from "actions/sms-lite/types"
 import type { WhatsAppSession } from "actions/whatsapp-lite/types"
 import type { AgentView } from "lib/attende/agents/types"
-import type { SalesBotListItem } from "lib/automations/types"
+import type { AdvancedAutomationListItem } from "lib/automations/types"
 import {
   activeBotsOf,
   attachAgents,
@@ -43,7 +43,7 @@ const sms = (over: Partial<ISmsSession> = {}): ISmsSession => ({
   updatedAt: "2026-10-02T00:00:00Z",
   ...over,
 })
-const bot = (id: string, status: SalesBotListItem["status"], channels: SalesBotListItem["channels"]): SalesBotListItem => ({
+const bot = (id: string, status: AdvancedAutomationListItem["status"], channels: AdvancedAutomationListItem["channels"]): AdvancedAutomationListItem => ({
   id,
   name: `Bot ${id}`,
   status,

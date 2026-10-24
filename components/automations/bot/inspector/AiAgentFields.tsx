@@ -9,7 +9,7 @@ export function AiAgentFields({ node, ctx, lookups, patch, t }: Narrow<"ai_agent
     <>
       <TextArea
         id={`bot-ai-${node.id}`}
-        label={t("salesBotFieldAiInstruction")}
+        label={t("advancedAutomationFieldAiInstruction")}
         size="small"
         minRows={3}
         maxRows={8}
@@ -17,22 +17,22 @@ export function AiAgentFields({ node, ctx, lookups, patch, t }: Narrow<"ai_agent
         maxLength={1000}
         value={node.instruction}
         onChange={(e) => patch({ instruction: e.target.value })}
-        helperText={t("salesBotAiHint")}
+        helperText={t("advancedAutomationAiHint")}
         removeOptionalText
         hideErrorMessage
       />
-      <FieldBlock label={t("salesBotFieldSaveAnswer")}>
+      <FieldBlock label={t("advancedAutomationFieldSaveAnswer")}>
         <CardFieldPicker
           value={node.saveAnswerTo}
           onChange={(saveAnswerTo) => patch({ saveAnswerTo })}
           projects={ctx.crmProjects}
           lookups={lookups}
           t={t}
-          placeholder={t("salesBotPickField")}
+          placeholder={t("advancedAutomationPickField")}
         />
       </FieldBlock>
     </>
   )
 }
 
-// --- goto_bot -------------------------------------------------------------------------------
+// --- goto_automation -------------------------------------------------------------------------------

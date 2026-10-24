@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation"
-import { getSalesBotAction } from "actions/messaging-automations/salesBots"
+import { getAdvancedAutomationAction } from "actions/messaging-automations/advancedAutomations"
 import type { EditorContextData } from "lib/automations/editorContext"
-import { AUTOMATION_CHANNELS, type AutomationChannel, type SalesBotDetail } from "lib/automations/types"
+import { AUTOMATION_CHANNELS, type AutomationChannel, type AdvancedAutomationDetail } from "lib/automations/types"
 import { requireBotsEnabled } from "./botsEnabled"
 import { loadEditorContext } from "./loadEditorContext"
 
@@ -15,7 +15,7 @@ export type NewBotPageData = {
   seed: { channel?: AutomationChannel; template?: "quote" }
 }
 
-export type EditBotPageData = { detail: SalesBotDetail; context: EditorContextData }
+export type EditBotPageData = { detail: AdvancedAutomationDetail; context: EditorContextData }
 
 /** `?channel=` / `?template=` of the "new bot" page, ignoring anything we do not know. */
 export function parseNewBotSeed(searchParams: { channel?: string; template?: string }): NewBotPageData["seed"] {
@@ -34,7 +34,7 @@ export async function loadNewBotPage(searchParams: { channel?: string; template?
 export async function loadEditBotPage(rawId: string): Promise<EditBotPageData> {
   await requireBotsEnabled()
   // The bot and the workspace context (sessions, projects) load together.
-  const [detail, context] = await Promise.all([getSalesBotAction(decodeURIComponent(rawId)), loadEditorContext()])
+  const [detail, context] = await Promise.all([getAdvancedAutomationAction(decodeURIComponent(rawId)), loadEditorContext()])
   if (!detail.success) {
     if (detail.status === 404) notFound()
     throw new Error(detail.error || "Failed to load")

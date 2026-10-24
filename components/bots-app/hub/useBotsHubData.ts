@@ -1,15 +1,15 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { listSalesBotsAction } from "actions/messaging-automations/salesBots"
+import { listAdvancedAutomationsAction } from "actions/messaging-automations/advancedAutomations"
 import type { ChannelFilterValue } from "components/automations/ui/ChannelFilter"
 import { HUB_PAGE_SIZE } from "lib/automations/hubConstants"
-import type { SalesBotListItem, SalesBotListResponse } from "lib/automations/types"
+import type { AdvancedAutomationListItem, AdvancedAutomationListResponse } from "lib/automations/types"
 
 /** One server round trip per pause in typing, not per keystroke (same cadence as the JSYNQ hub). */
 const SEARCH_DEBOUNCE_MS = 300
 
-export type BotsHubInitial = { data: SalesBotListResponse | null; failed: boolean }
+export type BotsHubInitial = { data: AdvancedAutomationListResponse | null; failed: boolean }
 
 /**
  * State of the bots-only hub: one list, its filters and the request protocol (only the latest
@@ -17,7 +17,7 @@ export type BotsHubInitial = { data: SalesBotListResponse | null; failed: boolea
  * It exposes the same row-action surface as the JSYNQ hub (`HubActionsTarget`) so `useHubActions` is shared.
  */
 export function useBotsHubData(initial: BotsHubInitial) {
-  const [data, setData] = useState<SalesBotListResponse | null>(initial.data)
+  const [data, setData] = useState<AdvancedAutomationListResponse | null>(initial.data)
   const [failed, setFailed] = useState(initial.failed)
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState("")
@@ -29,7 +29,7 @@ export function useBotsHubData(initial: BotsHubInitial) {
   const reload = useCallback(async (next: { q: string; channel: ChannelFilterValue; page: number }) => {
     const seq = ++requestSeq.current
     setLoading(true)
-    const res = await listSalesBotsAction({
+    const res = await listAdvancedAutomationsAction({
       q: next.q,
       channel: next.channel === "all" ? undefined : next.channel,
       page: next.page,
@@ -56,7 +56,7 @@ export function useBotsHubData(initial: BotsHubInitial) {
     return () => clearTimeout(timer)
   }, [query, channel, page, reload])
 
-  const patchBot = useCallback((id: string, patch: Partial<SalesBotListItem>) => {
+  const patchBot = useCallback((id: string, patch: Partial<AdvancedAutomationListItem>) => {
     setData((d) => (d ? { ...d, items: d.items.map((b) => (b.id === id ? { ...b, ...patch } : b)) } : d))
   }, [])
 

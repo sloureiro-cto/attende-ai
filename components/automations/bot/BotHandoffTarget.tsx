@@ -14,16 +14,16 @@ import {
 import UserAvatar from "components/UserAvatar/UserAvatar"
 import { useWorkspace } from "context/WorkspaceContext"
 import { membersFromWorkspaceUsers, unknownIds } from "lib/automations/botAssignees"
-import type { SalesBotHandoffAssignMode } from "lib/automations/types"
+import type { AdvancedAutomationHandoffAssignMode } from "lib/automations/types"
 import { getUserDisplayName, sortForPicker, userMatchesSearch } from "lib/users/userDisplay"
 import { BotSelect } from "./BotSelect"
 import type { BotLookups } from "./useBotLookups"
 
-const MODES: SalesBotHandoffAssignMode[] = ["all_crm_members", "specific_user", "member_list", "by_workspace_role"]
+const MODES: AdvancedAutomationHandoffAssignMode[] = ["all_crm_members", "specific_user", "member_list", "by_workspace_role"]
 const pickerButton = cn(waTemplateSelectInputTriggerClassNames, "flex h-8 items-center gap-2 px-2.5 text-left text-body-12")
 
 type Value = {
-  assignMode?: SalesBotHandoffAssignMode
+  assignMode?: AdvancedAutomationHandoffAssignMode
   userIds?: string[]
   specificUserId?: string
   workspaceRoleId?: string
@@ -89,16 +89,16 @@ export const BotHandoffTarget = memo(function BotHandoffTarget({
 
   const membersHint =
     membersStatus === "loading" ? (
-      <p className="text-body-12 text-neutral-500">{t("salesBotMembersLoading")}</p>
+      <p className="text-body-12 text-neutral-500">{t("advancedAutomationMembersLoading")}</p>
     ) : membersStatus === "error" ? (
       <div className="flex items-center justify-between gap-2">
-        <span className="text-body-12 text-error-dark">{t("salesBotMembersError")}</span>
+        <span className="text-body-12 text-error-dark">{t("advancedAutomationMembersError")}</span>
         <Button size="small" variant="secondary" style="outline" onClick={() => loadUsers()}>
-          {t("salesBotRetry")}
+          {t("advancedAutomationRetry")}
         </Button>
       </div>
     ) : members.length === 0 ? (
-      <p className="text-body-12 text-neutral-500">{t("salesBotMembersEmpty")}</p>
+      <p className="text-body-12 text-neutral-500">{t("advancedAutomationMembersEmpty")}</p>
     ) : null
 
   const roles = lookups.roles
@@ -109,9 +109,9 @@ export const BotHandoffTarget = memo(function BotHandoffTarget({
       <BotSelect
         value={mode}
         onValueChange={(next) =>
-          onChange({ assignMode: next as SalesBotHandoffAssignMode, userIds: undefined, specificUserId: undefined, workspaceRoleId: undefined })
+          onChange({ assignMode: next as AdvancedAutomationHandoffAssignMode, userIds: undefined, specificUserId: undefined, workspaceRoleId: undefined })
         }
-        items={MODES.map((m) => ({ value: m, displayName: t(`salesBotAssign_${m}`) }))}
+        items={MODES.map((m) => ({ value: m, displayName: t(`advancedAutomationAssign_${m}`) }))}
       />
 
       {needsMembers ? (
@@ -127,14 +127,14 @@ export const BotHandoffTarget = memo(function BotHandoffTarget({
               else onChange({ specificUserId: String(Array.isArray(v) ? v[0] : v) })
             }}
             classNames={waTemplateSearchPopoverClassNames}
-            inputPlaceholder={t("salesBotSearch")}
+            inputPlaceholder={t("advancedAutomationSearch")}
             showSearchInput
             items={memberOptions}
           >
             <button type="button" className={pickerButton} disabled={members.length === 0}>
               {mode === "member_list" ? (
                 <span className="min-w-0 flex-1 truncate">
-                  {(value.userIds?.length ?? 0) === 0 ? t("salesBotPickMembers") : t("salesBotMembersSelected", { count: value.userIds!.length })}
+                  {(value.userIds?.length ?? 0) === 0 ? t("advancedAutomationPickMembers") : t("advancedAutomationMembersSelected", { count: value.userIds!.length })}
                 </span>
               ) : selectedUser ? (
                 <>
@@ -142,14 +142,14 @@ export const BotHandoffTarget = memo(function BotHandoffTarget({
                   <span className="min-w-0 flex-1 truncate">{getUserDisplayName(selectedUser)}</span>
                 </>
               ) : (
-                <span className="min-w-0 flex-1 truncate text-neutral-500">{t("salesBotPickUser")}</span>
+                <span className="min-w-0 flex-1 truncate text-neutral-500">{t("advancedAutomationPickUser")}</span>
               )}
             </button>
           </SearchPopover>
           {membersHint}
           {missing.length > 0 && membersStatus === "ready" ? (
             <div className="flex items-center justify-between gap-2">
-              <span className="text-body-12 text-warning-darkest">{t("salesBotMembersMissing", { count: missing.length })}</span>
+              <span className="text-body-12 text-warning-darkest">{t("advancedAutomationMembersMissing", { count: missing.length })}</span>
               <Button
                 size="small"
                 variant="secondary"
@@ -160,7 +160,7 @@ export const BotHandoffTarget = memo(function BotHandoffTarget({
                     : onChange({ specificUserId: undefined })
                 }
               >
-                {t("salesBotClear")}
+                {t("advancedAutomationClear")}
               </Button>
             </div>
           ) : null}
@@ -172,15 +172,15 @@ export const BotHandoffTarget = memo(function BotHandoffTarget({
           <BotSelect
             value={value.workspaceRoleId ?? ""}
             onValueChange={(workspaceRoleId) => onChange({ workspaceRoleId })}
-            placeholder={roles.status === "loading" ? t("salesBotLoading") : t("salesBotPickRole")}
+            placeholder={roles.status === "loading" ? t("advancedAutomationLoading") : t("advancedAutomationPickRole")}
             items={roleItems}
-            emptyContent={<p className="px-3 py-2 text-body-12 text-neutral-500">{t("salesBotRolesEmpty")}</p>}
+            emptyContent={<p className="px-3 py-2 text-body-12 text-neutral-500">{t("advancedAutomationRolesEmpty")}</p>}
           />
           {roles.status === "error" ? (
             <div className="flex items-center justify-between gap-2">
-              <span className="text-body-12 text-error-dark">{t("salesBotRolesError")}</span>
+              <span className="text-body-12 text-error-dark">{t("advancedAutomationRolesError")}</span>
               <Button size="small" variant="secondary" style="outline" onClick={() => loadRoles()}>
-                {t("salesBotRetry")}
+                {t("advancedAutomationRetry")}
               </Button>
             </div>
           ) : null}

@@ -1,12 +1,12 @@
 import type { IColumn } from "app/_types/Column"
 import type { IProject } from "app/_types/Project"
 import { columnBoardId } from "lib/projects/projectBoardRefs"
-import type { SalesBotNode } from "./types"
+import type { AdvancedAutomationNode } from "./types"
 
 /** What a "move to stage" step stores. All three are persisted so the picker reopens as it was left. */
 export type StageSelection = { projectId: string; boardId: string; columnId: string }
 
-type MoveStageNode = Extract<SalesBotNode, { kind: "move_stage" }>
+type MoveStageNode = Extract<AdvancedAutomationNode, { kind: "move_stage" }>
 
 export const EMPTY_STAGE: StageSelection = { projectId: "", boardId: "", columnId: "" }
 
@@ -47,7 +47,7 @@ export function columnTitle(columns: IColumn[] | undefined, columnId: string): s
 }
 
 /** Distinct (project, board) pairs of the move-stage steps: what must be loaded to name them. */
-export function stageRefsOfNodes(nodes: SalesBotNode[]): Array<{ projectId: string; boardId: string }> {
+export function stageRefsOfNodes(nodes: AdvancedAutomationNode[]): Array<{ projectId: string; boardId: string }> {
   const seen = new Map<string, { projectId: string; boardId: string }>()
   for (const n of nodes) {
     if (n.kind !== "move_stage" || !n.projectId) continue
@@ -58,7 +58,7 @@ export function stageRefsOfNodes(nodes: SalesBotNode[]): Array<{ projectId: stri
 
 /** nodeId -> "Project · Column" for every move-stage step whose column is already loaded. */
 export function stageLabelsByNode(
-  nodes: SalesBotNode[],
+  nodes: AdvancedAutomationNode[],
   columnsByProject: Record<string, IColumn[] | undefined>,
   projects: Array<Pick<IProject, "_id" | "title">>
 ): Record<string, string> {

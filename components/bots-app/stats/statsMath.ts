@@ -1,7 +1,7 @@
 import { nodeOutputs } from "lib/automations/botGraph"
-import type { SalesBotDetail, SalesBotNode, SalesBotStatsSummary } from "lib/automations/types"
+import type { AdvancedAutomationDetail, AdvancedAutomationNode, AdvancedAutomationStatsSummary } from "lib/automations/types"
 
-/** One UTC day of run counters, as `GET /sales-bots/:id/stats/series` returns it (zero-filled). */
+/** One UTC day of run counters, as `GET /messaging-automations/advanced/:id/stats/series` returns it (zero-filled). */
 export type DailyStatsPoint = {
   day: string
   started: number
@@ -35,7 +35,7 @@ export type StatsKpis = {
   inProgress: number
 }
 
-export function computeKpis(summary: SalesBotStatsSummary): StatsKpis {
+export function computeKpis(summary: AdvancedAutomationStatsSummary): StatsKpis {
   const { started, completed, handedOff, stopped, failed } = summary
   const ended = completed + handedOff + stopped + failed
   return {
@@ -60,7 +60,7 @@ export type FunnelStep = {
   id: string
   /** 1-based position in the flow (first reached, left to right). */
   order: number
-  node: SalesBotNode
+  node: AdvancedAutomationNode
   reached: number
   /** reached / started, 0-1 (what the API calls reachedPct). */
   reachedShare: number
@@ -74,10 +74,10 @@ export type FunnelStep = {
 }
 
 /** Steps in flow order: breadth-first from the start, following exits in their on-canvas order. */
-export function flowOrder(bot: Pick<SalesBotDetail, "startNodeId" | "nodes" | "edges">): SalesBotNode[] {
+export function flowOrder(bot: Pick<AdvancedAutomationDetail, "startNodeId" | "nodes" | "edges">): AdvancedAutomationNode[] {
   const byId = new Map(bot.nodes.map((n) => [n.id, n]))
   const seen = new Set<string>()
-  const out: SalesBotNode[] = []
+  const out: AdvancedAutomationNode[] = []
   const queue = [bot.startNodeId]
   while (queue.length) {
     const id = queue.shift() as string
@@ -97,8 +97,8 @@ export function flowOrder(bot: Pick<SalesBotDetail, "startNodeId" | "nodes" | "e
 
 /** Per-step funnel from the saved graph plus the summed counters. Steps with no traffic are kept (they show 0). */
 export function buildFunnel(
-  bot: Pick<SalesBotDetail, "startNodeId" | "nodes" | "edges">,
-  stats: SalesBotStatsSummary
+  bot: Pick<AdvancedAutomationDetail, "startNodeId" | "nodes" | "edges">,
+  stats: AdvancedAutomationStatsSummary
 ): FunnelStep[] {
   const steps: FunnelStep[] = []
   let order = 0

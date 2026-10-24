@@ -2,12 +2,12 @@ import { FetchClient } from "lib/api"
 import type { WorkspaceEntitlements } from "../botsFlag"
 
 /**
- * Standalone bots app: a workspace may use bots when the backend says so (`workspace.entitlements.bots`,
+ * Standalone bots app: a workspace may use bots when the backend says so (`workspace.entitlements.advancedAutomations`,
  * set by us per customer). Anything but a literal `true` is "no": missing field, wrong type, errors.
  */
 export function readBotsEntitlement(workspace: unknown): boolean {
   const entitlements = (workspace as { entitlements?: WorkspaceEntitlements } | null | undefined)?.entitlements
-  return entitlements?.bots === true
+  return entitlements?.advancedAutomations === true
 }
 
 const TTL_MS = 30_000

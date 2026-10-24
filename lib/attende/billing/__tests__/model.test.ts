@@ -4,7 +4,7 @@ describe("parseAttendeBilling", () => {
   it("reads the attende block of the workspace", () => {
     const parsed = parseAttendeBilling({
       entitlements: {
-        bots: true,
+        advancedAutomations: true,
         attende: { tier: "attende_growth", status: "trialing", limits: { lines: 3, seats: 5 }, trialEndsAt: "2026-10-29T12:00:00.000Z", trialOutboundCap: 50, trialOutboundUsed: 12 },
       },
     })

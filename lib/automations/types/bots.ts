@@ -1,21 +1,21 @@
-/** Sales bots: `/api/sales-bots` graph, list / detail / save, stats and preview contracts. */
+/** Advanced automations (renamed from sales bots): `/api/messaging-automations/advanced` graph, list / detail / save, stats and preview contracts. */
 
 import { type AutomationChannelBinding } from "./common"
 
-export type SalesBotStatus = "draft" | "active" | "paused"
+export type AdvancedAutomationStatus = "draft" | "active" | "paused"
 
-export type SalesBotChoice = { id: string; label: string }
+export type AdvancedAutomationChoice = { id: string; label: string }
 
 type NodeBase = { id: string; x: number; y: number; label?: string }
 
-export type SalesBotHandoffAssignMode = "all_crm_members" | "specific_user" | "member_list" | "by_workspace_role"
+export type AdvancedAutomationHandoffAssignMode = "all_crm_members" | "specific_user" | "member_list" | "by_workspace_role"
 
-export type SalesBotNode =
+export type AdvancedAutomationNode =
   | (NodeBase & {
       kind: "send_message"
       text: string
       replyMode: "none" | "buttons" | "list" | "free"
-      options?: SalesBotChoice[]
+      options?: AdvancedAutomationChoice[]
       noReplyMinutes?: number
       noReplyBusinessHoursOnly?: boolean
       saveAnswerTo?: string
@@ -27,7 +27,7 @@ export type SalesBotNode =
     })
   | (NodeBase & { kind: "wait"; minutes: number })
   | (NodeBase & { kind: "split"; paths: Array<{ id: string; name: string; percent: number }> })
-  | (NodeBase & { kind: "goto_bot"; botId: string })
+  | (NodeBase & { kind: "goto_automation"; automationId: string })
   | (NodeBase & { kind: "stop" })
   | (NodeBase & { kind: "set_field"; fieldId: string; value: string })
   | (NodeBase & { kind: "move_stage"; columnId: string; projectId?: string; boardId?: string })
@@ -45,7 +45,7 @@ export type SalesBotNode =
   | (NodeBase & {
       kind: "handoff"
       message?: string
-      assignMode?: SalesBotHandoffAssignMode
+      assignMode?: AdvancedAutomationHandoffAssignMode
       userIds?: string[]
       specificUserId?: string
       workspaceRoleId?: string
@@ -53,22 +53,22 @@ export type SalesBotNode =
   | (NodeBase & { kind: "webhook"; url: string })
   | (NodeBase & { kind: "send_meta_template"; templateId: string })
 
-export type SalesBotNodeKind = SalesBotNode["kind"]
+export type AdvancedAutomationNodeKind = AdvancedAutomationNode["kind"]
 
-export type SalesBotEdge = { id: string; from: string; output: string; to: string }
+export type AdvancedAutomationEdge = { id: string; from: string; output: string; to: string }
 
-export type SalesBotTrigger = {
+export type AdvancedAutomationTrigger = {
   kind: "new_conversation" | "manual"
   dedupeDays: number
   filter?: Record<string, unknown>
 }
 
-export type SalesBotIssue = { path: string; message: string; blocking?: boolean }
+export type AdvancedAutomationIssue = { path: string; message: string; blocking?: boolean }
 
-export type SalesBotListItem = {
+export type AdvancedAutomationListItem = {
   id: string
   name: string
-  status: SalesBotStatus
+  status: AdvancedAutomationStatus
   channels: AutomationChannelBinding[]
   stepCount: number
   version: number
@@ -76,42 +76,42 @@ export type SalesBotListItem = {
   stats30d: { started: number; completed: number }
 }
 
-export type SalesBotListResponse = {
-  items: SalesBotListItem[]
+export type AdvancedAutomationListResponse = {
+  items: AdvancedAutomationListItem[]
   total: number
   page: number
   limit: number
   totals: { all: number; active: number; paused: number; draft: number }
 }
 
-export type SalesBotDetail = {
+export type AdvancedAutomationDetail = {
   _id: string
   id: string
   name: string
-  status: SalesBotStatus
+  status: AdvancedAutomationStatus
   channels: AutomationChannelBinding[]
-  trigger: SalesBotTrigger
+  trigger: AdvancedAutomationTrigger
   stopOnHumanReply: boolean
   startNodeId: string
-  nodes: SalesBotNode[]
-  edges: SalesBotEdge[]
+  nodes: AdvancedAutomationNode[]
+  edges: AdvancedAutomationEdge[]
   version: number
   updatedAt: string
-  issues: SalesBotIssue[]
+  issues: AdvancedAutomationIssue[]
 }
 
-export type SaveSalesBotInput = {
+export type SaveAdvancedAutomationInput = {
   name: string
-  status?: SalesBotStatus
+  status?: AdvancedAutomationStatus
   channels?: AutomationChannelBinding[]
-  trigger?: SalesBotTrigger
+  trigger?: AdvancedAutomationTrigger
   stopOnHumanReply?: boolean
   startNodeId?: string
-  nodes?: SalesBotNode[]
-  edges?: SalesBotEdge[]
+  nodes?: AdvancedAutomationNode[]
+  edges?: AdvancedAutomationEdge[]
 }
 
-export type SalesBotStatsSummary = {
+export type AdvancedAutomationStatsSummary = {
   started: number
   completed: number
   handedOff: number
@@ -127,12 +127,12 @@ export type PreviewEffect =
       nodeId: string
       text: string
       replyMode: "none" | "buttons" | "list" | "free"
-      options?: SalesBotChoice[]
+      options?: AdvancedAutomationChoice[]
       delivery?: { kind: "buttons" | "list" | "quick_replies" | "text"; warnings: string[]; text?: string }
     }
   | { type: string; [key: string]: unknown }
 
-export type SalesBotPreviewResult = {
+export type AdvancedAutomationPreviewResult = {
   state: Record<string, unknown>
   effects: PreviewEffect[]
   finished: boolean

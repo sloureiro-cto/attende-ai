@@ -1,4 +1,4 @@
-import type { SalesBotNode, SalesBotStatsSummary } from "lib/automations/types"
+import type { AdvancedAutomationNode, AdvancedAutomationStatsSummary } from "lib/automations/types"
 import {
   areaPath,
   axisLabelIndexes,
@@ -14,7 +14,7 @@ import {
   trendGeometry,
 } from "./statsMath"
 
-const msg = (id: string, over: Record<string, unknown> = {}): SalesBotNode =>
+const msg = (id: string, over: Record<string, unknown> = {}): AdvancedAutomationNode =>
   ({
     id,
     kind: "send_message",
@@ -27,8 +27,8 @@ const msg = (id: string, over: Record<string, unknown> = {}): SalesBotNode =>
     x: 0,
     y: 0,
     ...over,
-  }) as SalesBotNode
-const stop = (id: string): SalesBotNode => ({ id, kind: "stop", x: 0, y: 0 }) as SalesBotNode
+  }) as AdvancedAutomationNode
+const stop = (id: string): AdvancedAutomationNode => ({ id, kind: "stop", x: 0, y: 0 }) as AdvancedAutomationNode
 const edge = (from: string, output: string, to: string) => ({ id: `${from}_${output}_${to}`, from, output, to })
 
 const bot = {
@@ -37,7 +37,7 @@ const bot = {
   edges: [edge("ask", "a", "next"), edge("ask", "b", "end"), edge("next", "next", "end")],
 }
 
-const stats = (over: Partial<SalesBotStatsSummary> = {}): SalesBotStatsSummary => ({
+const stats = (over: Partial<AdvancedAutomationStatsSummary> = {}): AdvancedAutomationStatsSummary => ({
   started: 100,
   completed: 40,
   handedOff: 10,

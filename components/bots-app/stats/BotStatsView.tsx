@@ -3,7 +3,7 @@
 import { ArrowLeft, BarChart3, PencilRuler } from "lucide-react"
 import Link from "next/link"
 import { useMemo } from "react"
-import type { SalesBotDetail, SalesBotStatsSummary } from "lib/automations/types"
+import type { AdvancedAutomationDetail, AdvancedAutomationStatsSummary } from "lib/automations/types"
 import { DropOffList } from "./DropOffList"
 import { KpiGrid } from "./KpiGrid"
 import { buildFunnel, computeKpis, type DailyStatsPoint, rankDropOffs, type StatsRange } from "./statsMath"
@@ -16,9 +16,9 @@ import { actionClass } from "../ui/actionStyles"
 import { EmptyState } from "../ui/EmptyState"
 
 type Props = {
-  bot: Pick<SalesBotDetail, "id" | "name" | "startNodeId" | "nodes" | "edges">
+  bot: Pick<AdvancedAutomationDetail, "id" | "name" | "startNodeId" | "nodes" | "edges">
   days: StatsRange
-  stats: SalesBotStatsSummary
+  stats: AdvancedAutomationStatsSummary
   /** `null` when the daily series could not be loaded: the rest of the page still works. */
   series: DailyStatsPoint[] | null
 }
