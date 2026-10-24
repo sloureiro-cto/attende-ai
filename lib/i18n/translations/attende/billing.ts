@@ -49,6 +49,13 @@ export const billingEntries = {
   billNextCharge: { en: "Next charge on {date}: {price}", pt: "Próxima cobrança em {date}: {price}", es: "Próximo cobro el {date}: {price}" },
   billNoChargeScheduled: { en: "No charge scheduled.", pt: "Nenhuma cobrança programada.", es: "No hay cobros programados." },
   billCanceledOn: { en: "Canceled on {date}.", pt: "Cancelada em {date}.", es: "Cancelada el {date}." },
+  billCancelsOn: { en: "Cancels on {date}", pt: "Será cancelada em {date}", es: "Se cancela el {date}" },
+  billCancelsOnHint: {
+    en: "Your plan stays active until then and nothing else will be charged. Changed your mind? Undo it in Manage.",
+    pt: "Seu plano continua ativo até lá e nada mais será cobrado. Mudou de ideia? Desfaça em Gerenciar.",
+    es: "Tu plan sigue activo hasta entonces y no se cobrará nada más. ¿Cambiaste de idea? Deshazlo en Gestionar.",
+  },
+  billManage: { en: "Manage", pt: "Gerenciar", es: "Gestionar" },
   billTrialOutbound: {
     en: "{used} of {cap} trial messages sent",
     pt: "{used} de {cap} mensagens do teste enviadas",

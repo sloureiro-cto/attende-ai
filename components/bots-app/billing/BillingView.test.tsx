@@ -33,6 +33,7 @@ const sub = (over: Partial<AttendeSubscription> = {}): AttendeSubscription => ({
   price: { amount: 99, currency: "USD", interval: "month", intervalCount: 1 },
   trialEndsAt: null,
   currentPeriodEnd: "2026-11-22T12:00:00.000Z",
+  cancelAtPeriodEnd: false,
   canceledAt: null,
   ...over,
 })
@@ -97,6 +98,43 @@ describe("BillingView: plan summary", () => {
     expect(screen.getByText("No Attende-ai plan")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "See plans and prices" })).toHaveAttribute("href", "/pricing")
     expect(screen.queryByRole("button", { name: "Change plan" })).not.toBeInTheDocument()
+  })
+})
+
+describe("BillingView: cancellation", () => {
+  it("a cancellation at the period end replaces the next charge, and Manage opens the portal to undo it", async () => {
+    render(<BillingView initial={load({}, { subscription: sub({ cancelAtPeriodEnd: true, canceledAt: "2026-10-20T12:00:00.000Z" }) })} />)
+    expect(screen.getByText("Cancels on Nov 22, 2026")).toBeInTheDocument()
+    expect(screen.getByText(/stays active until then/)).toBeInTheDocument()
+    expect(screen.queryByText(/Next charge on/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Canceled on/)).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Cancel subscription" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }))
+    await waitFor(() => expect(mockPortal).toHaveBeenCalledWith("manage"))
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://billing.stripe.test/session"))
+  })
+
+  it("a trial set to end says so instead of announcing the charge after it", () => {
+    const end = iso(5)
+    render(
+      <BillingView
+        initial={load(
+          { status: "trialing", trialEndsAt: end },
+          { subscription: sub({ status: "trialing", trialEndsAt: end, currentPeriodEnd: end, cancelAtPeriodEnd: true, canceledAt: iso(-1) }) }
+        )}
+      />
+    )
+    expect(screen.getByText(/^Cancels on /)).toBeInTheDocument()
+    expect(screen.queryByText(/is charged automatically/)).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument()
+  })
+
+  it("a canceled subscription keeps the canceled state, with no Manage to undo", () => {
+    render(<BillingView initial={load({ status: "canceled" }, { subscription: sub({ status: "canceled", canceledAt: "2026-10-20T12:00:00.000Z" }) })} />)
+    expect(screen.getByText("Canceled on Oct 20, 2026.")).toBeInTheDocument()
+    expect(screen.queryByText(/^Cancels on/)).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Manage" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Cancel subscription" })).not.toBeInTheDocument()
   })
 })
 

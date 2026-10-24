@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 import { type BillingLoad, getAttendeBillingAction, openBillingPortalAction, type PortalKind } from "actions/attende/billing"
 import { showToast } from "app/utils/showToast"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "components/ui/alert-dialog"
-import { type AttendeSubscription, blockedBy, limitRows, nextCharge, STATUS_KEY, tierName, trialClock, type UsageMeterRow } from "lib/attende/billing/model"
+import { type AttendeSubscription, blockedBy, isCanceled, limitRows, nextCharge, pendingCancellation, STATUS_KEY, tierName, trialClock, type UsageMeterRow } from "lib/attende/billing/model"
 import { formatDate, formatMoney, formatNumber } from "lib/attende/format"
 import { serviceErrorKey } from "lib/attende/result"
 import { BillingInvoices } from "./BillingInvoices"
@@ -100,6 +100,8 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
   const name = tierName(billing.tier)
   const price = priceText(subscription?.price ?? null, language, t)
   const charge = nextCharge(subscription)
+  const cancels = pendingCancellation(subscription)
+  const canceled = isCanceled(subscription)
   const chargeText = charge ? t("billNextCharge", { date: formatDate(charge.date, language), price: priceText(charge.price, language, t) ?? t("billPriceUnknown") }) : null
   const trialEnd = billing.trialEndsAt ? formatDate(billing.trialEndsAt, language) : null
   const usageByKey = new Map<UsageMeterRow["key"], UsageMeterRow>((usage?.rows ?? []).map((row) => [row.key, row]))
@@ -127,7 +129,9 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
               {trialEnd && clock.kind !== "ended" && <span className="font-normal text-neutral-700"> · {t("billTrialEndsOn", { date: trialEnd })}</span>}
             </p>
             <p className="text-body-13 text-neutral-700">
-              {subscription && subscription.status === "trialing" && !subscription.canceledAt && price && trialEnd
+              {cancels
+                ? t("billCancelsOnHint")
+                : subscription && subscription.status === "trialing" && !subscription.canceledAt && price && trialEnd
                 ? t("billAfterTrialCharge", { price, date: trialEnd })
                 : t("billAfterTrialNoSubscription")}
             </p>
@@ -135,8 +139,20 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
         )}
         {billing.status === "trialing" && billing.trialOutboundCap > 0 && <TrialMeter used={billing.trialOutboundUsed} cap={billing.trialOutboundCap} />}
 
-        {billing.status === "active" && <p className="text-body-14 text-neutral-800">{chargeText ?? t("billNoChargeScheduled")}</p>}
-        {subscription?.canceledAt && <p className="text-body-13 text-neutral-700">{t("billCanceledOn", { date: formatDate(subscription.canceledAt, language) })}</p>}
+        {cancels ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-warning-lighter bg-warning-clean px-4 py-3">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <p className="text-body-14 font-semibold text-warning-darkest">{t("billCancelsOn", { date: formatDate(cancels.date, language) })}</p>
+              {billing.status !== "trialing" && <p className="text-body-13 text-neutral-800">{t("billCancelsOnHint")}</p>}
+            </div>
+            <button type="button" className={actionClass({ variant: "secondary", size: "sm" })} disabled={busy !== null} aria-busy={busy === "manage"} onClick={() => void openPortal("manage")}>
+              {t("billManage")}
+            </button>
+          </div>
+        ) : (
+          billing.status === "active" && <p className="text-body-14 text-neutral-800">{chargeText ?? t("billNoChargeScheduled")}</p>
+        )}
+        {canceled && subscription?.canceledAt && <p className="text-body-13 text-neutral-700">{t("billCanceledOn", { date: formatDate(subscription.canceledAt, language) })}</p>}
         {billing.status === "past_due" && <p className="text-body-13 text-warning-darkest">{t("billPastDueHint")}</p>}
         {billing.status === "canceled" && <p className="text-body-13 text-neutral-700">{t("billCanceledHint")}</p>}
 
@@ -241,7 +257,7 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
             <button type="button" className={actionClass({ variant: "secondary" })} disabled={busy !== null} aria-busy={busy === "payment_method"} onClick={() => void openPortal("payment_method")}>
               {t("billUpdateCard")}
             </button>
-            {!subscription.canceledAt && (
+            {!subscription.canceledAt && !subscription.cancelAtPeriodEnd && (
               <button type="button" className={actionClass({ variant: "ghost" })} disabled={busy !== null} onClick={() => setConfirmCancel(true)}>
                 {t("billCancel")}
               </button>

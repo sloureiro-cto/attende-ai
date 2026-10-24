@@ -3,13 +3,14 @@
 import { DocumentDownload, ExportSquare } from "iconsax-react"
 import { useCallback, useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
-import { getWorkspaceInvoicesAction, type WorkspaceInvoice } from "actions/plans/getWorkspaceInvoices"
+import { getAttendeInvoicesAction } from "actions/attende/billing"
+import type { AttendeInvoice } from "lib/attende/billing/model"
 import { formatDate, formatMoney } from "lib/attende/format"
 import type { BillingTranslationKey } from "lib/i18n/translations/attende/billing"
 import { useAcquisitionT } from "../acquisition/useAcquisitionT"
 import { actionClass } from "../ui/actionStyles"
 
-type State = { kind: "loading" } | { kind: "error" } | { kind: "ready"; invoices: WorkspaceInvoice[] }
+type State = { kind: "loading" } | { kind: "error" } | { kind: "ready"; invoices: AttendeInvoice[] }
 
 const STATUS: Record<string, { key: BillingTranslationKey; tone: string }> = {
   paid: { key: "billInvoiceStatusPaid", tone: "bg-primary-clean text-primary-dark" },
@@ -20,7 +21,8 @@ const STATUS: Record<string, { key: BillingTranslationKey; tone: string }> = {
 }
 
 /**
- * Workspace invoices (Stripe, via the platform's billing endpoint). Loading, empty and error are separate states; an error
+ * Workspace invoices (Stripe, via `GET /attende/billing/invoices` on the Attende backend). `workspaceId` only reloads the
+ * list when the workspace changes; the backend reads the workspace from the session. Loading, empty and error are separate states; an error
  * offers a retry and is never shown as "no invoices". Amounts keep the invoice's currency (Stripe minor units).
  */
 export function BillingInvoices({ workspaceId }: { workspaceId: string }) {
@@ -30,16 +32,16 @@ export function BillingInvoices({ workspaceId }: { workspaceId: string }) {
   const load = useCallback(async () => {
     setState({ kind: "loading" })
     try {
-      const result = await getWorkspaceInvoicesAction({ workspaceId })
+      const result = await getAttendeInvoicesAction()
       setState(result.success ? { kind: "ready", invoices: result.data ?? [] } : { kind: "error" })
     } catch {
       setState({ kind: "error" })
     }
-  }, [workspaceId])
+  }, [])
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, workspaceId])
 
   if (state.kind === "loading") {
     return (

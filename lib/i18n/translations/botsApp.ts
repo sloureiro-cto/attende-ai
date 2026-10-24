@@ -129,9 +129,9 @@ const entries = {
   workspacesCurrent: { en: "Current", pt: "Atual", es: "Actual" },
   workspacesOpen: { en: "Open company", pt: "Abrir empresa", es: "Abrir empresa" },
   workspacesEmpty: {
-    en: "None of your companies has Attende-ai yet.",
-    pt: "Nenhuma das suas empresas tem o Attende-ai ainda.",
-    es: "Ninguna de tus empresas tiene Attende-ai todavía.",
+    en: "You don't have a company yet.",
+    pt: "Você ainda não tem nenhuma empresa.",
+    es: "Todavía no tienes ninguna empresa.",
   },
   workspacesEmptyHint: {
     en: "Start a free trial or talk to our team.",

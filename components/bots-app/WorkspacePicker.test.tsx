@@ -11,7 +11,8 @@ jest.mock("context/UserLanguageContext", () => ({ useUserLanguage: () => ({ user
 jest.mock("app/utils/showToast", () => ({ showToast: jest.fn() }))
 
 const workspaces = [
-  { _id: "a", name: "Alpha", entitlements: { advancedAutomations: true }, members: [1, 2] },
+  { _id: "a", name: "Alpha", members: [1, 2] },
+  // JSYNQ entitlement fields no longer hide a company: the Attende plan is checked per page.
   { _id: "b", name: "Beta", entitlements: { advancedAutomations: false }, members: [] },
   { _id: "c", name: "Gamma", members: [1] },
 ]
@@ -19,11 +20,13 @@ const workspaces = [
 describe("WorkspacePicker", () => {
   beforeEach(() => jest.clearAllMocks())
 
-  it("lists only the workspaces that have bots", () => {
+  it("lists all the user's companies, whatever their JSYNQ entitlements say", () => {
     render(<WorkspacePicker workspaces={workspaces} currentWorkspaceId="a" />)
-    expect(screen.getByText("Alpha")).toBeInTheDocument()
-    expect(screen.getByText("Gamma")).toBeInTheDocument()
-    expect(screen.queryByText("Beta")).not.toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: /Open company:/ }).map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Open company: Alpha",
+      "Open company: Beta",
+      "Open company: Gamma",
+    ])
     expect(screen.getByText("2 members")).toBeInTheDocument()
   })
 
@@ -46,9 +49,16 @@ describe("WorkspacePicker", () => {
     expect(update).not.toHaveBeenCalled()
   })
 
-  it("shows the empty state when none is entitled", () => {
-    render(<WorkspacePicker workspaces={[workspaces[1]!]} currentWorkspaceId="b" />)
-    expect(screen.getByText("None of your companies has Attende-ai yet.")).toBeInTheDocument()
+  it("a company without the JSYNQ flag can be opened", async () => {
+    render(<WorkspacePicker workspaces={workspaces} currentWorkspaceId="a" />)
+    fireEvent.click(screen.getByRole("button", { name: /Open company: Beta/ }))
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/bots"))
+    expect(update).toHaveBeenCalledWith({ workspaceId: "b" })
+  })
+
+  it("shows the empty state when the user has no company", () => {
+    render(<WorkspacePicker workspaces={[]} currentWorkspaceId={null} />)
+    expect(screen.getByText("You don't have a company yet.")).toBeInTheDocument()
   })
 
   it("shows a retry when the list could not be loaded", () => {

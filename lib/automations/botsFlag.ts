@@ -1,9 +1,3 @@
-/**
- * Access to the product is a per-workspace entitlement exposed by the backend on `GET /workspaces/:id` as
- * `workspace.entitlements.advancedAutomations`. Missing means no access.
- */
-export type WorkspaceEntitlements = { advancedAutomations?: boolean }
-
 /** User context sent to Statsig by the root layout, so server and client evaluate the same gates. */
 export function botsFlagUser(session: { user?: { id?: string | null; email?: string | null; workspaceId?: string | null } } | null) {
   return {

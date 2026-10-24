@@ -9,12 +9,12 @@ import { showToast } from "app/utils/showToast"
 import Button from "components/Button/Button"
 import { plural } from "lib/attende/format"
 import { BOTS_ROUTES } from "./brand"
-import { filterEntitled, WorkspaceWithEntitlements } from "./entitlement"
 import { EmptyState } from "./ui/EmptyState"
 import { PremiumCard } from "./ui/PremiumCard"
 import { useBotsAppT } from "./useBotsAppT"
 
-export type PickerWorkspace = WorkspaceWithEntitlements & {
+export type PickerWorkspace = {
+  _id: string
   name: string
   logo?: string | null
   members?: unknown[] | null
@@ -27,13 +27,15 @@ type Props = {
   loadFailed?: boolean
 }
 
-/** Grid of the workspaces that have bots. Selecting one re-issues the session apiToken for it. */
+/**
+ * Grid of all the user's companies. Selecting one re-issues the session apiToken for it. Whether a company has an
+ * Attende-ai plan is not decided here: each page asks the Attende backend and shows the no-plan or subscribe state.
+ */
 export function WorkspacePicker({ workspaces, currentWorkspaceId, loadFailed = false }: Props) {
   const { t, language } = useBotsAppT()
   const router = useRouter()
   const { update } = useSession()
   const [pendingId, setPendingId] = useState<string | null>(null)
-  const entitled = filterEntitled(workspaces)
 
   const choose = async (id: string) => {
     if (pendingId) return
@@ -62,7 +64,7 @@ export function WorkspacePicker({ workspaces, currentWorkspaceId, loadFailed = f
     )
   }
 
-  if (entitled.length === 0) {
+  if (workspaces.length === 0) {
     return (
       <EmptyState
         icon={<Building4 size={22} />}
@@ -74,7 +76,7 @@ export function WorkspacePicker({ workspaces, currentWorkspaceId, loadFailed = f
 
   return (
     <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {entitled.map((workspace) => {
+      {workspaces.map((workspace) => {
         const id = String(workspace._id)
         const current = id === String(currentWorkspaceId)
         const pending = pendingId === id

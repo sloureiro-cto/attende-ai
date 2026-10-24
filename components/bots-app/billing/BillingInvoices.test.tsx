@@ -3,7 +3,7 @@ import { BillingInvoices } from "./BillingInvoices"
 
 const getInvoices = jest.fn()
 jest.mock("context/UserLanguageContext", () => ({ useUserLanguage: () => ({ userLanguage: "english" }) }))
-jest.mock("actions/plans/getWorkspaceInvoices", () => ({ getWorkspaceInvoicesAction: (...a: unknown[]) => getInvoices(...a) }))
+jest.mock("actions/attende/billing", () => ({ getAttendeInvoicesAction: (...a: unknown[]) => getInvoices(...a) }))
 
 describe("BillingInvoices", () => {
   it("tells an error (with retry) apart from an empty list", async () => {
@@ -14,6 +14,7 @@ describe("BillingInvoices", () => {
     getInvoices.mockResolvedValueOnce({ success: true, data: [] })
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
     expect(await screen.findByText("No invoices yet.")).toBeInTheDocument()
+    expect(getInvoices).toHaveBeenCalledTimes(2)
   })
 
   it("lists invoices in their own currency with status and links", async () => {

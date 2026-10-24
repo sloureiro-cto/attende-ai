@@ -10,7 +10,6 @@ import { showToast } from "app/utils/showToast"
 import { Dropdown, DropdownTrigger } from "components/ui/dropdown-menu"
 import { useWorkspace } from "context/WorkspaceContext"
 import { BOTS_ROUTES } from "./brand"
-import { filterEntitled } from "./entitlement"
 import { MenuContent, MenuItem } from "./ui/Menu"
 import { useBotsAppT } from "./useBotsAppT"
 
@@ -20,14 +19,13 @@ type Props = {
   className?: string
 }
 
-/** Current workspace + switch between the workspaces that have bots. */
+/** Current company + switch between all the user's companies (the plan is checked per page, by the Attende backend). */
 export function WorkspaceSwitcher({ variant = "compact", className }: Props) {
   const { t } = useBotsAppT()
   const router = useRouter()
   const { update } = useSession()
   const { workspaces, selectedWorkspace } = useWorkspace()
   const [switching, setSwitching] = useState(false)
-  const entitled = filterEntitled(workspaces)
 
   const switchTo = async (id: string) => {
     if (switching || id === String(selectedWorkspace?._id)) return
@@ -74,7 +72,7 @@ export function WorkspaceSwitcher({ variant = "compact", className }: Props) {
         </button>
       </DropdownTrigger>
       <MenuContent align="start" className="max-h-80 overflow-y-auto">
-        {entitled.map((workspace) => {
+        {workspaces.map((workspace) => {
           const current = String(workspace._id) === String(selectedWorkspace?._id)
           return (
             <MenuItem key={String(workspace._id)} onSelect={() => void switchTo(String(workspace._id))}>

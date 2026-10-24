@@ -130,7 +130,9 @@ export type AttendeSubscription = {
   price: { amount: number; currency: string; interval: "month" | "year"; intervalCount: number } | null
   trialEndsAt: string | null
   currentPeriodEnd: string | null
-  /** Not sent by the Attende backend today; kept so a cancellation date shows as soon as it is. */
+  /** The customer scheduled the end at the period end (in the portal) and can still undo it there. */
+  cancelAtPeriodEnd: boolean
+  /** When the cancellation was requested or the subscription ended. Also set while `cancelAtPeriodEnd` is pending. */
   canceledAt: string | null
 }
 
@@ -142,7 +144,7 @@ const iso = (value: unknown): string | null => {
 
 /**
  * Reads `subscription` from `GET /attende/entitlements`: `{planSlug, status, price: {amount, currency, interval,
- * intervalCount} | null, trialEndsAt, currentPeriodEnd}`. The amount is already in major units. `null` = no subscription.
+ * intervalCount} | null, trialEndsAt, currentPeriodEnd, cancelAtPeriodEnd, canceledAt}`. The amount is already in major units. `null` = no subscription.
  */
 export function parseAttendeSubscription(raw: unknown): AttendeSubscription | null {
   const sub = (raw as { subscription?: Record<string, unknown> | null } | null | undefined)?.subscription
@@ -170,16 +172,30 @@ export function parseAttendeSubscription(raw: unknown): AttendeSubscription | nu
       : null,
     trialEndsAt: iso(sub.trialEndsAt),
     currentPeriodEnd: iso(sub.currentPeriodEnd),
+    cancelAtPeriodEnd: sub.cancelAtPeriodEnd === true,
     canceledAt: iso(sub.canceledAt),
   }
 }
 
 /**
+ * When a scheduled cancellation takes effect: the end of the paid period (or of the trial). `null` when none is pending.
+ * The customer can still undo it in the Stripe portal until then.
+ */
+export function pendingCancellation(sub: AttendeSubscription | null): { date: string } | null {
+  if (!sub?.cancelAtPeriodEnd || (sub.status !== "active" && sub.status !== "trialing")) return null
+  const date = sub.currentPeriodEnd ?? sub.trialEndsAt
+  return date ? { date } : null
+}
+
+/** The subscription ended or was canceled for good (not a cancellation still pending at the period end). */
+export const isCanceled = (sub: AttendeSubscription | null): boolean => Boolean(sub?.canceledAt) && !sub?.cancelAtPeriodEnd
+
+/**
  * When Stripe will charge next, only when a charge is really scheduled: an active or trialing Attende subscription that
- * was not canceled. Trial -> the trial end; active -> the end of the current period.
+ * was not canceled and is not set to end. Trial -> the trial end; active -> the end of the current period.
  */
 export function nextCharge(sub: AttendeSubscription | null): { date: string; price: AttendeSubscription["price"] } | null {
-  if (!sub || sub.canceledAt) return null
+  if (!sub || sub.canceledAt || sub.cancelAtPeriodEnd) return null
   if (sub.status === "trialing" && sub.trialEndsAt) return { date: sub.trialEndsAt, price: sub.price }
   if (sub.status === "active" && sub.currentPeriodEnd) return { date: sub.currentPeriodEnd, price: sub.price }
   return null
@@ -204,4 +220,46 @@ export function parseAttendeUsage(raw: unknown): AttendeUsage | null {
     rows.push({ key, used: numOrNull(v.used), limit: typeof v.limit === "number" && v.limit >= 0 ? v.limit : null })
   }
   return { month: typeof usage.month === "string" ? usage.month : null, rows }
+}
+
+// ---- Invoices ----------------------------------------------------------------------------------
+
+/** One Stripe invoice (`GET /attende/billing/invoices`). `created` is in Unix seconds, `amountPaid` in minor units. */
+export type AttendeInvoice = {
+  id: string
+  number: string | null
+  created: number
+  amountPaid: number
+  currency: string
+  status: string | null
+  hostedInvoiceUrl: string | null
+  invoicePdf: string | null
+}
+
+const strOrNull = (value: unknown): string | null => (typeof value === "string" && value ? value : null)
+
+/** `{invoices: [...]}` -> invoices. Rows without an id, a date or an amount are dropped rather than shown wrong. */
+export function parseAttendeInvoices(raw: unknown): AttendeInvoice[] {
+  const list = (raw as { invoices?: unknown } | null | undefined)?.invoices
+  if (!Array.isArray(list)) return []
+  const out: AttendeInvoice[] = []
+  for (const item of list) {
+    const row = (item ?? {}) as Record<string, unknown>
+    const id = strOrNull(row.id)
+    const created = numOrNull(row.created)
+    const amountPaid = numOrNull(row.amountPaid)
+    const currency = strOrNull(row.currency)
+    if (!id || created === null || amountPaid === null || !currency) continue
+    out.push({
+      id,
+      number: strOrNull(row.number),
+      created,
+      amountPaid,
+      currency,
+      status: strOrNull(row.status),
+      hostedInvoiceUrl: strOrNull(row.hostedInvoiceUrl),
+      invoicePdf: strOrNull(row.invoicePdf),
+    })
+  }
+  return out
 }

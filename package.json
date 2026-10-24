@@ -54,7 +54,6 @@
     "react-toastify": "^10.0.5",
     "reactflow": "^11.11.4",
     "server-only": "0.0.1",
-    "stripe": "^18.3.0",
     "styled-components": "^6.1.11",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",

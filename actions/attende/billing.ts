@@ -4,9 +4,11 @@ import { headers } from "next/headers"
 import { auth } from "auth"
 import {
   type AttendeBilling,
+  type AttendeInvoice,
   type AttendeSubscription,
   type AttendeUsage,
   parseAttendeBilling,
+  parseAttendeInvoices,
   parseAttendeSubscription,
   parseAttendeUsage,
 } from "lib/attende/billing/model"
@@ -70,4 +72,16 @@ export async function openBillingPortalAction(kind: PortalKind): Promise<PortalR
   return typeof result.data?.url === "string" && result.data.url
     ? { success: true, url: result.data.url }
     : { success: false, error: "portal" }
+}
+
+export type InvoicesLoad = { success: true; data: AttendeInvoice[] } | { success: false; error: string }
+
+/**
+ * Stripe invoices of the signed-in workspace (`GET /attende/billing/invoices` on the Attende backend), newest first. A
+ * workspace without a Stripe customer gets an empty list; any failure is an error, never an empty list.
+ */
+export async function getAttendeInvoicesAction(limit = 24): Promise<InvoicesLoad> {
+  const result = await attendeGet<unknown>("/attende/billing/invoices", { limit })
+  if (!result.success) return { success: false, error: result.reference ?? (result.status === 0 ? "network" : "load") }
+  return { success: true, data: parseAttendeInvoices(result.data) }
 }

@@ -1,4 +1,4 @@
-import { nextCharge, parseAttendeSubscription, parseAttendeUsage } from "../model"
+import { isCanceled, nextCharge, parseAttendeInvoices, parseAttendeSubscription, parseAttendeUsage, pendingCancellation } from "../model"
 
 const subscription = (extra: Record<string, unknown> = {}) => ({
   planSlug: "attende_growth",
@@ -18,8 +18,15 @@ describe("parseAttendeSubscription", () => {
       price: { amount: 497, currency: "BRL", interval: "month", intervalCount: 1 },
       trialEndsAt: null,
       currentPeriodEnd: "2026-11-22T00:00:00.000Z",
+      cancelAtPeriodEnd: false,
       canceledAt: null,
     })
+  })
+  it("reads a cancellation scheduled at the period end", () => {
+    expect(
+      parseAttendeSubscription({ subscription: subscription({ cancelAtPeriodEnd: true, canceledAt: "2026-10-20T12:00:00.000Z" }) })
+    ).toMatchObject({ cancelAtPeriodEnd: true, canceledAt: "2026-10-20T12:00:00.000Z" })
+    expect(parseAttendeSubscription({ subscription: subscription({ cancelAtPeriodEnd: "yes" }) })?.cancelAtPeriodEnd).toBe(false)
   })
   it("is null without a subscription", () => {
     expect(parseAttendeSubscription({ subscription: null })).toBeNull()
@@ -41,7 +48,7 @@ describe("parseAttendeSubscription", () => {
 })
 
 describe("nextCharge", () => {
-  const base = { planSlug: "attende_growth", price: null, trialEndsAt: "2026-10-30T00:00:00.000Z", currentPeriodEnd: "2026-11-22T00:00:00.000Z", canceledAt: null }
+  const base = { planSlug: "attende_growth", price: null, trialEndsAt: "2026-10-30T00:00:00.000Z", currentPeriodEnd: "2026-11-22T00:00:00.000Z", cancelAtPeriodEnd: false, canceledAt: null }
   it("is the trial end while trialing and the period end while active", () => {
     expect(nextCharge({ ...base, status: "trialing" })?.date).toBe("2026-10-30T00:00:00.000Z")
     expect(nextCharge({ ...base, status: "active" })?.date).toBe("2026-11-22T00:00:00.000Z")
@@ -50,6 +57,7 @@ describe("nextCharge", () => {
     expect(nextCharge(null)).toBeNull()
     expect(nextCharge({ ...base, status: "active", canceledAt: "2026-10-01T00:00:00.000Z" })).toBeNull()
     expect(nextCharge({ ...base, status: "past_due" })).toBeNull()
+    expect(nextCharge({ ...base, status: "active", cancelAtPeriodEnd: true })).toBeNull()
   })
 })
 
@@ -70,5 +78,39 @@ describe("parseAttendeUsage", () => {
       { key: "aiReplies", used: null, limit: 1000 },
       { key: "agents", used: 2, limit: 3 },
     ])
+  })
+})
+
+describe("pendingCancellation / isCanceled", () => {
+  const base = { planSlug: "attende_growth", price: null, trialEndsAt: null, currentPeriodEnd: "2026-11-22T00:00:00.000Z", cancelAtPeriodEnd: false, canceledAt: null }
+  it("dates a scheduled cancellation at the period end, and it is not yet canceled", () => {
+    const sub = { ...base, status: "active", cancelAtPeriodEnd: true, canceledAt: "2026-10-20T12:00:00.000Z" }
+    expect(pendingCancellation(sub)).toEqual({ date: "2026-11-22T00:00:00.000Z" })
+    expect(isCanceled(sub)).toBe(false)
+  })
+  it("a trial set to end falls back to the trial end", () => {
+    expect(pendingCancellation({ ...base, status: "trialing", currentPeriodEnd: null, trialEndsAt: "2026-10-30T00:00:00.000Z", cancelAtPeriodEnd: true })).toEqual({ date: "2026-10-30T00:00:00.000Z" })
+  })
+  it("nothing pending without the flag or once the subscription ended", () => {
+    expect(pendingCancellation({ ...base, status: "active" })).toBeNull()
+    expect(pendingCancellation({ ...base, status: "canceled", cancelAtPeriodEnd: true })).toBeNull()
+    expect(pendingCancellation(null)).toBeNull()
+    expect(isCanceled({ ...base, status: "canceled", canceledAt: "2026-10-20T12:00:00.000Z" })).toBe(true)
+    expect(isCanceled(null)).toBe(false)
+  })
+})
+
+describe("parseAttendeInvoices", () => {
+  const invoice = { id: "in_1", number: "A-1", created: 1792700000, amountPaid: 49700, currency: "brl", status: "paid", hostedInvoiceUrl: "https://x/1", invoicePdf: null }
+  it("reads the invoices list and keeps the fields the page renders", () => {
+    expect(parseAttendeInvoices({ invoices: [invoice] })).toEqual([invoice])
+  })
+  it("drops broken rows and tolerates a missing list", () => {
+    expect(parseAttendeInvoices({ invoices: [invoice, { id: "in_2" }, null, { ...invoice, id: "in_3", number: "" }] }).map((i) => [i.id, i.number])).toEqual([
+      ["in_1", "A-1"],
+      ["in_3", null],
+    ])
+    expect(parseAttendeInvoices({})).toEqual([])
+    expect(parseAttendeInvoices(null)).toEqual([])
   })
 })
