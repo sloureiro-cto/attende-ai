@@ -125,7 +125,8 @@ export type AgentErrorDetails = {
   limit?: number
   used?: number
   reason?: string
-  lines?: Array<{ channel: string; sessionId: string; exists: boolean }>
+  /** Lines of the error: missing ones (`exists: false`), or the lines an active automation runs on (`ATTENDE_AUTOMATION_ON_LINE`). */
+  lines?: Array<{ channel: string; sessionId: string; exists?: boolean }>
 }
 
 export type AgentActionError = { success: false; status: number; code?: string; message?: string; details?: AgentErrorDetails }

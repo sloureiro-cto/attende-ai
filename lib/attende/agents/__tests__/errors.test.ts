@@ -13,6 +13,7 @@ describe("agent error mapping", () => {
     [{ status: 402, code: "ATTENDE_QUOTA_EXCEEDED" }, "errorQuota"],
     [{ status: 409, code: "ATTENDE_AGENT_NOT_READY" }, "errorNotReadyNoLines"],
     [{ status: 409, code: "ATTENDE_AGENT_LINE_NOT_CONNECTED" }, "errorLineNotConnected"],
+    [{ status: 409, code: "ATTENDE_AUTOMATION_ON_LINE", details: { lines: [{ channel: "whatsapp", sessionId: "s1" }] } }, "errorAutomationOnLine"],
     [{ status: 413, code: "ATTENDE_AGENT_FILE_REJECTED", details: { reason: "size" } }, "errorFileSize"],
     [{ status: 415, code: "ATTENDE_AGENT_FILE_REJECTED", details: { reason: "type" } }, "errorFileType"],
     [{ status: 400, code: "ATTENDE_AGENT_FILE_REJECTED", details: { reason: "missing" } }, "errorFileMissing"],
@@ -49,5 +50,10 @@ describe("agent error mapping", () => {
     expect(isRetryable({ status: 500 })).toBe(true)
     expect(isRetryable({ status: 403, code: "ATTENDE_QUOTA_EXCEEDED" })).toBe(false)
     expect(isRetryable({ status: 400, code: "ATTENDE_AGENT_VALIDATION" })).toBe(false)
+  })
+
+  it("an automation on the line is fixed elsewhere, not by retrying", () => {
+    expect(isRetryable({ status: 409, code: "ATTENDE_AUTOMATION_ON_LINE" })).toBe(false)
+    expect(isPlanError({ status: 409, code: "ATTENDE_AUTOMATION_ON_LINE" })).toBe(false)
   })
 })

@@ -10,7 +10,7 @@ import TextInput from "components/TextInput/TextInput"
 import type { BotBuilderAction } from "lib/automations/botBuilderState"
 import type { EditorContextData } from "lib/automations/editorContext"
 import type { AutomationChannel, AdvancedAutomationNode } from "lib/automations/types"
-import { NODE_META, TONE_CHIP } from "./botNodeMeta"
+import { NODE_META, nodeKindLabelKey, TONE_CHIP } from "./botNodeMeta"
 import { KindFields } from "./inspector/KindFields"
 import type { BotLookups } from "./useBotLookups"
 
@@ -51,7 +51,7 @@ export const BotInspector = memo(function BotInspector({ node, stepNumber, chann
           <p className="text-body-12 text-neutral-400">
             {node.kind === "stop" ? t("advancedAutomationInspectorEnd") : t("advancedAutomationInspectorStepN", { n: stepNumber })}
           </p>
-          <p className="truncate text-body-14 font-semibold text-neutral-800">{t(meta.labelKey)}</p>
+          <p className="truncate text-body-14 font-semibold text-neutral-800">{t(nodeKindLabelKey(node))}</p>
         </div>
         <IconButton type="button" size="large" variant="ghost" aria-label={t("advancedAutomationClose")} onClick={onClose} icon={<X />} />
       </div>

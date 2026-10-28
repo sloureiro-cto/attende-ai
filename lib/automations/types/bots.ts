@@ -45,6 +45,10 @@ export type AdvancedAutomationNode =
   | (NodeBase & {
       kind: "handoff"
       message?: string
+      /** `person` (default): the team gets the conversation. `ai`: the Attende AI agent `agentId` takes this one conversation. */
+      to?: "person" | "ai"
+      /** JSYNQ agent id of the AI agent (the `agentId` of an Attende agent), required with `to: "ai"`. */
+      agentId?: string
       assignMode?: AdvancedAutomationHandoffAssignMode
       userIds?: string[]
       specificUserId?: string

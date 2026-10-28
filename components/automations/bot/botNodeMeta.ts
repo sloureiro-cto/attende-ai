@@ -15,7 +15,7 @@ import {
   Tag,
   UserRound,
 } from "lucide-react"
-import type { AdvancedAutomationNodeKind } from "lib/automations/types"
+import type { AdvancedAutomationNode, AdvancedAutomationNodeKind } from "lib/automations/types"
 import type { AutomationsTranslationKey } from "lib/i18n/translations/automations"
 
 type NodeTone = "primary" | "neutral" | "warning" | "error" | "info"
@@ -36,6 +36,15 @@ export const NODE_META: Record<AdvancedAutomationNodeKind, { icon: LucideIcon; l
   handoff: { icon: UserRound, labelKey: "advancedAutomationKindHandoff", tone: "error" },
   stop: { icon: CircleStop, labelKey: "advancedAutomationKindStop", tone: "neutral" },
 }
+
+/** Label of a step's kind; a handoff to an AI agent reads as such, not as "hand off to a person". */
+export function nodeKindLabelKey(node: AdvancedAutomationNode): AutomationsTranslationKey {
+  if (node.kind === "handoff" && node.to === "ai") return "advancedAutomationKindHandoffAi"
+  return NODE_META[node.kind].labelKey
+}
+
+/** Steps the runtime cannot run for now: shown disabled in the palette, flagged on the canvas. */
+export const UNAVAILABLE_KINDS: ReadonlySet<AdvancedAutomationNodeKind> = new Set<AdvancedAutomationNodeKind>(["send_meta_template"])
 
 /** Tailwind classes for the icon chip of each tone (same pairings as the design). */
 export const TONE_CHIP: Record<NodeTone, string> = {
@@ -92,6 +101,7 @@ export const PALETTE_GROUPS: Array<{ titleKey: AutomationsTranslationKey; swatch
     items: [
       { id: "ai_agent", kind: "ai_agent", labelKey: "advancedAutomationKindAiAgent" },
       { id: "handoff", kind: "handoff", labelKey: "advancedAutomationKindHandoff" },
+      { id: "handoff_ai", kind: "handoff", labelKey: "advancedAutomationKindHandoffAi", preset: { to: "ai" } },
       { id: "webhook", kind: "webhook", labelKey: "advancedAutomationKindWebhook" },
     ],
   },

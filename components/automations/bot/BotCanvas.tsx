@@ -24,6 +24,7 @@ import { type BotBuilderAction, type BotDraft, START_NODE_ID, startPillPosition 
 import { nodeIssues, nodeOutputs } from "lib/automations/botGraph"
 import type { AdvancedAutomationNode, AdvancedAutomationNodeKind, AdvancedAutomationStatsSummary } from "lib/automations/types"
 import { NODE_TYPES, type StartNodeData, type StepNodeData } from "./BotNodes"
+import { UNAVAILABLE_KINDS } from "./botNodeMeta"
 import { PALETTE_DRAG_TYPE, PALETTE_PRESET_DRAG_TYPE } from "./BotPalette"
 
 import "reactflow/dist/style.css"
@@ -253,7 +254,7 @@ function CanvasInner({
   const onDrop = useCallback(
     (e: DragEvent) => {
       const kind = e.dataTransfer.getData(PALETTE_DRAG_TYPE) as AdvancedAutomationNodeKind
-      if (!kind) return
+      if (!kind || UNAVAILABLE_KINDS.has(kind)) return
       e.preventDefault()
       const p = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
       let preset: Record<string, unknown> | undefined

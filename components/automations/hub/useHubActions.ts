@@ -1,5 +1,6 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import { useRef, useState } from "react"
 import {
   createAutomationAction,
@@ -13,7 +14,8 @@ import type { AutomationsTFn } from "components/automations/ui/useAutomationsT"
 import { copyName } from "lib/automations/copyName"
 import type { AutomationListItem, AdvancedAutomationListItem } from "lib/automations/types"
 import type { useHubData } from "./useHubData"
-import { automationErrorText, isServiceFailure } from "components/automations/ui/automationErrorText"
+import { showAutomationError } from "components/automations/ui/agentConflict"
+import { automationErrorText, hasOwnErrorText } from "components/automations/ui/automationErrorText"
 
 type PendingDelete = { kind: "rule" | "bot"; id: string; name: string }
 
@@ -24,7 +26,8 @@ export type HubActionsTarget = Pick<
 >
 
 /** Row actions of the hub (toggle, duplicate, delete), each guarded against double submits and rolled back on failure. */
-export function useHubActions(hub: HubActionsTarget, t: AutomationsTFn) {
+export function useHubActions(hub: HubActionsTarget, t: AutomationsTFn, language = "english") {
+  const router = useRouter()
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [duplicating, setDuplicating] = useState<string | null>(null)
@@ -63,12 +66,17 @@ export function useHubActions(hub: HubActionsTarget, t: AutomationsTFn) {
       const res = await updateAdvancedAutomationAction(item.id, { status: nextStatus, expectedUpdatedAt: item.updatedAt })
       if (!res.success) {
         hub.patchBot(item.id, { status: item.status })
+        // An AI agent already answers on one of its accounts: name them and offer the agent.
+        if (res.code === "AUTOMATION_SESSION_HAS_AGENT") {
+          void showAutomationError(res, t, "automationsHubToggleError", { language, navigate: (href) => router.push(href) })
+          return
+        }
         // Activating an incomplete bot is refused with the reasons; say so instead of a generic error.
         showToast(
           "error",
           res.issues?.length
             ? t("automationsHubBotIncomplete")
-            : isServiceFailure(res)
+            : hasOwnErrorText(res)
             ? automationErrorText(res, t, "automationsHubToggleError")
             : t("automationsHubToggleError")
         )

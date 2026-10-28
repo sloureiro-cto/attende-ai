@@ -15,16 +15,21 @@ import type {
 import { botsGate } from "./gate"
 import type { ActionErr, ActionResult } from "./result"
 
-/** Advanced automations live on the Attende backend (`ATTENDE_API_URL`), same paths as before. */
+/** Advanced automations are served by this app's Attende API (`app/api/messaging-automations/advanced*`). */
 const BASE = "/messaging-automations/advanced"
 const enc = encodeURIComponent
 
 /** Backend error -> action error: its message (shown as is by the editor), status, code and validation issues. */
 function fail(error: AttendeActionError): ActionErr {
   const details = error.details as
-    | { issues?: AdvancedAutomationIssue[]; details?: { issues?: AdvancedAutomationIssue[] } }
+    | { issues?: AdvancedAutomationIssue[]; details?: { issues?: AdvancedAutomationIssue[] }; sessions?: unknown }
     | undefined
   const issues = details?.issues ?? details?.details?.issues
+  const sessions = Array.isArray(details?.sessions)
+    ? (details.sessions as Array<{ channel?: unknown; sessionId?: unknown }>)
+        .filter((s) => typeof s?.channel === "string" && typeof s?.sessionId === "string")
+        .map((s) => ({ channel: s.channel as string, sessionId: s.sessionId as string }))
+    : undefined
   return {
     success: false,
     // A network problem or a missing env has no message for people: callers fall back to a localized string.
@@ -33,6 +38,7 @@ function fail(error: AttendeActionError): ActionErr {
     ...(error.reference === "WORKSPACE_TOKEN_MISMATCH" ? {} : { status: error.status }),
     ...(error.reference ? { code: error.reference } : {}),
     ...(Array.isArray(issues) ? { issues } : {}),
+    ...(sessions?.length ? { sessions } : {}),
   }
 }
 

@@ -61,4 +61,13 @@ export function plural(count: number, language: string, forms: { zero?: string; 
   return form.split("{count}").join(formatNumber(count, language))
 }
 
+/** "WhatsApp Vendas, Instagram e SMS" / "A, B, and C": a list of names joined the way the language does. */
+export function formatList(items: string[], language: string): string {
+  try {
+    return new Intl.ListFormat(localeOf(language), { style: "long", type: "conjunction" }).format(items)
+  } catch {
+    return items.join(", ")
+  }
+}
+
 export { formatRelative } from "lib/automations/relativeTime"

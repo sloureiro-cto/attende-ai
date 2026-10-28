@@ -42,7 +42,11 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })
   }, [bubbles])
 
-  const systemLabel = useCallback((effect: PreviewEffect) => t(automationsKey(`advancedAutomationEffect_${effect.type}`)), [t])
+  const systemLabel = useCallback(
+    (effect: PreviewEffect) =>
+      t(automationsKey(effect.type === "handoff" && effect.to === "ai" ? "advancedAutomationEffect_handoff_ai" : `advancedAutomationEffect_${effect.type}`)),
+    [t]
+  )
 
   const run = useCallback(
     async (

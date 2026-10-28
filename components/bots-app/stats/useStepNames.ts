@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback } from "react"
-import { NODE_META } from "components/automations/bot/botNodeMeta"
+import { nodeKindLabelKey } from "components/automations/bot/botNodeMeta"
 import { useAutomationsT } from "components/automations/ui/useAutomationsT"
 import { exitDisplayName, FIXED_EXIT_LABEL_KEYS } from "lib/automations/botGraph"
 import type { AdvancedAutomationNode } from "lib/automations/types"
@@ -22,12 +22,12 @@ export function useStepNames() {
         const text = node.text.trim().replace(/\s+/g, " ")
         return text.length > TITLE_MAX ? `${text.slice(0, TITLE_MAX - 1)}…` : text
       }
-      return at(NODE_META[node.kind].labelKey) || t("stepFallback", { n: order })
+      return at(nodeKindLabelKey(node)) || t("stepFallback", { n: order })
     },
     [at, t]
   )
 
-  const kindLabel = useCallback((node: AdvancedAutomationNode): string => at(NODE_META[node.kind].labelKey), [at])
+  const kindLabel = useCallback((node: AdvancedAutomationNode): string => at(nodeKindLabelKey(node)), [at])
 
   const exitLabel = useCallback(
     (node: AdvancedAutomationNode, exitId: string): string => {

@@ -24,6 +24,7 @@ jest.mock("actions/messaging-automations/advancedAutomations", () => ({
   deleteAdvancedAutomationAction: jest.fn(),
 }))
 jest.mock("actions/messaging-automations/automations", () => ({}))
+jest.mock("actions/attende/agents", () => ({ listAttendeAgentsAction: jest.fn() }))
 jest.mock("app/utils/showToast", () => ({ showToast: jest.fn() }))
 
 const bot = (id: string): AdvancedAutomationListItem =>

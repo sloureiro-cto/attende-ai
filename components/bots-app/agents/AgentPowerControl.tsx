@@ -126,7 +126,10 @@ export function AgentPowerControl({ agent, onChange, appearance = "button", clas
             ))}
           </ul>
         )}
-        <ErrorNotice error={error} />
+        <ErrorNotice
+          error={error}
+          lineName={(l) => agent.lines.find((x) => x.channel === l.channel && x.sessionId.toLowerCase() === l.sessionId.toLowerCase())?.label}
+        />
       </ConfirmDialog>
     </>
   )

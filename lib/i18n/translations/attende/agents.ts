@@ -644,6 +644,17 @@ const entries = {
   errorQuotaReplies: { en: "Your plan reached its monthly limit of automatic replies.", pt: "O seu plano atingiu o limite mensal de respostas automáticas.", es: "Tu plan alcanzó su límite mensual de respuestas automáticas." },
   errorTrialOutboundCap: { en: "Your free trial reached its message limit. Choose a plan to keep going.", pt: "O seu teste grátis atingiu o limite de mensagens. Escolha um plano para continuar.", es: "Tu prueba gratis alcanzó su límite de mensajes. Elige un plan para continuar." },
   errorNotReadyNoLines: { en: "Attach at least one channel before turning the agent on.", pt: "Vincule pelo menos um canal antes de ativar o agente.", es: "Vincula al menos un canal antes de activar el agente." },
+  errorAutomationOnLine: {
+    en: "An active automation already answers on {lines}. Pause that automation, or remove these channels from the agent, then turn the agent on.",
+    pt: "Uma automação ativa já responde em {lines}. Pause essa automação ou tire esses canais do agente e depois ative o agente.",
+    es: "Una automatización activa ya responde en {lines}. Pausa esa automatización o quita esos canales del agente y luego activa el agente.",
+  },
+  errorAutomationOnLineNoLines: {
+    en: "An active automation already answers on one of this agent's channels. Pause that automation, or remove the channel from the agent, then turn the agent on.",
+    pt: "Uma automação ativa já responde em um dos canais deste agente. Pause essa automação ou tire o canal do agente e depois ative o agente.",
+    es: "Una automatización activa ya responde en uno de los canales de este agente. Pausa esa automatización o quita el canal del agente y luego activa el agente.",
+  },
+  openAutomations: { en: "Open automations", pt: "Abrir automações", es: "Abrir automatizaciones" },
   errorLineNotConnected: { en: "An attached channel is disconnected. Reconnect it and try again.", pt: "Um canal vinculado está desconectado. Reconecte e tente de novo.", es: "Un canal vinculado está desconectado. Reconéctalo e inténtalo de nuevo." },
   errorFileMissing: { en: "No file was received. Try again.", pt: "Nenhum arquivo foi recebido. Tente de novo.", es: "No se recibió ningún archivo. Inténtalo de nuevo." },
   errorFileSize: { en: "This file is too large.", pt: "Este arquivo é grande demais.", es: "Este archivo es demasiado grande." },

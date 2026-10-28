@@ -45,7 +45,7 @@ export function BotsHubClient({ initial }: { initial: BotsHubInitial }) {
   const { t: ta, language: automationsLanguage } = useAutomationsT()
   const router = useRouter()
   const hub = useBotsHubData(initial)
-  const actions = useHubActions(hub, ta)
+  const actions = useHubActions(hub, ta, automationsLanguage)
   const [creating, setCreating] = useState(false)
 
   const metrics = computeBotsHubMetrics(hub.data)

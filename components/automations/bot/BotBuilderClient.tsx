@@ -15,7 +15,7 @@ import {
 } from "actions/messaging-automations/advancedAutomations"
 import type { IColumn } from "app/_types/Column"
 import { showToast } from "app/utils/showToast"
-import { automationErrorText } from "components/automations/ui/automationErrorText"
+import { showAutomationError } from "components/automations/ui/agentConflict"
 import { useAutomationsT } from "components/automations/ui/useAutomationsT"
 import { useLeaveConfirm } from "components/automations/ui/useLeaveConfirm"
 import { useSavableDocument } from "components/automations/ui/useSavableDocument"
@@ -58,6 +58,7 @@ import { BotCanvas } from "./BotCanvas"
 import { BotChannelsPopover } from "./BotChannelsPopover"
 import { BotInspector } from "./BotInspector"
 import { BotPalette } from "./BotPalette"
+import { UNAVAILABLE_KINDS } from "./botNodeMeta"
 import { BotStageLabelsContext } from "./botStageLabels"
 import { BotStartInspector } from "./BotStartInspector"
 import { useBotLookups } from "./useBotLookups"
@@ -102,7 +103,7 @@ function buildInitialDraft(
 }
 
 export function BotBuilderClient({ initial, context, seed }: Props) {
-  const { t } = useAutomationsT()
+  const { t, language } = useAutomationsT()
   const router = useRouter()
   const [state, dispatch] = useReducer(botBuilderReducer, undefined, () =>
     initialBuilderState(buildInitialDraft(initial, seed, t))
@@ -166,8 +167,9 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
     if (draft.nodes.length === 0) list.push("advancedAutomationBlockNoSteps")
     else if (!draft.startNodeId) list.push("advancedAutomationBlockNoStart")
     if (problemNodeIds.length > 0) list.push("advancedAutomationBlockSteps")
+    if (draft.nodes.some((n) => UNAVAILABLE_KINDS.has(n.kind))) list.push("advancedAutomationBlockTemplateUnavailable")
     return list
-  }, [draft.name, draft.channels, draft.nodes.length, draft.startNodeId, problemNodeIds.length])
+  }, [draft.name, draft.channels, draft.nodes, draft.startNodeId, problemNodeIds.length])
 
   const { confirmLeave, leaveDialog } = useLeaveConfirm({
     dirty,
@@ -216,7 +218,11 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
         if (!res.success) {
           if (res.status !== 409) {
             if (res.issues?.length) setIssues(res.issues)
-            showToast("error", automationErrorText(res, t, "advancedAutomationSaveError"))
+            void showAutomationError(res, t, "advancedAutomationSaveError", {
+              language,
+              navigate: (href) => router.push(href),
+              sessionLabel: (s) => context.sessions[s.channel as keyof typeof context.sessions]?.find((o) => o.id === s.sessionId)?.label,
+            })
           }
           return
         }

@@ -12,6 +12,9 @@ export function TemplateFields({ node, lookups, patch, t, channels }: Narrow<"se
     items.unshift({ value: node.templateId, displayName: node.templateId })
   return (
     <FieldBlock label={t("advancedAutomationFieldTemplate")} hint={t("advancedAutomationTemplateHint")}>
+      <p role="note" className="rounded-lg border border-warning-lighter bg-warning-clean p-2.5 text-body-12 text-neutral-900">
+        {t("advancedAutomationTemplateUnavailable")}
+      </p>
       <BotSelect
         size="small"
         value={node.templateId}

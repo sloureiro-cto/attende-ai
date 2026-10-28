@@ -15,6 +15,7 @@ export type AgentErrorKey =
   | "errorTrialOutboundCap"
   | "errorNotReadyNoLines"
   | "errorLineNotConnected"
+  | "errorAutomationOnLine"
   | "errorFileMissing"
   | "errorFileSize"
   | "errorFileType"
@@ -51,6 +52,8 @@ export function agentErrorKey(error: Pick<AgentActionError, "status" | "code" | 
       return "errorNotReadyNoLines"
     case "ATTENDE_AGENT_LINE_NOT_CONNECTED":
       return "errorLineNotConnected"
+    case "ATTENDE_AUTOMATION_ON_LINE":
+      return "errorAutomationOnLine"
     case "ATTENDE_AGENT_FILE_REJECTED":
       return error.details?.reason === "size" ? "errorFileSize" : error.details?.reason === "type" ? "errorFileType" : "errorFileMissing"
     case "ATTENDE_TRIAL_EXPIRED":
@@ -96,6 +99,10 @@ export const isPlanError = (error: Pick<AgentActionError, "status" | "code">): b
   error.code === "ATTENDE_NOT_ENTITLED" ||
   error.status === 402
 
-/** Errors a retry cannot fix (plan, missing agent): no "Try again" button. */
+/** Errors a retry cannot fix (plan, missing agent, an automation on the line): no "Try again" button. */
 export const isRetryable = (error: Pick<AgentActionError, "status" | "code">): boolean =>
-  !isPlanError(error) && error.code !== "ATTENDE_AGENT_NOT_FOUND" && error.code !== "ATTENDE_AGENT_VALIDATION" && error.status !== 401
+  !isPlanError(error) &&
+  error.code !== "ATTENDE_AGENT_NOT_FOUND" &&
+  error.code !== "ATTENDE_AGENT_VALIDATION" &&
+  error.code !== "ATTENDE_AUTOMATION_ON_LINE" &&
+  error.status !== 401

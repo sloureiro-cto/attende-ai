@@ -131,7 +131,7 @@ const PRESET_FIELDS: Record<AdvancedAutomationNodeKind, readonly string[]> = {
   add_label: ["labelText", "labelColor", "projectId", "label"],
   create_task: ["title", "dueInHours", "label"],
   ai_agent: ["instruction", "saveAnswerTo", "label"],
-  handoff: ["message", "assignMode", "userIds", "specificUserId", "workspaceRoleId", "label"],
+  handoff: ["message", "to", "agentId", "assignMode", "userIds", "specificUserId", "workspaceRoleId", "label"],
   webhook: ["url", "label"],
   send_meta_template: ["templateId", "label"],
 }
@@ -220,6 +220,10 @@ export function nodeIssues(node: AdvancedAutomationNode): NodeIssueCode[] {
       if (!node.templateId.trim()) issues.push("template_missing")
       return issues
     case "handoff":
+      if (node.to === "ai") {
+        if (!hex24(node.agentId)) issues.push("handoff_target_missing")
+        return issues
+      }
       if (node.assignMode === "specific_user" && !hex24(node.specificUserId)) issues.push("handoff_target_missing")
       if (node.assignMode === "member_list" && !node.userIds?.length) issues.push("handoff_target_missing")
       if (node.assignMode === "by_workspace_role" && !hex24(node.workspaceRoleId)) issues.push("handoff_target_missing")

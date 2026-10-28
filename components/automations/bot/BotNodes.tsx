@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 import { type AutomationsTFn, useAutomationsT } from "components/automations/ui/useAutomationsT"
 import { exitDisplayName, FIXED_EXIT_LABEL_KEYS, nodeOutputs } from "lib/automations/botGraph"
 import type { AdvancedAutomationNode } from "lib/automations/types"
-import { minutesParts, NODE_META, TONE_CHIP } from "./botNodeMeta"
+import { minutesParts, NODE_META, nodeKindLabelKey, TONE_CHIP, UNAVAILABLE_KINDS } from "./botNodeMeta"
 import { BotStageLabelsContext } from "./botStageLabels"
 
 type NodeStat = { reached: number; reachedPct: number; exits: Record<string, number> }
@@ -56,7 +56,7 @@ function summarize(node: AdvancedAutomationNode, t: AutomationsTFn, stageLabel?:
     case "webhook":
       return node.url.trim() || t("advancedAutomationSummaryNotSet")
     case "handoff":
-      return t(`advancedAutomationAssign_${node.assignMode ?? "all_crm_members"}`)
+      return node.to === "ai" ? t("advancedAutomationHandoffAiSummary") : t(`advancedAutomationAssign_${node.assignMode ?? "all_crm_members"}`)
     case "stop":
       return ""
   }
@@ -96,7 +96,7 @@ const StepNodeImpl = ({ data, selected }: NodeProps<StepNodeData>) => {
     updateInternals(node.id)
   }, [exitKey, node.id, updateInternals])
 
-  const title = node.label?.trim() || t(meta.labelKey)
+  const title = node.label?.trim() || t(nodeKindLabelKey(node))
   const ring = selected ? "border-primary ring-[3px] ring-primary-lighter" : "border-neutral-border"
 
   // "Stop bot" is an end cap, not a card: a pill with only an input port.
@@ -183,7 +183,15 @@ const StepNodeImpl = ({ data, selected }: NodeProps<StepNodeData>) => {
           </span>
           <span className="truncate">{title}</span>
         </span>
-        {issues > 0 ? (
+        {UNAVAILABLE_KINDS.has(node.kind) ? (
+          <span
+            className="flex shrink-0 items-center gap-1 rounded-full bg-warning-clean px-1.5 py-0.5 text-body-11 font-semibold text-warning-darkest"
+            title={t("advancedAutomationTemplateUnavailable")}
+          >
+            <AlertTriangle className="size-3" aria-hidden />
+            {t("advancedAutomationStepUnavailableShort")}
+          </span>
+        ) : issues > 0 ? (
           <span
             className="flex shrink-0 items-center gap-1 rounded-full bg-warning-clean px-1.5 py-0.5 text-body-11 font-semibold text-warning-darkest"
             title={t("advancedAutomationNeedsSetup")}

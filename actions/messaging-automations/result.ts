@@ -11,5 +11,7 @@ export type ActionErr = {
   code?: string
   /** Structured validation problems (advanced automations). */
   issues?: AdvancedAutomationIssue[]
+  /** Accounts an AI agent already answers (`AUTOMATION_SESSION_HAS_AGENT`). */
+  sessions?: Array<{ channel: string; sessionId: string }>
 }
 export type ActionResult<T> = ActionOk<T> | ActionErr

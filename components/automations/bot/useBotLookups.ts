@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useMemo, useRef, useState } from "react"
+import { listAttendeAgentsAction } from "actions/attende/agents"
 import { getLabelsAction } from "actions/labels/getLabels"
 import { listAdvancedAutomationsAction } from "actions/messaging-automations/advancedAutomations"
 import { getCardFieldDefinitionsAction, type ICardFieldDefinition } from "actions/projects/cardFieldDefinitions"
@@ -17,6 +18,9 @@ import type { AdvancedAutomationListItem } from "lib/automations/types"
 
 type Loadable<T> = { status: "idle" | "loading" | "ready" | "error"; data: T }
 
+/** An Attende AI agent a handoff can target: `agentId` is its JSYNQ agent id (what the step stores). */
+export type HandoffAgentOption = { id: string; agentId: string; name: string; live: boolean }
+
 const idle = <T>(data: T): Loadable<T> => ({ status: "idle", data })
 
 /**
@@ -28,6 +32,7 @@ export function useBotLookups(workspaceId: string, currentBotId?: string) {
   const [allBots, setBots] = useState<Loadable<AdvancedAutomationListItem[]>>(idle([]))
   const [users, setUsers] = useState<Loadable<WorkspaceUser[]>>(idle([]))
   const [roles, setRoles] = useState<Loadable<IRole[]>>(idle([]))
+  const [agents, setAgents] = useState<Loadable<HandoffAgentOption[]>>(idle([]))
   const [fields, setFields] = useState<Record<string, Loadable<ICardFieldDefinition[]>>>({})
   const columnsLoader = useProjectColumns()
   const [labels, setLabels] = useState<Record<string, Loadable<ILabel[]>>>({})
@@ -96,6 +101,26 @@ export function useBotLookups(workspaceId: string, currentBotId?: string) {
     [once, workspaceId]
   )
 
+  const loadAgents = useCallback(
+    () =>
+      once("agents", async () => {
+        setAgents({ status: "loading", data: [] })
+        const res = await listAttendeAgentsAction()
+        setAgents(
+          res.success
+            ? {
+                status: "ready",
+                data: res.data
+                  .filter((a) => !!a.agentId)
+                  .map((a) => ({ id: a.id, agentId: a.agentId, name: a.name, live: a.status === "live" })),
+              }
+            : { status: "error", data: [] }
+        )
+        return res.success
+      }),
+    [once]
+  )
+
   const loadFields = useCallback(
     (projectId: string, boardId?: string) => {
       if (!projectId) return
@@ -161,6 +186,7 @@ export function useBotLookups(workspaceId: string, currentBotId?: string) {
     bots,
     users,
     roles,
+    agents,
     fields,
     projectColumns,
     labels,
@@ -168,6 +194,7 @@ export function useBotLookups(workspaceId: string, currentBotId?: string) {
     loadBots,
     loadUsers,
     loadRoles,
+    loadAgents,
     loadFields,
     loadProjectColumns,
     loadLabels,
