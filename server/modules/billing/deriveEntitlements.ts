@@ -88,3 +88,20 @@ export function decideAccess(ent: Entitlements | null, now: Date = new Date()): 
 }
 
 export const isOverLimit = (limit: number | undefined, used: number): boolean => limit !== undefined && limit >= 0 && used >= limit;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Whether the workspace's Attende agents must stop answering. Pure. Same rules as the app gate,
+ * plus the safety net the JSYNQ limits used to give (`validUntil`): a paid workspace whose period
+ * ended more than `graceDays` ago without a renewal webhook stops too. A workspace without
+ * entitlements is not ours to pause.
+ */
+export function agentsMustPause(ent: Entitlements | null, graceDays: number, now: Date = new Date()): boolean {
+  if (!ent) return false;
+  if (!decideAccess(ent, now).allowed) return true;
+  if ((ent.status === 'active' || ent.status === 'past_due') && ent.currentPeriodEnd) {
+    return new Date(ent.currentPeriodEnd).getTime() + graceDays * DAY_MS < now.getTime();
+  }
+  return false;
+}

@@ -18,7 +18,8 @@ export class JsynqError extends Error {
 export type JsynqRequest = {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   path: string;
-  auth: string;
+  /** Bearer credential; absent for JSYNQ's public routes (signup, OTP). */
+  auth?: string;
   query?: Record<string, string | number | undefined>;
   body?: unknown;
   form?: FormData;
@@ -63,7 +64,7 @@ export async function jsynqRequest<T>(req: JsynqRequest): Promise<JsynqResponse<
 }
 
 async function once<T>(req: JsynqRequest): Promise<JsynqResponse<T>> {
-  const headers: Record<string, string> = { Authorization: `Bearer ${req.auth}`, Accept: 'application/json', ...req.headers };
+  const headers: Record<string, string> = { ...(req.auth ? { Authorization: `Bearer ${req.auth}` } : {}), Accept: 'application/json', ...req.headers };
   let body: RequestInit['body'];
   if (req.form) body = req.form;
   else if (req.body !== undefined) {

@@ -169,13 +169,11 @@ describe("handleBotsAppRequest: Attende API routes", () => {
     "/api/messaging-automations/advanced",
     "/api/messaging-automations/advanced/abc/stats/series",
     "/api/stripe/webhook",
-    "/api/jsynq/webhooks",
-    "/api/jsynq/inbound",
     "/api/cron/billing-reconcile",
     "/api/cron/agent-sweeper",
   ])("api: %s", (p) => expect(classifyBotsAppPath(p)).toBe("api"))
 
-  it.each(["/api/attendex", "/api/messaging-automations", "/api/messaging-automations/basic", "/api/stripe", "/api/stripe/webhooks", "/api/jsynq", "/api/jsynq/other", "/api/cronjobs"])(
+  it.each(["/api/attendex", "/api/messaging-automations", "/api/messaging-automations/basic", "/api/stripe", "/api/stripe/webhooks", "/api/jsynq", "/api/jsynq/webhooks", "/api/jsynq/inbound", "/api/cronjobs"])(
     "look-alikes stay blocked: %s",
     (p) => expect(classifyBotsAppPath(p)).toBe("blocked")
   )

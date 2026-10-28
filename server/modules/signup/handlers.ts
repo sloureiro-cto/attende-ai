@@ -38,11 +38,11 @@ const service = (ctx: HttpContext) => new SignupService(ctx.deps);
 /**
  * `/api/attende/signup`
  *   PUBLIC   GET  /plans         tier catalog (limits + Stripe prices)
- *   PUBLIC   POST /              pending signup + OTP e-mail
- *   PUBLIC   POST /verify        OTP -> JSYNQ user (partner API) -> login summary
- *   PUBLIC   POST /resend        new OTP (always 202)
+ *   PUBLIC   POST /              pending signup + JSYNQ user (`POST /api/users`; JSYNQ e-mails the code)
+ *   PUBLIC   POST /verify        code -> JSYNQ (`PATCH /api/users/verify-otp`) -> login summary (no token)
+ *   PUBLIC   POST /resend        new JSYNQ code (always 202)
  *   SESSION  POST /setup-intent  Stripe SetupIntent for the card form
- *   SESSION  POST /start-trial   JSYNQ workspace + 7-day Stripe trial + limits
+ *   SESSION  POST /start-trial   JSYNQ workspace + CRM project + 7-day Stripe trial + entitlements
  */
 export const getPlans = route([limiter(60_000, 60)], async () =>
   json(await listCatalog(), 200, { 'Cache-Control': 'public, max-age=60' })

@@ -1,11 +1,10 @@
 import mongoose, { Types } from 'mongoose';
 import { resetEnvCache } from '../../config/env';
-import { partnerClient } from '../../lib/jsynq';
 import { AgentSetupModel } from '../../modules/agents/models';
-import { EntitlementModel, LimitsSyncModel, PlanModel } from '../../modules/billing/models';
+import { EntitlementModel, PlanModel } from '../../modules/billing/models';
 import { SignupModel, TrialClaimModel } from '../../modules/signup/models';
 import { migrateFromJsynq } from '../../scripts/migrate-from-jsynq';
-import { FakeJsynq, PARTNER_KEY } from '../helpers/fakeJsynq';
+import { FakeJsynq } from '../helpers/fakeJsynq';
 import { clearMongo, startMongo, stopMongo } from '../helpers/mongo';
 
 /** The old JSYNQ database lives in another database of the same in-memory server. */
@@ -13,7 +12,7 @@ describe('scripts/migrate-from-jsynq', () => {
   let jsynq: FakeJsynq;
   let source: NonNullable<mongoose.Connection['db']>;
   const userId = new Types.ObjectId();
-  let partnerWs: string;
+  let jsynqWs: string;
   const legacyWs = new Types.ObjectId();
 
   beforeAll(async () => {
@@ -32,10 +31,10 @@ describe('scripts/migrate-from-jsynq', () => {
     await clearMongo();
     jsynq.reset();
     await source.dropDatabase();
-    partnerWs = jsynq.addWorkspace(String(userId));
+    jsynqWs = jsynq.addWorkspace(String(userId));
     const ent = (tier: string) => ({ attende: { tier, status: 'trialing', limits: { lines: 1, agents: 1, aiRepliesPerMonth: 1000, seats: 2, docs: 20 }, trialEndsAt: new Date('2026-11-01T00:00:00Z'), trialOutboundCap: 50, trialOutboundUsed: 3 } });
     await source.collection('workspaces').insertMany([
-      { _id: new Types.ObjectId(partnerWs), name: 'Clínica', entitlements: ent('attende_starter') },
+      { _id: new Types.ObjectId(jsynqWs), name: 'Clínica', entitlements: ent('attende_starter') },
       { _id: legacyWs, name: 'Legacy', entitlements: ent('attende_growth') },
       { _id: new Types.ObjectId(), name: 'Plain JSYNQ workspace' },
     ]);
@@ -45,12 +44,12 @@ describe('scripts/migrate-from-jsynq', () => {
       { slug: 'pro', title: 'Pro', rules: {} },
     ]);
     await source.collection('attendee_signups').insertMany([
-      { userId, email: 'maria@clinica.com.br', canonicalEmail: 'maria@clinica.com.br', businessName: 'Clínica', locale: 'pt', state: 'trial_started', workspaceId: new Types.ObjectId(partnerWs), startAttempts: 1, createdAt: new Date('2026-10-01T00:00:00Z') },
+      { userId, email: 'maria@clinica.com.br', canonicalEmail: 'maria@clinica.com.br', businessName: 'Clínica', locale: 'pt', state: 'trial_started', workspaceId: new Types.ObjectId(jsynqWs), startAttempts: 1, createdAt: new Date('2026-10-01T00:00:00Z') },
       { userId: new Types.ObjectId(), email: 'pending@x.com', canonicalEmail: 'pending@x.com', businessName: 'X', state: 'pending_verification' },
     ]);
-    await source.collection('attendee_trial_claims').insertOne({ kind: 'card', key: 'a'.repeat(64), userId, workspaceId: new Types.ObjectId(partnerWs), status: 'consumed' });
+    await source.collection('attendee_trial_claims').insertOne({ kind: 'card', key: 'a'.repeat(64), userId, workspaceId: new Types.ObjectId(jsynqWs), status: 'consumed' });
     await source.collection('attende_agent_setups').insertOne({
-      workspaceId: new Types.ObjectId(partnerWs),
+      workspaceId: new Types.ObjectId(jsynqWs),
       agentId: new Types.ObjectId(),
       templateKey: 'sdr',
       form: { businessName: 'Clínica' },
@@ -71,7 +70,7 @@ describe('scripts/migrate-from-jsynq', () => {
 
   it('dry run: counts, writes nothing and calls nothing', async () => {
     const before = await snapshot();
-    const report = await migrateFromJsynq({ source, apply: false, partner: partnerClient(PARTNER_KEY) });
+    const report = await migrateFromJsynq({ source, apply: false });
     expect(report.counts).toEqual({
       agentSetups: { found: 1, inserted: 1 },
       signups: { found: 2, inserted: 1 },
@@ -79,30 +78,26 @@ describe('scripts/migrate-from-jsynq', () => {
       entitlements: { found: 2, inserted: 2 },
       plans: { found: 1, inserted: 1 },
     });
-    expect(report.limits.every((l) => l.result === 'skipped_dry_run')).toBe(true);
+    expect(report.workspaces).toEqual([jsynqWs, String(legacyWs)]);
     expect(await EntitlementModel.countDocuments()).toBe(0);
     expect(await AgentSetupModel.countDocuments()).toBe(0);
     expect(jsynq.calls).toEqual([]);
     expect(await snapshot()).toEqual(before);
   });
 
-  it('apply: copies, PUTs the limits of partner-owned workspaces, reports the others, and is re-runnable', async () => {
+  it('apply: copies, lists the workspaces needing a JSYNQ plan, never calls JSYNQ, and is re-runnable', async () => {
     const before = await snapshot();
-    const report = await migrateFromJsynq({ source, apply: true, partner: partnerClient(PARTNER_KEY) });
-    expect(report.limits).toEqual([
-      { workspaceId: partnerWs, result: 'synced' },
-      { workspaceId: String(legacyWs), result: 'not_partner_owned' },
-    ]);
+    const report = await migrateFromJsynq({ source, apply: true });
+    expect(report.workspaces).toEqual([jsynqWs, String(legacyWs)]);
+    expect(jsynq.calls).toEqual([]);
 
-    expect(await EntitlementModel.findOne({ workspaceId: partnerWs }).lean()).toMatchObject({ tier: 'attende_starter', status: 'trialing', trialOutboundCap: 50, limits: { lines: 1, docs: 20 } });
-    expect(jsynq.limits.get(partnerWs)).toMatchObject({ status: 'active', rateLimitProfile: 'strict', validUntil: '2026-11-01T00:00:00.000Z', limits: { messagingChannels: 1, outboundMessages: { max: 50 } } });
-    expect(await LimitsSyncModel.findOne({ workspaceId: String(legacyWs) }).lean()).toBeNull();
+    expect(await EntitlementModel.findOne({ workspaceId: jsynqWs }).lean()).toMatchObject({ tier: 'attende_starter', status: 'trialing', trialOutboundCap: 50, limits: { lines: 1, docs: 20 } });
 
     const signup = await SignupModel.findOne({ email: 'maria@clinica.com.br' }).lean();
-    expect(signup).toMatchObject({ name: 'Maria Souza', state: 'trial_started', userId: String(userId), workspaceId: partnerWs });
+    expect(signup).toMatchObject({ name: 'Maria Souza', state: 'trial_started', userId: String(userId), workspaceId: jsynqWs });
     expect(await SignupModel.countDocuments({ email: 'pending@x.com' })).toBe(0);
     expect(await TrialClaimModel.findOne({ kind: 'card' }).lean()).toMatchObject({ key: 'a'.repeat(64), userId: String(userId), status: 'consumed' });
-    const setup = await AgentSetupModel.findOne({ workspaceId: partnerWs }).lean();
+    const setup = await AgentSetupModel.findOne({ workspaceId: jsynqWs }).lean();
     expect(setup).toMatchObject({ state: 'ready', templateKey: 'sdr', clientRequestId: 'req-0001-abcd', createdBy: String(userId) });
     expect(typeof setup!.lines[0]!.sessionId).toBe('string');
     expect(typeof setup!.documents[0]!.documentId).toBe('string');
@@ -113,9 +108,9 @@ describe('scripts/migrate-from-jsynq', () => {
     expect(await snapshot()).toEqual(before);
 
     // Re-run: nothing new, and newer local data is never overwritten.
-    await EntitlementModel.updateOne({ workspaceId: partnerWs }, { $set: { status: 'active' } });
-    const again = await migrateFromJsynq({ source, apply: true, partner: partnerClient(PARTNER_KEY) });
+    await EntitlementModel.updateOne({ workspaceId: jsynqWs }, { $set: { status: 'active' } });
+    const again = await migrateFromJsynq({ source, apply: true });
     expect(Object.values(again.counts).every((c) => c.inserted === 0)).toBe(true);
-    expect((await EntitlementModel.findOne({ workspaceId: partnerWs }).lean())?.status).toBe('active');
+    expect((await EntitlementModel.findOne({ workspaceId: jsynqWs }).lean())?.status).toBe('active');
   });
 });

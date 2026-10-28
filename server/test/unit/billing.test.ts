@@ -1,6 +1,5 @@
-import { decideAccess, deriveEntitlements, mapStripeStatus, type Entitlements } from '../../modules/billing/deriveEntitlements';
+import { agentsMustPause, decideAccess, deriveEntitlements, mapStripeStatus, type Entitlements } from '../../modules/billing/deriveEntitlements';
 import type Stripe from 'stripe';
-import { toJsynqLimits } from '../../modules/billing/jsynqLimits';
 import { mapInvoice, mapSubscription } from '../../modules/billing/stripeGateway';
 import { planCatalogFromStripe, tierOfPrice, type StripePriceRow } from '../../modules/billing/planSeed';
 import { TIERS, TRIAL_OUTBOUND_CAP, resolveLimits } from '../../modules/billing/tiers';
@@ -81,27 +80,23 @@ describe('decideAccess', () => {
   it('past_due keeps access', () => expect(decideAccess({ tier: 't', limits: TIERS.attende_starter, status: 'past_due' }, now)).toEqual({ allowed: true }));
 });
 
-describe('toJsynqLimits', () => {
-  it('trial: valid until the trial end, outbound capped, strict profile', () => {
-    const ent = deriveEntitlements({ plan: starter, stripeStatus: 'trialing', trialEndDate: trialEnd, currentPeriodEnd: trialEnd })!;
-    expect(toJsynqLimits(ent, 3)).toEqual({
-      status: 'active',
-      validUntil: trialEnd.toISOString(),
-      limits: { messagingChannels: 1, agents: 1, aiRepliesPerMonth: 1000, knowledgeDocuments: 20, members: 2, outboundMessages: { max: 50, windowEndsAt: trialEnd.toISOString() } },
-      rateLimitProfile: 'strict',
-    });
+describe('agentsMustPause (replaces the JSYNQ limits validUntil / suspended)', () => {
+  const now = new Date('2026-12-02T00:00:00Z');
+  it('a running trial keeps the agents; an ended one pauses them', () => {
+    const trial = deriveEntitlements({ plan: starter, stripeStatus: 'trialing', trialEndDate: trialEnd, currentPeriodEnd: trialEnd })!;
+    expect(agentsMustPause(trial, 3, new Date('2026-10-30T00:00:00Z'))).toBe(false);
+    expect(agentsMustPause(trial, 3, now)).toBe(true);
   });
 
-  it('paid: period end plus grace, no outbound cap', () => {
+  it('paid: the period end plus the grace days, then pause (a missed renewal webhook never leaves it open)', () => {
     const ent = deriveEntitlements({ plan: starter, stripeStatus: 'active', currentPeriodEnd: periodEnd })!;
-    const out = toJsynqLimits(ent, 3);
-    expect(out.validUntil).toBe(new Date(periodEnd.getTime() + 3 * 86_400_000).toISOString());
-    expect(out.limits.outboundMessages).toBeNull();
-    expect(out.rateLimitProfile).toBe('standard');
+    expect(agentsMustPause(ent, 3, new Date(periodEnd.getTime() + 2 * 86_400_000))).toBe(false);
+    expect(agentsMustPause(ent, 3, new Date(periodEnd.getTime() + 4 * 86_400_000))).toBe(true);
   });
 
-  it('canceled -> suspended', () => {
-    expect(toJsynqLimits({ tier: 't', limits: TIERS.attende_starter, status: 'canceled' }, 3).status).toBe('suspended');
+  it('canceled pauses; no entitlements is not ours to pause', () => {
+    expect(agentsMustPause({ tier: 't', limits: TIERS.attende_starter, status: 'canceled' }, 3, now)).toBe(true);
+    expect(agentsMustPause(null, 3, now)).toBe(false);
   });
 });
 

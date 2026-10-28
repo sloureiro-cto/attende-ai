@@ -2,28 +2,21 @@ import request from 'supertest';
 import type { TestApp } from '../helpers/app';
 import { createApp } from '../helpers/app';
 import { resetEnvCache } from '../../config/env';
-import { partnerClient, userClient } from '../../lib/jsynq';
 import { clearMembershipCache } from '../../middleware/auth';
 import { EntitlementModel } from '../../modules/billing/models';
 import { AutomationRunModel } from '../../modules/automations/models';
 import { createAutomationsRuntime, type AutomationsRuntime } from '../../modules/automations/runtime/factory';
 import type { ConversationGateway } from '../../modules/automations/runtime/ports';
 import { automationStats } from '../../modules/automations/stats';
-import { signPayload } from '../../modules/jsynq-webhooks/signature';
-import { FakeJsynq, PARTNER_KEY } from '../helpers/fakeJsynq';
-import { FakeMailer } from '../helpers/fakeMailer';
-import { FakeStripe } from '../helpers/fakeStripe';
+import { testDeps } from '../helpers/deps';
+import { FakeJsynq } from '../helpers/fakeJsynq';
 import { clearMongo, startMongo, stopMongo } from '../helpers/mongo';
 import { userToken } from '../helpers/tokens';
 
 class FakeGateway implements ConversationGateway {
   sent: Array<{ conversationId: string; text: string }> = [];
   handoffs: string[] = [];
-  routing = new Map<string, Array<{ channel: string; sessionId: string }>>();
   humanReplied = false;
-  async setInboundRouting(workspaceId: string, sessions: Array<{ channel: string; sessionId: string }>) {
-    this.routing.set(workspaceId, sessions);
-  }
   async context() {
     return { contactName: 'Ana', vars: { 'lead.name': 'Ana' } };
   }
@@ -96,21 +89,16 @@ describe('advanced automations: API, preview and runtime', () => {
     gateway = new FakeGateway();
     now = new Date('2026-10-20T12:00:00Z');
     runtime = createAutomationsRuntime({ gateway, now: () => now })!;
-    app = createApp({ stripe: new FakeStripe(), partner: partnerClient(PARTNER_KEY), user: userClient, mailer: new FakeMailer(), now: () => now }, runtime);
+    app = createApp(testDeps({ now: () => now }), runtime);
     workspaceId = jsynq.addWorkspace(owner);
     sessionId = jsynq.addSession(workspaceId, 'whatsapp', 'connected');
     await EntitlementModel.create({ workspaceId, tier: 'attende_starter', status: 'active', limits: { lines: 1, agents: 1, aiRepliesPerMonth: 1000, seats: 2, docs: 20 } });
     auth = { Authorization: `Bearer ${userToken({ id: owner, workspaceId })}` };
   });
 
-  const inbound = (body: Record<string, unknown>) => {
-    const raw = JSON.stringify({ workspaceId, channel: 'whatsapp', sessionId, conversationId: 'conv1', ...body });
-    return request(app)
-      .post('/api/jsynq/inbound')
-      .set('Content-Type', 'application/json')
-      .set('X-Jsynq-Signature', signPayload('jsynq-test-webhook-secret', raw, Math.floor(Date.now() / 1000)))
-      .send(raw);
-  };
+  /** What the phase-4 worker does for each inbound message it reads from the JSYNQ websocket. */
+  const inbound = (body: { messageId: string; text: string; firstInbound?: boolean; conversationId?: string }) =>
+    runtime.runtime.onInboundMessage({ workspaceId, channel: 'whatsapp', sessionId, conversationId: 'conv1', firstInbound: false, ...body });
 
   it('CRUD keeps the JSYNQ-era shapes and validates sessions against JSYNQ', async () => {
     const foreign = await request(app).post('/api/messaging-automations/advanced').set(auth).send({ ...flow, channels: [{ channel: 'whatsapp', enabledSessionIds: ['f'.repeat(24)] }] });
@@ -119,7 +107,6 @@ describe('advanced automations: API, preview and runtime', () => {
     const created = await request(app).post('/api/messaging-automations/advanced').set(auth).send({ ...flow, status: 'active', channels: [{ channel: 'whatsapp', enabledSessionIds: [sessionId] }] });
     expect(created.status).toBe(201);
     expect(created.body.data).toMatchObject({ name: 'Boas-vindas', status: 'active', version: 1, issues: [] });
-    expect(gateway.routing.get(workspaceId)).toEqual([{ channel: 'whatsapp', sessionId }]);
 
     const list = await request(app).get('/api/messaging-automations/advanced').set(auth).expect(200);
     expect(list.body.data).toMatchObject({ total: 1, totals: { all: 1, active: 1 }, items: [{ stepCount: 4, stats30d: { started: 0, completed: 0 } }] });
@@ -129,7 +116,6 @@ describe('advanced automations: API, preview and runtime', () => {
     expect(stale.status).toBe(409);
     const paused = await request(app).patch(`/api/messaging-automations/advanced/${id}`).set(auth).send({ status: 'paused' }).expect(200);
     expect(paused.body.data.status).toBe('paused');
-    expect(gateway.routing.get(workspaceId)).toEqual([]);
 
     const bad = await request(app).post('/api/messaging-automations/advanced').set(auth).send({ ...flow, nodes: [{ ...flow.nodes[0], id: '__x' }] });
     expect(bad.status).toBe(400);
@@ -192,22 +178,21 @@ describe('advanced automations: API, preview and runtime', () => {
   it('runtime: first inbound starts a run, a reply advances it, redelivery is a no-op, timers fire', async () => {
     await request(app).post('/api/messaging-automations/advanced').set(auth).send({ ...flow, status: 'active', channels: [{ channel: 'whatsapp', enabledSessionIds: [sessionId] }] }).expect(201);
 
-    const first = await inbound({ messageId: 'm1', text: 'oi', firstInbound: true }).expect(200);
-    expect(first.body).toEqual({ handled: true });
+    expect(await inbound({ messageId: 'm1', text: 'oi', firstInbound: true })).toEqual({ handled: true });
     expect(gateway.sent[0]!.text).toBe('Oi Ana! Quer um orçamento?\n\n1. Sim\n2. Não');
     const row = await AutomationRunModel.findOne({ workspaceId, channel: 'whatsapp', conversationId: 'conv1' }).lean();
     expect(row?.run?.status).toBe('waiting');
     expect(row?.waitUntil?.toISOString()).toBe(new Date(now.getTime() + 10 * 60_000).toISOString());
 
-    expect((await inbound({ messageId: 'm1', text: 'oi', firstInbound: true })).body).toEqual({ handled: true });
+    expect(await inbound({ messageId: 'm1', text: 'oi', firstInbound: true })).toEqual({ handled: true });
     expect(gateway.sent).toHaveLength(1);
 
-    await inbound({ messageId: 'm2', text: 'Sim' }).expect(200);
+    await inbound({ messageId: 'm2', text: 'Sim' });
     expect(gateway.sent.map((s) => s.text)).toEqual(['Oi Ana! Quer um orçamento?\n\n1. Sim\n2. Não', 'Ótimo, já te mando.']);
     expect((await AutomationRunModel.findOne({ conversationId: 'conv1' }).lean())?.run?.status).toBe('completed');
 
     // after the run, the conversation goes back to JSYNQ (not the first message any more)
-    expect((await inbound({ messageId: 'm3', text: 'obrigado' })).body).toEqual({ handled: false });
+    expect(await inbound({ messageId: 'm3', text: 'obrigado' })).toEqual({ handled: false });
 
     // no-reply timer on another conversation
     await inbound({ conversationId: 'conv2', messageId: 'n1', text: 'olá', firstInbound: true });
@@ -218,22 +203,14 @@ describe('advanced automations: API, preview and runtime', () => {
     // a person replying stops the run and hands the message back
     await inbound({ conversationId: 'conv3', messageId: 'p1', text: 'oi', firstInbound: true });
     gateway.humanReplied = true;
-    expect((await inbound({ conversationId: 'conv3', messageId: 'p2', text: 'Sim' })).body).toEqual({ handled: false });
+    expect(await inbound({ conversationId: 'conv3', messageId: 'p2', text: 'Sim' })).toEqual({ handled: false });
 
     await automationStats.flush();
     const stats = await request(app).get(`/api/messaging-automations/advanced/${(await request(app).get('/api/messaging-automations/advanced').set(auth)).body.data.items[0].id}/stats`).set(auth).expect(200);
     expect(stats.body.data).toMatchObject({ started: 3, completed: 2, stopped: 1 });
   });
 
-  it('inbound: unsigned calls are refused; with the runtime off JSYNQ keeps the message', async () => {
-    const raw = JSON.stringify({ workspaceId, channel: 'whatsapp', sessionId, conversationId: 'c', messageId: 'm', text: 'x' });
-    expect((await request(app).post('/api/jsynq/inbound').set('Content-Type', 'application/json').send(raw)).status).toBe(401);
-    const off = createApp({ stripe: new FakeStripe(), partner: partnerClient(PARTNER_KEY), user: userClient, mailer: new FakeMailer(), now: () => now }, null);
-    const res = await request(off)
-      .post('/api/jsynq/inbound')
-      .set('Content-Type', 'application/json')
-      .set('X-Jsynq-Signature', signPayload('jsynq-test-webhook-secret', raw, Math.floor(Date.now() / 1000)))
-      .send(raw);
-    expect(res.body).toEqual({ handled: false });
+  it('without a gateway there is no runtime (Next.js never runs it; the phase-4 worker brings the gateway)', () => {
+    expect(createAutomationsRuntime()).toBeNull();
   });
 });

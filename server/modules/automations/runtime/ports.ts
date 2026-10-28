@@ -54,20 +54,14 @@ export type HandoffAssign = {
 export type ActionOpts = { idempotencyKey: string };
 
 /**
- * Everything the runtime does in JSYNQ. Production: `jsynqConversationGateway` (partner key,
- * JSYNQ partner conversation API, docs/jsynq-dependencies.md §2). Every method may throw; the
- * runtime and the executor contain failures.
+ * Everything the runtime does in JSYNQ. The phase-4 worker implements it on JSYNQ's existing user
+ * routes (send message, card move, labels, assign) with a server-minted owner token; tests use a
+ * fake. Every method may throw; the runtime and the executor contain failures.
  *
  * There is no remote condition evaluation or answer extraction: JSYNQ does not offer them, so
  * conditions that need JSYNQ data or a model do not match and the AI step is "not understood".
  */
 export interface ConversationGateway {
-  /**
-   * Sessions whose inbound messages JSYNQ must route to this service first (`POST /api/jsynq/inbound`,
-   * answered `{handled}`; handled = JSYNQ rules/AI skip that message). Full replacement per workspace.
-   * Also sends this service's inbound URL (same origin as the registered `/api/jsynq/webhooks` endpoint).
-   */
-  setInboundRouting(workspaceId: string, sessions: Array<{ channel: AdvancedAutomationChannel; sessionId: string }>): Promise<void>;
   context(key: ConversationKey): Promise<ConversationContext>;
   humanRepliedSince(key: ConversationKey, since: Date): Promise<boolean>;
   sendText(key: ConversationKey, text: string, opts: { idempotencyKey: string }): Promise<{ ok: boolean; error?: string }>;

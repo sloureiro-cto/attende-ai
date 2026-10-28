@@ -13,17 +13,24 @@ export interface ISignup {
   locale: 'pt' | 'en' | 'es';
   planSlug?: string;
   state: SignupState;
-  /** AES-GCM sealed password, kept only until the JSYNQ user is created at verify. */
-  passwordEnc?: string;
-  otpHash?: string;
-  otpExpiresAt?: Date;
+  /** `POST /api/users` succeeded: the JSYNQ user exists (unverified until the OTP) and JSYNQ e-mailed the code. */
+  jsynqUserCreated?: boolean;
+  /** Wrong codes since the last one sent (JSYNQ does not count them; this service stops guessing at 5). */
   otpAttempts: number;
   /** JSYNQ user id (set at verify, or at start-trial for an existing JSYNQ account). */
   userId?: string;
-  /** The e-mail already had a JSYNQ account this partner does not manage: the user signs in with it. */
+  /** The e-mail already had a JSYNQ account this signup did not create: the user signs in with it. */
   existingAccount?: boolean;
   stripeCustomerId?: string;
+  /**
+   * Idempotency of `POST /api/workspaces` (not idempotent in JSYNQ): set before the call. A retry
+   * after a crash between that call and saving `workspaceId` adopts the workspace this user created
+   * with the business name since then, instead of creating a second one.
+   */
+  workspaceCreateStartedAt?: Date;
   workspaceId?: string;
+  /** The CRM project seeded in the workspace (`POST /api/projects`, type `crm`). */
+  crmProjectId?: string;
   subscriptionId?: string;
   lockedAt?: Date;
   startAttempts: number;
@@ -42,14 +49,14 @@ const SignupSchema = new Schema<ISignup>(
     locale: { type: String, enum: ['pt', 'en', 'es'], default: 'pt' },
     planSlug: String,
     state: { type: String, enum: SIGNUP_STATES, default: 'pending_verification' },
-    passwordEnc: String,
-    otpHash: String,
-    otpExpiresAt: Date,
+    jsynqUserCreated: Boolean,
     otpAttempts: { type: Number, default: 0 },
     userId: String,
     existingAccount: Boolean,
     stripeCustomerId: String,
+    workspaceCreateStartedAt: Date,
     workspaceId: String,
+    crmProjectId: String,
     subscriptionId: String,
     lockedAt: Date,
     startAttempts: { type: Number, default: 0 },
@@ -60,7 +67,7 @@ const SignupSchema = new Schema<ISignup>(
 );
 SignupSchema.index({ userId: 1 }, { unique: true, partialFilterExpression: { userId: { $type: 'string' } } });
 SignupSchema.index({ canonicalEmail: 1 });
-// Abandoned, never verified signups disappear after 7 days (with their sealed password).
+// Abandoned, never verified signups disappear after 7 days (the unverified JSYNQ user stays in JSYNQ).
 SignupSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7 * 86_400, partialFilterExpression: { state: 'pending_verification' } });
 
 export const SignupModel: Model<ISignup> = (mongoose.models.Signup as Model<ISignup>) || mongoose.model<ISignup>('Signup', SignupSchema);
@@ -89,3 +96,20 @@ TrialClaimSchema.index({ kind: 1, key: 1 }, { unique: true });
 
 export const TrialClaimModel: Model<ITrialClaim> =
   (mongoose.models.TrialClaim as Model<ITrialClaim>) || mongoose.model<ITrialClaim>('TrialClaim', TrialClaimSchema);
+
+/**
+ * A JSYNQ workspace a failed signup created and could not delete (`DELETE /api/workspaces/:id`
+ * failed). Logged and kept here for an operator; nothing reads it automatically.
+ */
+export interface IOrphanWorkspace {
+  workspaceId: string;
+  userId: string;
+  signupId: string;
+  error: string;
+}
+const OrphanWorkspaceSchema = new Schema<IOrphanWorkspace>(
+  { workspaceId: { type: String, required: true, unique: true }, userId: String, signupId: String, error: String },
+  { timestamps: true, collection: 'orphan_workspaces' }
+);
+export const OrphanWorkspaceModel: Model<IOrphanWorkspace> =
+  (mongoose.models.OrphanWorkspace as Model<IOrphanWorkspace>) || mongoose.model<IOrphanWorkspace>('OrphanWorkspace', OrphanWorkspaceSchema);

@@ -2,8 +2,6 @@ import 'server-only';
 import { codedError } from '../../lib/errors';
 import { viaJsynq } from '../../lib/jsynq';
 import { errMessage, log } from '../../lib/logger';
-import { isOverLimit } from '../billing/deriveEntitlements';
-import { getEntitlements } from '../billing/service';
 import { AgentSetupModel } from './models';
 import type { AgentPorts } from './ports';
 import type { AgentContext, AgentService } from './service';
@@ -45,14 +43,6 @@ export class KnowledgeService {
     private readonly ports: AgentPorts
   ) {}
 
-  async countWorkspaceDocs(workspaceId: string): Promise<number> {
-    const [row] = await AgentSetupModel.aggregate<{ total: number }>([
-      { $match: { workspaceId } },
-      { $group: { _id: null, total: { $sum: { $size: '$documents' } } } },
-    ]);
-    return row?.total ?? 0;
-  }
-
   async list(ctx: AgentContext, id: string): Promise<KnowledgeDocView[]> {
     const setup = await this.agents.load(ctx.workspaceId, id);
     const status = await viaJsynq(() => this.ports.indexStatus(setup.documents.map((d) => d.documentId)));
@@ -77,10 +67,8 @@ export class KnowledgeService {
     if (file.size > MAX_DOC_BYTES) throw codedError(413, CODES.FILE_REJECTED, `File exceeds ${MAX_DOC_BYTES / 1024 / 1024} MB`, { reason: 'size', maxBytes: MAX_DOC_BYTES });
 
     const setup = await this.agents.load(ctx.workspaceId, id);
-    const ent = await getEntitlements(ctx.workspaceId);
-    if (ent && isOverLimit(ent.limits.docs, await this.countWorkspaceDocs(ctx.workspaceId))) {
-      throw codedError(403, CODES.QUOTA_DOCS, 'Your plan reached its limit of documents', { resource: 'docs', limit: ent.limits.docs });
-    }
+    // Plan: every library document of the workspace knowledge in JSYNQ, not only this agent's.
+    await this.ports.assertPlanAllows('docs');
 
     const doc = await viaJsynq(() => this.ports.uploadDocument(file));
     const entry = { documentId: doc.id, name: doc.name, mimeType: file.mimetype, sizeBytes: file.size, uploadedAt: new Date() };

@@ -1,11 +1,11 @@
 import 'server-only';
 import type { Deps } from '../../deps';
 import { env } from '../../config/env';
-import { sha256Hex } from '../../lib/crypto';
 import { errMessage, log } from '../../lib/logger';
 import { deriveEntitlements, type Entitlements } from './deriveEntitlements';
-import { toJsynqLimits } from './jsynqLimits';
-import { EntitlementModel, LimitsSyncModel, PlanModel, SubscriptionModel, type IPlan } from './models';
+import { enforceAccess } from './enforcement';
+import { AgentPauseModel, EntitlementModel, PlanModel, SubscriptionModel, type IPlan } from './models';
+import { resumeAiQuotaPauses } from './usage';
 import type { BillingSubscription } from './stripeGateway';
 
 const RECONCILE_STALE_MS = 15 * 60_000;
@@ -23,11 +23,12 @@ export const findPlanByPrice = (priceId: string | null) =>
 
 /**
  * Billing state machine of one workspace: Stripe subscription -> stored subscription ->
- * entitlements -> JSYNQ limits. Every step is idempotent, so the webhook, the signup and the
- * reconcile cron can all call it.
+ * entitlements -> agents paused or resumed in JSYNQ. Every step is idempotent, so the webhook, the
+ * signup and the reconcile cron can all call it. JSYNQ keeps no Attende limits: the plan is
+ * enforced here (`limits.ts`, `usage.ts`, `enforcement.ts`).
  */
 export class BillingService {
-  constructor(private readonly deps: Pick<Deps, 'stripe' | 'partner' | 'now'>) {}
+  constructor(private readonly deps: Pick<Deps, 'stripe' | 'user' | 'now'>) {}
 
   /** Applies a (fresh) Stripe subscription to the workspace it belongs to. Returns the entitlements. */
   async applySubscription(sub: BillingSubscription, hint?: { workspaceId: string; userId: string }): Promise<Entitlements | null> {
@@ -65,48 +66,23 @@ export class BillingService {
       { upsert: true }
     );
     log.info('billing.entitlements_applied', { workspaceId, subscriptionId: sub.id, status: next.status, tier: next.tier });
-    await this.syncLimits(workspaceId);
+    await enforceAccess(this.deps, workspaceId);
     return next;
   }
 
   /**
-   * Pushes the JSYNQ limits for the stored entitlements when they changed since the last
-   * acknowledged push (`limits_sync`). Never throws: a failure is recorded and the reconcile cron retries.
+   * 15-minute cron: refresh subscriptions from Stripe (missed webhooks), then pause or resume the
+   * agents of every workspace whose access changed (trial ended without a webhook, lapsed paid
+   * period, reactivation, failed earlier pause), then lift AI-quota pauses of a new month.
    */
-  async syncLimits(workspaceId: string, opts: { force?: boolean } = {}): Promise<boolean> {
-    const ent = await getEntitlements(workspaceId);
-    if (!ent) return false;
-    const desired = toJsynqLimits(ent, env().BILLING_GRACE_DAYS);
-    const desiredHash = sha256Hex(JSON.stringify(desired));
-    const row = await LimitsSyncModel.findOneAndUpdate(
-      { workspaceId },
-      { $set: { desired, desiredHash } },
-      { upsert: true, new: true }
-    ).lean();
-    if (!opts.force && row?.syncedHash === desiredHash) return true;
-    try {
-      const doc = await this.deps.partner.putLimits(workspaceId, desired);
-      await LimitsSyncModel.updateOne(
-        { workspaceId, desiredHash },
-        { $set: { syncedHash: desiredHash, syncedAt: this.deps.now(), jsynqVersion: doc?.version, attempts: 0 }, $unset: { lastError: 1 } }
-      );
-      log.info('billing.limits_synced', { workspaceId, status: desired.status, validUntil: desired.validUntil });
-      return true;
-    } catch (error) {
-      await LimitsSyncModel.updateOne({ workspaceId }, { $inc: { attempts: 1 }, $set: { lastError: errMessage(error).slice(0, 300) } });
-      log.warn('billing.limits_sync_failed', { workspaceId, error: errMessage(error) });
-      return false;
-    }
-  }
-
-  /** 15-minute cron: refresh subscriptions from Stripe (missed webhooks) and retry unsynced limits. */
-  async reconcile(): Promise<{ subscriptions: number; limits: number }> {
-    const staleBefore = new Date(this.deps.now().getTime() - RECONCILE_STALE_MS);
+  async reconcile(): Promise<{ subscriptions: number; enforced: number; aiQuotaResumed: number }> {
+    const now = this.deps.now();
+    const staleBefore = new Date(now.getTime() - RECONCILE_STALE_MS);
     const subs = await SubscriptionModel.find({
       stripeSubscriptionId: { $type: 'string' },
       $or: [{ reconciledAt: { $lt: staleBefore } }, { reconciledAt: { $exists: false } }],
       // Long-canceled subscriptions do not change any more.
-      $nor: [{ status: 'canceled', updatedAt: { $lt: new Date(this.deps.now().getTime() - 7 * 86_400_000) } }],
+      $nor: [{ status: 'canceled', updatedAt: { $lt: new Date(now.getTime() - 7 * 86_400_000) } }],
     })
       .sort({ reconciledAt: 1 })
       .limit(RECONCILE_BATCH)
@@ -121,12 +97,32 @@ export class BillingService {
         log.warn('billing.reconcile_failed', { workspaceId: row.workspaceId, error: errMessage(error) });
       }
     }
-    const pending = await LimitsSyncModel.find({ $expr: { $ne: ['$desiredHash', { $ifNull: ['$syncedHash', ''] }] } })
-      .limit(RECONCILE_BATCH)
-      .select('workspaceId')
-      .lean();
-    let limits = 0;
-    for (const p of pending) if (await this.syncLimits(p.workspaceId)) limits += 1;
-    return { subscriptions, limits };
+
+    const graceStart = new Date(now.getTime() - env().BILLING_GRACE_DAYS * 86_400_000);
+    const [blocked, paused] = await Promise.all([
+      EntitlementModel.find({
+        $or: [
+          { status: 'canceled' },
+          { status: 'trialing', trialEndsAt: { $lt: now } },
+          { status: { $in: ['active', 'past_due'] }, currentPeriodEnd: { $lt: graceStart } },
+        ],
+      })
+        .select('workspaceId')
+        .limit(RECONCILE_BATCH * 5)
+        .lean(),
+      AgentPauseModel.find({ reasons: 'access' }).select('workspaceId').limit(RECONCILE_BATCH * 5).lean(),
+    ]);
+    const ids = [...new Set([...blocked, ...paused].map((r) => r.workspaceId))];
+    let enforced = 0;
+    for (const workspaceId of ids) {
+      try {
+        await enforceAccess(this.deps, workspaceId);
+        enforced += 1;
+      } catch (error) {
+        log.warn('billing.enforce_failed', { workspaceId, error: errMessage(error) });
+      }
+    }
+    const aiQuotaResumed = await resumeAiQuotaPauses(this.deps);
+    return { subscriptions, enforced, aiQuotaResumed };
   }
 }

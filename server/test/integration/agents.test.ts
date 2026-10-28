@@ -1,10 +1,11 @@
 import { resetEnvCache } from '../../config/env';
-import { partnerClient, userClient } from '../../lib/jsynq';
+import { userClient } from '../../lib/jsynq';
+import { EntitlementModel } from '../../modules/billing/models';
 import { AgentSetupModel } from '../../modules/agents/models';
 import { jsynqAgentPorts } from '../../modules/agents/ports';
 import { AgentService } from '../../modules/agents/service';
 import { sweepOrphanAgents } from '../../modules/agents/sweeper';
-import { FakeJsynq, PARTNER_KEY } from '../helpers/fakeJsynq';
+import { FakeJsynq } from '../helpers/fakeJsynq';
 import { clearMongo, startMongo, stopMongo } from '../helpers/mongo';
 import { userToken } from '../helpers/tokens';
 
@@ -37,8 +38,9 @@ describe('AgentService against JSYNQ (fake HTTP)', () => {
     await clearMongo();
     jsynq.reset();
     userId = 'a'.repeat(24);
-    jsynq.users.set(userId, { id: userId, email: 'o@x.com', name: 'O', managed: true });
+    jsynq.addUser('o@x.com', { id: userId });
     workspaceId = jsynq.addWorkspace(userId);
+    await EntitlementModel.create({ workspaceId, tier: 'attende_growth', status: 'active', limits: { lines: 3, agents: 3, aiRepliesPerMonth: 5000, seats: 5, docs: 100 } });
     sessionA = jsynq.addSession(workspaceId);
     sessionB = jsynq.addSession(workspaceId, 'sms', 'active');
     service = new AgentService(jsynqAgentPorts(userClient(userToken({ id: userId, workspaceId })), workspaceId));
@@ -66,7 +68,7 @@ describe('AgentService against JSYNQ (fake HTTP)', () => {
     expect(ok.view.status).toBe('paused');
   });
 
-  it('a failed rollback leaves a journal the hourly sweeper cleans with a partner login token', async () => {
+  it('a failed rollback leaves a journal the hourly sweeper cleans with a server-minted token for the creator', async () => {
     jsynq.failures['POST /api/automation-bindings'] = 400;
     const realDelete = jsynq.agents.get.bind(jsynq.agents);
     let failDelete = true;
@@ -80,7 +82,7 @@ describe('AgentService against JSYNQ (fake HTTP)', () => {
     expect(journal?.pending?.agentId).toBeTruthy();
 
     failDelete = false;
-    const out = await sweepOrphanAgents({ partner: partnerClient(PARTNER_KEY), user: userClient, now: () => new Date() });
+    const out = await sweepOrphanAgents({ user: userClient, now: () => new Date() });
     expect(out).toEqual({ cleaned: 1, skipped: 0 });
     expect(jsynq.agents.get(journal!.pending!.agentId!)?.isActive).toBe(false);
     expect(await AgentSetupModel.countDocuments()).toBe(0);

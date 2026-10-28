@@ -12,8 +12,6 @@
     "prettier:fix": "prettier --write \"**/*.{js,jsx,ts,tsx}\"",
     "test:server": "jest --selectProjects server --maxWorkers=2",
     "attende:seed-plans": "tsx --conditions=react-server server/scripts/seed-plans.ts",
-    "attende:register-jsynq-webhook": "tsx --conditions=react-server server/scripts/register-jsynq-webhook.ts",
-    "attende:sync-inbound-routing": "tsx --conditions=react-server server/scripts/sync-inbound-routing.ts",
     "attende:migrate-from-jsynq": "tsx --conditions=react-server server/scripts/migrate-from-jsynq.ts"
   },
   "config": {

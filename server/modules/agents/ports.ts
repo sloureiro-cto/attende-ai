@@ -1,5 +1,7 @@
 import 'server-only';
 import type { UserClient } from '../../lib/jsynq';
+import { errMessage, log } from '../../lib/logger';
+import { assertPlanAllows, type PlanResource } from '../billing/limits';
 import type { AttendeeChannel } from './types';
 
 export type LineStatus = { channel: AttendeeChannel; sessionId: string; exists: boolean; connected: boolean; label?: string };
@@ -22,6 +24,10 @@ export type AgentPorts = {
   uploadDocument(file: { buffer: Buffer; originalname: string; mimetype: string }): Promise<{ id: string; name: string }>;
   deleteDocument(documentId: string): Promise<void>;
   indexStatus(documentIds: string[]): Promise<Map<string, { status: string; pageCount?: number; errorMessage?: string }>>;
+  /** JSYNQ tool ids (`toolId`) of these tool names in the workspace registry; names JSYNQ does not list are left out. */
+  resolveToolIds(names: readonly string[]): Promise<string[]>;
+  /** Refuses (402/403) when adding `adding` of `resource` would go over the plan (`billing/limits.ts`). */
+  assertPlanAllows(resource: PlanResource, opts?: { adding?: number; exceptClientRequestId?: string }): Promise<void>;
 };
 
 const CONNECTED: Record<AttendeeChannel, (status?: string) => boolean> = {
@@ -101,6 +107,20 @@ export function jsynqAgentPorts(client: UserClient, workspaceId: string): AgentP
     },
     uploadDocument: (file) => client.uploadKnowledgeDocument(file),
     deleteDocument: (id) => client.deleteDocument(id),
+    async resolveToolIds(names) {
+      const ids: string[] = [];
+      for (const name of names) {
+        try {
+          const rows = await client.listTools(workspaceId, { search: name, provider: 'jsynq' });
+          const hit = rows.find((t) => t.toolName === name);
+          if (hit?.toolId) ids.push(hit.toolId);
+        } catch (error) {
+          log.warn('agent.tool_lookup_failed', { workspaceId, tool: name, error: errMessage(error) });
+        }
+      }
+      return ids;
+    },
+    assertPlanAllows: (resource, opts) => assertPlanAllows(client, workspaceId, resource, opts),
     async indexStatus(ids) {
       const rows = await client.listKnowledgeSources(ids);
       return new Map(rows.filter((r) => r.refId).map((r) => [String(r.refId), { status: r.status, pageCount: r.pageCount, errorMessage: r.errorMessage }]));

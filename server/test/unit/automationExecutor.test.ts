@@ -12,7 +12,6 @@ function fakeGateway(linkedCardId: string | undefined = 'card1') {
       return result;
     };
   const gateway: ConversationGateway = {
-    setInboundRouting: rec('setInboundRouting') as never,
     context: async () => ({ linkedCardId, vars: { 'lead.name': 'Ana' } }),
     humanRepliedSince: async () => false,
     sendText: rec('sendText', { ok: true }) as never,

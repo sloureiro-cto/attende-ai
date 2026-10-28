@@ -5,7 +5,7 @@ import type { RouteHandler } from './lib/http';
 import * as agents from './modules/agents/handlers';
 import * as automations from './modules/automations/handlers';
 import * as billing from './modules/billing/handlers';
-import * as jsynq from './modules/jsynq-webhooks/handlers';
+import * as limits from './modules/billing/limitsHandlers';
 import * as signup from './modules/signup/handlers';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -28,6 +28,8 @@ export const ATTENDE_ROUTES: AttendeRoute[] = [
   { method: 'GET', path: '/api/attende/entitlements', handler: billing.getEntitlementsRoute },
   { method: 'GET', path: '/api/attende/billing/invoices', handler: billing.getInvoices },
   { method: 'POST', path: '/api/attende/billing/portal', handler: billing.postPortal },
+  { method: 'POST', path: '/api/attende/limits/check', handler: limits.postLimitsCheck },
+  { method: 'POST', path: '/api/attende/usage/outbound', handler: limits.postOutboundUsage },
 
   { method: 'GET', path: '/api/attende/agents/templates', handler: agents.getTemplates },
   { method: 'POST', path: '/api/attende/agents/from-template', handler: agents.postFromTemplate },
@@ -51,8 +53,6 @@ export const ATTENDE_ROUTES: AttendeRoute[] = [
   { method: 'DELETE', path: '/api/messaging-automations/advanced/:id', handler: automations.deleteAutomation },
 
   { method: 'POST', path: '/api/stripe/webhook', handler: billing.postStripeWebhook },
-  { method: 'POST', path: '/api/jsynq/webhooks', handler: jsynq.postJsynqWebhook },
-  { method: 'POST', path: '/api/jsynq/inbound', handler: jsynq.postJsynqInbound },
 
   { method: 'GET', path: '/api/cron/billing-reconcile', handler: billingReconcileCron },
   { method: 'GET', path: '/api/cron/agent-sweeper', handler: agentSweeperCron },

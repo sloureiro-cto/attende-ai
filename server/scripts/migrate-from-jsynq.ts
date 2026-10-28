@@ -12,19 +12,14 @@
  *   plans with rules.bots.enabled                   -> plans (only slugs we do not have yet)
  *
  * Every write here is an insert-if-missing (`$setOnInsert`), so re-running is safe and never
- * overwrites newer data. Then, with --apply, each migrated workspace gets its JSYNQ limits through
- * the partner API (`PUT /workspaces/:id/limits`, recorded in limits_sync so the billing job retries).
- *
- * billingMode: JSYNQ sets `billingMode: 'external'` (and `providerId`) only when the partner API
- * creates the workspace; there is no partner endpoint to change it on an existing one. A workspace
- * created by the old in-JSYNQ flow is therefore reported as "not partner-owned" (the limits PUT
- * answers 404 WORKSPACE_NOT_FOUND) and must be adopted on the JSYNQ side first; see RUNBOOK.md.
+ * overwrites newer data. Nothing is written to JSYNQ: the plan is enforced by this service (no
+ * JSYNQ limits any more). The billing reconcile cron pauses the agents of migrated workspaces whose
+ * access already ended. Each workspace still needs a JSYNQ plan with channels enabled, assigned by
+ * a JSYNQ operator (docs/jsynq-apis-used.md, "Operator steps").
  */
 import mongoose, { type Connection } from 'mongoose';
-import { JsynqError, partnerClient, type PartnerClient } from '../lib/jsynq';
 import { AgentSetupModel } from '../modules/agents/models';
 import { EntitlementModel, PlanModel } from '../modules/billing/models';
-import { BillingService } from '../modules/billing/service';
 import { SignupModel, TrialClaimModel } from '../modules/signup/models';
 
 type Doc = Record<string, any>;
@@ -33,7 +28,8 @@ type Source = Connection['db'] & {};
 export type MigrationReport = {
   apply: boolean;
   counts: Record<'agentSetups' | 'signups' | 'trialClaims' | 'entitlements' | 'plans', { found: number; inserted: number }>;
-  limits: Array<{ workspaceId: string; result: 'synced' | 'not_partner_owned' | 'failed' | 'skipped_dry_run'; error?: string }>;
+  /** Workspaces with Attende entitlements: each needs a JSYNQ plan with channels (operator step). */
+  workspaces: string[];
 };
 
 const str = (v: unknown): string | undefined => (v === null || v === undefined ? undefined : String(v));
@@ -56,7 +52,7 @@ async function insertMissing(model: mongoose.Model<any>, filter: Doc, doc: Doc, 
   return res.upsertedCount === 1;
 }
 
-export async function migrateFromJsynq(params: { source: Source; apply: boolean; partner: PartnerClient; now?: () => Date }): Promise<MigrationReport> {
+export async function migrateFromJsynq(params: { source: Source; apply: boolean }): Promise<MigrationReport> {
   const { source, apply } = params;
   const report: MigrationReport = {
     apply,
@@ -67,7 +63,7 @@ export async function migrateFromJsynq(params: { source: Source; apply: boolean;
       entitlements: { found: 0, inserted: 0 },
       plans: { found: 0, inserted: 0 },
     },
-    limits: [],
+    workspaces: [],
   };
   const bump = (k: keyof MigrationReport['counts'], inserted: boolean) => {
     report.counts[k].found += 1;
@@ -165,27 +161,7 @@ export async function migrateFromJsynq(params: { source: Source; apply: boolean;
     bump('agentSetups', await insertMissing(AgentSetupModel, { workspaceId: doc.workspaceId, clientRequestId: doc.clientRequestId }, doc, apply));
   }
 
-  // JSYNQ limits for every migrated workspace. syncLimits does not use Stripe.
-  const billing = new BillingService({ stripe: undefined as never, partner: params.partner, now: params.now ?? (() => new Date()) });
-  for (const w of workspaces) {
-    const workspaceId = String(w._id);
-    if (!apply) {
-      report.limits.push({ workspaceId, result: 'skipped_dry_run' });
-      continue;
-    }
-    // Probe ownership first: a workspace the old flow created is not ours in the partner API.
-    try {
-      await params.partner.getLimits(workspaceId);
-    } catch (error) {
-      if (error instanceof JsynqError && error.status === 404 && error.reference === 'WORKSPACE_NOT_FOUND') {
-        report.limits.push({ workspaceId, result: 'not_partner_owned' });
-        continue;
-      }
-      // 404 LIMITS_NOT_FOUND (no doc yet) or anything else: let the PUT decide.
-    }
-    const ok = await billing.syncLimits(workspaceId, { force: true });
-    report.limits.push({ workspaceId, result: ok ? 'synced' : 'failed' });
-  }
+  report.workspaces = workspaces.map((w) => String(w._id));
   return report;
 }
 
@@ -204,12 +180,11 @@ async function main() {
   const dbName = arg('--source-db');
   const source = (dbName ? sourceConn.useDb(dbName, { useCache: true }).db : sourceConn.db) as Source;
   try {
-    const report = await migrateFromJsynq({ source, apply, partner: partnerClient() });
+    const report = await migrateFromJsynq({ source, apply });
     for (const [k, v] of Object.entries(report.counts)) console.log(`${k.padEnd(12)} found ${v.found}, ${apply ? 'inserted' : 'would insert'} ${v.inserted}`);
-    for (const l of report.limits) console.log(`limits ${l.workspaceId}: ${l.result}`);
-    const adopt = report.limits.filter((l) => l.result === 'not_partner_owned');
-    if (adopt.length) console.log(`\n${adopt.length} workspace(s) are not owned by our provider in JSYNQ (no billingMode: 'external'). Adopt them on the JSYNQ side (RUNBOOK.md), then re-run with --apply.`);
-    console.log(apply ? '\nApplied.' : '\nDry run: nothing written, no JSYNQ call. Re-run with --apply.');
+    console.log(`\n${report.workspaces.length} Attende workspace(s). Each needs a JSYNQ plan with channels enabled (operator step):`);
+    for (const id of report.workspaces) console.log(`  ${id}`);
+    console.log(apply ? '\nApplied.' : '\nDry run: nothing written. Re-run with --apply.');
   } finally {
     await sourceConn.close();
     await mongoose.disconnect();

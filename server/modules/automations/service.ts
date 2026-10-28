@@ -81,7 +81,7 @@ export type ListParams = { q?: string; status?: AdvancedAutomationStatus; channe
 export class AutomationService {
   constructor(
     private readonly dir: WorkspaceDirectory,
-    /** Called after a write that may change which sessions have active automations. */
+    /** Called after a write that may change which sessions have active automations (the phase-4 worker may hook in). */
     private readonly onActiveSessionsChanged: (workspaceId: string) => Promise<void> = async () => undefined
   ) {}
 

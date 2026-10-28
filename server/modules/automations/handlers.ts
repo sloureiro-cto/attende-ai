@@ -1,5 +1,4 @@
 import 'server-only';
-import { getAutomationsRuntime } from '../../deps';
 import { badRequest } from '../../lib/errors';
 import { noContent, ok, route, type HttpContext } from '../../lib/http';
 import { rateLimit } from '../../lib/rateLimit';
@@ -24,11 +23,7 @@ const previewLimiter = rateLimit({ windowMs: 60_000, limit: 30, key: (http) => h
 
 const service = (http: HttpContext) => {
   const ctx = ctxOf(http);
-  const runtime = getAutomationsRuntime();
-  return {
-    ctx,
-    automations: new AutomationService(jsynqDirectory(http.deps.user(ctx.token), ctx.workspaceId), runtime ? (ws) => runtime.syncInboundRouting(ws) : undefined),
-  };
+  return { ctx, automations: new AutomationService(jsynqDirectory(http.deps.user(ctx.token), ctx.workspaceId)) };
 };
 const id = (http: HttpContext) => String(http.params.id);
 

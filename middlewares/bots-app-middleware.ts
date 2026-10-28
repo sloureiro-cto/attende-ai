@@ -18,10 +18,10 @@ const PUBLIC_EXACT = new Set(["/", "/login", "/robots.txt", "/healthz", "/health
 const PUBLIC_PREFIXES = ["/api/auth", "/_next", "/bots-assets", "/favicon", "/whatsapp-connect", "/signup", "/pricing"]
 /**
  * The Attende API (route handlers in app/api, code in server/). No session cookie check here: each route
- * authenticates itself (user JWT as Bearer, Stripe/JSYNQ signature, or CRON_SECRET) and answers JSON errors.
+ * authenticates itself (user JWT as Bearer, Stripe signature, or CRON_SECRET) and answers JSON errors.
  */
 const API_PREFIXES = ["/api/attende", "/api/messaging-automations/advanced", "/api/cron"]
-const API_EXACT = new Set(["/api/stripe/webhook", "/api/jsynq/webhooks", "/api/jsynq/inbound"])
+const API_EXACT = new Set(["/api/stripe/webhook"])
 /** The product. A session is required. */
 const PROTECTED_PREFIXES = [
   "/workspaces",

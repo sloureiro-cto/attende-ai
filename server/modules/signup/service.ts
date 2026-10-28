@@ -1,27 +1,25 @@
 import 'server-only';
 import type { Deps } from '../../deps';
 import { AppError } from '../../lib/errors';
-import { decrypt, encrypt, randomOtp, safeEqual, sha256Hex } from '../../lib/crypto';
-import { JsynqError, mapJsynqError } from '../../lib/jsynq';
+import { JSYNQ_LANGUAGE, JsynqError, mapJsynqError, serviceToken, type JsynqLoginSummary, type UserClient } from '../../lib/jsynq';
 import { errMessage, log } from '../../lib/logger';
 import { findSellablePlan, pickMonthlyPrice } from '../billing/catalog';
-import { EntitlementModel, LimitsSyncModel, SubscriptionModel } from '../billing/models';
+import { EntitlementModel, SubscriptionModel } from '../billing/models';
 import { BillingService, getEntitlements } from '../billing/service';
 import { SUBSCRIPTION_APP_TAG } from '../billing/stripeGateway';
 import { DEFAULT_TIER, TRIAL_DAYS } from '../billing/tiers';
 import { canonicalEmail } from './canonicalEmail';
 import { isDisposableEmail } from './disposable';
 import { signupError } from './errors';
-import { SignupModel, type ISignup } from './models';
+import { OrphanWorkspaceModel, SignupModel, type ISignup } from './models';
 import type { SignupInput, StartTrialInput, VerifyInput } from './schemas';
 import { consumeTrialClaim, releaseTrialClaim, reserveTrialClaim } from './trialClaims';
 
-const OTP_TTL_MS = 10 * 60_000;
 const OTP_MAX_ATTEMPTS = 5;
 /** A `trial_starting` lock older than this is a crashed attempt and can be taken over. */
 export const TRIAL_LOCK_STALE_MS = 5 * 60_000;
-
-const otpHash = (signupId: string, otp: string) => sha256Hex(`${signupId}:${otp}`);
+/** Clock skew allowed when matching a workspace JSYNQ created during a crashed attempt. */
+const ADOPT_SKEW_MS = 60_000;
 
 function passwordContainsName(name: string, password: string): boolean {
   const lowered = password.toLowerCase();
@@ -32,12 +30,7 @@ function passwordContainsName(name: string, password: string): boolean {
     .some((part) => part.length > 4 && lowered.includes(part));
 }
 
-const OTP_SUBJECT = { pt: 'Seu código de verificação', en: 'Your verification code', es: 'Tu código de verificación' } as const;
-const OTP_TEXT = {
-  pt: (code: string) => `Seu código para criar a conta no Attende: ${code}. Ele vale por 10 minutos.`,
-  en: (code: string) => `Your code to create your Attende account: ${code}. It is valid for 10 minutes.`,
-  es: (code: string) => `Tu código para crear la cuenta en Attende: ${code}. Es válido por 10 minutos.`,
-} as const;
+const isEmailInUse = (error: unknown) => error instanceof JsynqError && error.status === 400 && /already in use/i.test(error.message);
 
 export type SessionUser = { userId: string; email?: string };
 
@@ -51,9 +44,15 @@ export type StartTrialResult = {
 };
 
 /**
- * Self-serve onboarding: register (OTP by e-mail) -> verify (JSYNQ user via the partner API) ->
- * SetupIntent -> start trial (claims -> JSYNQ workspace -> Stripe trial -> JSYNQ limits ->
- * conversation analytics). Every external step is idempotent and compensated on failure.
+ * Self-serve onboarding on JSYNQ's existing public routes (no partner API):
+ *   register -> `POST /api/users` (JSYNQ creates the user and e-mails its signup code)
+ *   verify   -> `PATCH /api/users/verify-otp` (JSYNQ verifies the user and answers the login summary)
+ *   SetupIntent -> start trial: claims -> `POST /api/workspaces` (as the user) -> CRM project ->
+ *   Stripe trial -> entitlements. Every external step is idempotent or recorded, and compensated on failure.
+ *
+ * The e-mail code is JSYNQ's (delegated), not ours: JSYNQ only marks a user verified through its
+ * own OTP, and a user it does not consider verified cannot sign in. The JSYNQ e-mail is therefore
+ * JSYNQ-branded.
  */
 export class SignupService {
   private readonly billing: BillingService;
@@ -68,93 +67,87 @@ export class SignupService {
     if (isDisposableEmail(input.email)) throw signupError('DISPOSABLE_EMAIL', 'Please use a permanent e-mail address.');
     if (passwordContainsName(input.name, input.password)) throw signupError('PASSWORD_CONTAINS_NAME', "your name can't be a part of your password");
 
-    const existing = await SignupModel.findOne({ email: input.email }).lean();
-    if (existing && existing.state !== 'pending_verification') throw signupError('EMAIL_IN_USE', 'E-mail address already in use');
+    const existing = await SignupModel.findOne({ email: input.email }).lean<ISignup>();
+    if (existing && existing.state !== 'pending_verification') {
+      if (existing.existingAccount) throw signupError('USER_EXISTS_UNMANAGED', 'This e-mail already has an account. Sign in with it to continue.');
+      throw signupError('EMAIL_IN_USE', 'E-mail address already in use');
+    }
 
+    const name = input.name.replace(/\s+/g, ' ').trim();
     const signup = await SignupModel.findOneAndUpdate(
       { email: input.email, state: 'pending_verification' },
       {
-        $set: {
-          canonicalEmail: canonicalEmail(input.email),
-          name: input.name.replace(/\s+/g, ' ').trim(),
-          businessName: input.businessName,
-          locale: input.locale,
-          planSlug: input.planSlug,
-          passwordEnc: encrypt(input.password),
-        },
+        $set: { canonicalEmail: canonicalEmail(input.email), name, businessName: input.businessName, locale: input.locale, planSlug: input.planSlug, otpAttempts: 0 },
         $setOnInsert: { email: input.email, state: 'pending_verification', startAttempts: 0 },
       },
       { upsert: true, new: true }
     ).lean<ISignup>();
-    await this.sendOtp(signup!);
+
+    // The JSYNQ user already exists from an earlier submit of this signup: JSYNQ sends a new code.
+    if (signup!.jsynqUserCreated) {
+      await this.deps.accounts.resendSignupOtp(input.email).catch((error) => {
+        throw mapJsynqError(error);
+      });
+      return { email: input.email, nextStep: 'verify_email' };
+    }
+
+    try {
+      await this.deps.accounts.register({ name, email: input.email, password: input.password, language: JSYNQ_LANGUAGE[input.locale] });
+    } catch (error) {
+      if (isEmailInUse(error)) {
+        // The e-mail has a JSYNQ account this signup did not create: sign in with it, then start-trial.
+        await SignupModel.updateOne({ _id: signup!._id }, { $set: { state: 'verified', existingAccount: true } });
+        throw signupError('USER_EXISTS_UNMANAGED', 'This e-mail already has an account. Sign in with it to continue.');
+      }
+      if (error instanceof JsynqError && error.status === 422) throw signupError('INVALID_BODY', error.message);
+      throw mapJsynqError(error);
+    }
+    await SignupModel.updateOne({ _id: signup!._id }, { $set: { jsynqUserCreated: true } });
+    log.info('signup.registered', { signupId: String(signup!._id) });
     return { email: input.email, nextStep: 'verify_email' };
   }
 
+  /** Always quiet: never reveals whether the e-mail has a signup. */
   async resend(email: string): Promise<void> {
-    const signup = await SignupModel.findOne({ email, state: 'pending_verification' }).lean<ISignup>();
-    if (signup) await this.sendOtp(signup);
-  }
-
-  private async sendOtp(signup: ISignup) {
-    const code = randomOtp();
-    await SignupModel.updateOne(
-      { _id: signup._id },
-      { $set: { otpHash: otpHash(String(signup._id), code), otpExpiresAt: new Date(this.deps.now().getTime() + OTP_TTL_MS), otpAttempts: 0 } }
-    );
-    await this.deps.mailer.send({ to: signup.email, subject: OTP_SUBJECT[signup.locale], text: OTP_TEXT[signup.locale](code) });
+    const signup = await SignupModel.findOne({ email, state: 'pending_verification', jsynqUserCreated: true }).lean<ISignup>();
+    if (!signup) return;
+    try {
+      await this.deps.accounts.resendSignupOtp(email);
+      await SignupModel.updateOne({ _id: signup._id }, { $set: { otpAttempts: 0 } });
+    } catch (error) {
+      log.warn('signup.resend_failed', { signupId: String(signup._id), error: errMessage(error) });
+    }
   }
 
   /**
-   * Checks the OTP, then creates the JSYNQ user through the partner API and returns its login
-   * summary (with an `accessToken` the frontend may use). If the e-mail already has a JSYNQ
-   * account this partner did not create: 409 `USER_EXISTS_UNMANAGED`; the user signs in with that
-   * account and `start-trial` continues with its id.
+   * Checks the code with JSYNQ, which marks its user verified and answers the login summary. The
+   * caller (the app's server action) turns that summary into a short sign-in proof; no JSYNQ token
+   * leaves this service.
    */
-  async verify(input: VerifyInput) {
+  async verify(input: VerifyInput): Promise<JsynqLoginSummary & { signup: { businessName: string; planSlug: string | null; state: string } }> {
     const signup = await SignupModel.findOne({ email: input.email }).lean<ISignup>();
-    if (!signup) throw signupError('OTP_NOT_FOUND', 'verification OTP not found');
-    if (signup.state !== 'pending_verification') return this.verifiedResult(signup);
-    if (!signup.otpHash || !signup.otpExpiresAt) throw signupError('OTP_NOT_FOUND', 'verification OTP not found');
-    if (signup.otpExpiresAt.getTime() < this.deps.now().getTime()) throw signupError('OTP_EXPIRED', 'verification OTP has expired');
+    if (!signup || (signup.state === 'pending_verification' && !signup.jsynqUserCreated)) throw signupError('OTP_NOT_FOUND', 'verification OTP not found');
+    if (signup.existingAccount) throw signupError('USER_EXISTS_UNMANAGED', 'This e-mail already has an account. Sign in with it to continue.');
+    // Verified already: the code is spent. Never hand out a sign-in for an e-mail alone.
+    if (signup.state !== 'pending_verification') throw signupError('EMAIL_IN_USE', 'This e-mail is already verified. Sign in to continue.');
     if (signup.otpAttempts >= OTP_MAX_ATTEMPTS) throw signupError('OTP_EXPIRED', 'too many attempts, ask for a new code');
-    if (!safeEqual(signup.otpHash, otpHash(String(signup._id), input.otp))) {
-      await SignupModel.updateOne({ _id: signup._id }, { $inc: { otpAttempts: 1 } });
-      throw signupError('OTP_INVALID', 'invalid verification OTP');
-    }
 
-    let userId: string | undefined;
+    let login: JsynqLoginSummary;
     try {
-      const out = await this.deps.partner.createUser({
-        email: signup.email,
-        name: signup.name,
-        password: signup.passwordEnc ? decrypt(signup.passwordEnc) : undefined,
-        locale: signup.locale,
-      });
-      userId = out.userId;
+      login = await this.deps.accounts.verifySignupOtp({ email: input.email, otp: input.otp });
     } catch (error) {
-      if (error instanceof JsynqError && error.reference === 'USER_EXISTS_UNMANAGED') {
-        await SignupModel.updateOne(
-          { _id: signup._id },
-          { $set: { state: 'verified', existingAccount: true }, $unset: { passwordEnc: 1, otpHash: 1, otpExpiresAt: 1 } }
-        );
-        throw signupError('USER_EXISTS_UNMANAGED', 'This e-mail already has an account. Sign in with it to continue.');
+      if (error instanceof JsynqError && error.status === 404) throw signupError('OTP_NOT_FOUND', 'verification OTP not found');
+      if (error instanceof JsynqError && error.status === 400) {
+        if (/expired/i.test(error.message)) throw signupError('OTP_EXPIRED', 'verification OTP has expired');
+        await SignupModel.updateOne({ _id: signup._id }, { $inc: { otpAttempts: 1 } });
+        throw signupError('OTP_INVALID', 'invalid verification OTP');
       }
+      if (error instanceof JsynqError && error.status === 422) throw signupError('OTP_INVALID', 'invalid verification OTP');
       throw mapJsynqError(error);
     }
-    await SignupModel.updateOne(
-      { _id: signup._id },
-      { $set: { state: 'verified', userId }, $unset: { passwordEnc: 1, otpHash: 1, otpExpiresAt: 1 } }
-    );
-    log.info('signup.verified', { signupId: String(signup._id), userId });
-    return this.verifiedResult({ ...signup, state: 'verified', userId });
-  }
-
-  private async verifiedResult(signup: ISignup) {
-    if (signup.existingAccount || !signup.userId) throw signupError('USER_EXISTS_UNMANAGED', 'This e-mail already has an account. Sign in with it to continue.');
-    const login = await this.deps.partner.loginToken(signup.userId).catch((error) => {
-      throw mapJsynqError(error);
-    });
-    return { ...login, signup: { businessName: signup.businessName, planSlug: signup.planSlug ?? null, state: signup.state } };
+    await SignupModel.updateOne({ _id: signup._id }, { $set: { state: 'verified', userId: login.id }, $unset: { otpAttempts: 1 } });
+    log.info('signup.verified', { signupId: String(signup._id), userId: login.id });
+    return { ...login, signup: { businessName: signup.businessName, planSlug: signup.planSlug ?? null, state: 'verified' } };
   }
 
   // --- session steps -------------------------------------------------------------------
@@ -196,6 +189,11 @@ export class SignupService {
     return won?.stripeCustomerId ?? (await SignupModel.findById(signup._id).lean<ISignup>())!.stripeCustomerId!;
   }
 
+  /** JSYNQ as the signing-up user, optionally scoped to a workspace (server-minted token, never returned). */
+  private as(user: SessionUser, workspaceId: string | null): UserClient {
+    return this.deps.user(serviceToken({ userId: user.userId, email: user.email }, workspaceId));
+  }
+
   async startTrial(user: SessionUser, input: StartTrialInput, ctx: { country?: string } = {}): Promise<StartTrialResult> {
     const found = await this.signupOf(user);
     if (found.state === 'trial_started' && found.workspaceId) return this.existingResult(found);
@@ -205,7 +203,7 @@ export class SignupService {
     const userId = user.userId;
 
     const claims: Array<{ kind: 'card' | 'email'; key: string }> = [];
-    const done: { workspaceId?: string; workspaceCreated?: boolean; subscriptionId?: string } = {};
+    const done: { workspaceId?: string; subscriptionId?: string } = {};
     try {
       const slug = input.planSlug ?? signup.planSlug ?? DEFAULT_TIER;
       const plan = await findSellablePlan(slug);
@@ -217,19 +215,13 @@ export class SignupService {
 
       for (const [kind, key] of [['email', signup.canonicalEmail], ['card', fingerprint]] as const) {
         const outcome = await reserveTrialClaim(kind, key, userId);
-        if (outcome === 'taken') throw signupError('TRIAL_ALREADY_USED', 'A free trial was already used with this card or e-mail.');
         if (outcome === 'reserved') claims.push({ kind, key });
+        if (outcome === 'taken') throw signupError('TRIAL_ALREADY_USED', 'A free trial was already used with this card or e-mail.');
       }
 
-      // Idempotent by signup id: a retry after a crash gets the same workspace back.
-      const ws = await this.deps.partner
-        .createWorkspace({ name: signup.businessName, ownerUserId: userId, language: signup.locale, idempotencyKey: `signup:${String(signup._id)}`, seed: ['crm_project'] })
-        .catch((error) => {
-          throw mapJsynqError(error);
-        });
-      done.workspaceId = ws.workspaceId;
-      done.workspaceCreated = ws.created;
-      await SignupModel.updateOne({ _id: signup._id }, { $set: { workspaceId: ws.workspaceId } });
+      const workspaceId = await this.ensureWorkspace(signup, user);
+      done.workspaceId = workspaceId;
+      await this.ensureCrmProject(signup, user, workspaceId);
 
       // A crashed attempt may have created the subscription already: reuse it rather than double-bill.
       const previous = signup.subscriptionId ? await this.deps.stripe.retrieveSubscription(signup.subscriptionId).catch(() => null) : null;
@@ -238,31 +230,23 @@ export class SignupService {
         priceId: price.id,
         trialDays: TRIAL_DAYS,
         paymentMethodId: input.paymentMethodId,
-        metadata: { app: SUBSCRIPTION_APP_TAG, workspaceId: ws.workspaceId, userId, signupId: String(signup._id) },
+        metadata: { app: SUBSCRIPTION_APP_TAG, workspaceId, userId, signupId: String(signup._id) },
         idempotencyKey: `trial:${String(signup._id)}:${signup.startAttempts}`,
       });
       done.subscriptionId = sub.id;
       await SignupModel.updateOne({ _id: signup._id }, { $set: { subscriptionId: sub.id } });
 
-      // Entitlements + JSYNQ limits. A workspace without limits is unrestricted in JSYNQ, so this must succeed.
-      const entitlements = await this.billing.applySubscription(sub, { workspaceId: ws.workspaceId, userId });
-      if (!(await this.billing.syncLimits(ws.workspaceId))) throw new AppError(503, 'Could not apply the plan limits, try again', 'JSYNQ_UNAVAILABLE');
+      // Entitlements: the plan Attende enforces itself from now on (no limits are pushed to JSYNQ).
+      const entitlements = await this.billing.applySubscription(sub, { workspaceId, userId });
 
-      try {
-        await this.deps.partner.setFeatures(ws.workspaceId, { conversationAnalytics: true });
-      } catch (error) {
-        // Reports read empty until an operator (or a retry) enables it; the trial itself works.
-        log.warn('signup.analytics_feature_failed', { workspaceId: ws.workspaceId, error: errMessage(error) });
-      }
-
-      for (const c of claims) await consumeTrialClaim(c.kind, c.key, userId, ws.workspaceId);
+      for (const c of claims) await consumeTrialClaim(c.kind, c.key, userId, workspaceId);
       await SignupModel.updateOne(
         { _id: signup._id },
-        { $set: { state: 'trial_started', ...(sub.trialEnd ? { trialEndsAt: sub.trialEnd } : {}) }, $unset: { lockedAt: 1, lastErrorRef: 1 } }
+        { $set: { state: 'trial_started', ...(sub.trialEnd ? { trialEndsAt: sub.trialEnd } : {}) }, $unset: { lockedAt: 1, lastErrorRef: 1, workspaceCreateStartedAt: 1 } }
       );
-      log.info('signup.trial_started', { signupId: String(signup._id), userId, workspaceId: ws.workspaceId, subscriptionId: sub.id });
+      log.info('signup.trial_started', { signupId: String(signup._id), userId, workspaceId, subscriptionId: sub.id });
       return {
-        workspaceId: ws.workspaceId,
+        workspaceId,
         subscriptionStatus: sub.status,
         trialEndsAt: sub.trialEnd ? sub.trialEnd.toISOString() : null,
         plan: { slug: plan.slug, name: plan.title },
@@ -271,40 +255,104 @@ export class SignupService {
       };
     } catch (error) {
       const mapped = this.mapError(error);
-      await this.compensate(signup, userId, claims, done, mapped);
+      await this.compensate(signup, user, claims, done, mapped);
       throw mapped;
     }
   }
 
+  /**
+   * The signup's JSYNQ workspace, created at most once. `POST /api/workspaces` has no idempotency
+   * key, so the attempt is recorded first (`workspaceCreateStartedAt`) and the id saved right after;
+   * a retry after a crash in between adopts the workspace this user created with the business name
+   * since that moment (`GET /api/workspaces/check-owner`).
+   */
+  private async ensureWorkspace(signup: ISignup, user: SessionUser): Promise<string> {
+    const client = this.as(user, null);
+    if (signup.workspaceId) return signup.workspaceId;
+    if (signup.workspaceCreateStartedAt) {
+      const since = new Date(signup.workspaceCreateStartedAt).getTime() - ADOPT_SKEW_MS;
+      const owned = await client.listOwnedWorkspaces().catch((error) => {
+        throw mapJsynqError(error);
+      });
+      const taken = new Set((await EntitlementModel.find({ workspaceId: { $in: owned.map((w) => w._id) } }).select('workspaceId').lean()).map((e) => e.workspaceId));
+      const orphan = owned
+        .filter((w) => w.name === signup.businessName && !taken.has(w._id) && w.createdAt && new Date(w.createdAt).getTime() >= since)
+        .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())[0];
+      if (orphan) {
+        await SignupModel.updateOne({ _id: signup._id }, { $set: { workspaceId: orphan._id } });
+        log.info('signup.workspace_adopted', { signupId: String(signup._id), workspaceId: orphan._id });
+        return orphan._id;
+      }
+    }
+    await SignupModel.updateOne({ _id: signup._id }, { $set: { workspaceCreateStartedAt: this.deps.now() } });
+    const ws = await client.createWorkspace({ name: signup.businessName, language: JSYNQ_LANGUAGE[signup.locale] }).catch((error) => {
+      throw mapJsynqError(error);
+    });
+    await SignupModel.updateOne({ _id: signup._id }, { $set: { workspaceId: ws._id } });
+    return ws._id;
+  }
+
+  /**
+   * The default CRM of the workspace (what the partner API's `seed: ['crm_project']` did): a `crm`
+   * project, for which JSYNQ creates the board and its default columns. Reused when the workspace
+   * already has one (`GET /api/projects`).
+   */
+  private async ensureCrmProject(signup: ISignup, user: SessionUser, workspaceId: string): Promise<string> {
+    if (signup.crmProjectId && signup.workspaceId === workspaceId) return signup.crmProjectId;
+    const client = this.as(user, workspaceId);
+    try {
+      const projects = await client.listProjects();
+      const typeOf = (p: (typeof projects)[number]) => (typeof p.projectType === 'object' && p.projectType ? p.projectType.title : p.projectType);
+      const existing = projects.find((p) => String(typeOf(p) ?? '').toLowerCase() === 'crm');
+      const projectId = existing ? String(existing._id) : (await client.createProject({ title: signup.businessName.slice(0, 120), private: false, projectType: { title: 'crm' } }))._id;
+      await SignupModel.updateOne({ _id: signup._id }, { $set: { crmProjectId: projectId } });
+      return projectId;
+    } catch (error) {
+      throw mapJsynqError(error);
+    }
+  }
+
   /** Undo, newest first: Stripe subscription, local billing rows, the JSYNQ workspace, the claims. */
-  private async compensate(signup: ISignup, userId: string, claims: Array<{ kind: 'card' | 'email'; key: string }>, done: { workspaceId?: string; subscriptionId?: string }, error: unknown) {
+  private async compensate(signup: ISignup, user: SessionUser, claims: Array<{ kind: 'card' | 'email'; key: string }>, done: { workspaceId?: string; subscriptionId?: string }, error: unknown) {
     const step = async (name: string, fn: () => Promise<unknown>) => {
       try {
         await fn();
+        return true;
       } catch (e) {
         log.error('signup.compensation_failed', { signupId: String(signup._id), step: name, error: errMessage(e) });
+        return false;
       }
     };
     if (done.subscriptionId) await step('cancel_subscription', () => this.deps.stripe.cancelSubscription(done.subscriptionId!));
+    let keepWorkspace = false;
     if (done.workspaceId) {
       const workspaceId = done.workspaceId;
-      await step('billing_rows', () =>
-        Promise.all([SubscriptionModel.deleteOne({ workspaceId }), EntitlementModel.deleteOne({ workspaceId }), LimitsSyncModel.deleteOne({ workspaceId })])
-      );
-      await step('delete_workspace', async () => {
+      await step('billing_rows', () => Promise.all([SubscriptionModel.deleteOne({ workspaceId }), EntitlementModel.deleteOne({ workspaceId })]));
+      // `DELETE /api/workspaces/:id` (any member; soft delete in JSYNQ).
+      const deleted = await step('delete_workspace', async () => {
         try {
-          await this.deps.partner.deleteWorkspace(workspaceId);
+          await this.as(user, workspaceId).deleteWorkspace(workspaceId);
         } catch (e) {
-          if (!(e instanceof JsynqError && e.status === 404)) throw e;
+          if (!(e instanceof JsynqError && (e.status === 404 || e.status === 403))) throw e;
         }
       });
+      if (!deleted) {
+        // Keep it on the signup so a retry reuses it rather than creating another, and tell an operator.
+        keepWorkspace = true;
+        await OrphanWorkspaceModel.updateOne(
+          { workspaceId },
+          { $set: { userId: user.userId, signupId: String(signup._id), error: 'delete failed during signup compensation' } },
+          { upsert: true }
+        ).catch(() => undefined);
+        log.error('signup.orphan_workspace', { signupId: String(signup._id), workspaceId });
+      }
     }
-    for (const c of claims) await step('release_claim', () => releaseTrialClaim(c.kind, c.key, userId));
+    for (const c of claims) await step('release_claim', () => releaseTrialClaim(c.kind, c.key, user.userId));
     await SignupModel.updateOne(
       { _id: signup._id },
       {
         $set: { state: 'failed', lastErrorRef: error instanceof AppError && error.reference ? error.reference : 'SIGNUP_FAILED' },
-        $unset: { lockedAt: 1, workspaceId: 1, subscriptionId: 1 },
+        $unset: { lockedAt: 1, subscriptionId: 1, ...(keepWorkspace ? {} : { workspaceId: 1, crmProjectId: 1, workspaceCreateStartedAt: 1 }) },
       }
     );
     log.warn('signup.trial_failed', { signupId: String(signup._id), reference: error instanceof AppError ? error.reference : undefined });

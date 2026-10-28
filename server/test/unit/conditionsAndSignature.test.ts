@@ -1,5 +1,4 @@
 import { conditionShapeIssues, evaluateLocalCondition, isWithinBusinessHours, type BusinessHours } from '../../modules/automations/lib/conditions';
-import { signPayload, verifySignature } from '../../modules/jsynq-webhooks/signature';
 
 const hours: BusinessHours = { enabled: true, timezone: 'America/Sao_Paulo', schedule: [{ day: 1, windows: [{ start: '09:00', end: '18:00' }] }] };
 // 2026-10-19 is a Monday; 13:00 UTC = 10:00 in São Paulo.
@@ -34,18 +33,5 @@ describe('local conditions', () => {
     expect(conditionShapeIssues({ type: 'all', clauses: [] }, 'p')).toHaveLength(1);
     expect(conditionShapeIssues({ type: 'llm_match', labels: ['a', 'b'], match: 'c' }, 'p')).toHaveLength(1);
     expect(conditionShapeIssues({ type: 'nope' }, 'p')).toEqual([{ path: 'p', message: 'unknown condition type' }]);
-  });
-});
-
-describe('JSYNQ webhook signature', () => {
-  const secret = 'test-secret';
-  const body = Buffer.from('{"id":"evt_1"}');
-  const now = 1_800_000_000;
-  it('accepts a fresh, correct signature', () => expect(verifySignature(secret, body, signPayload(secret, body, now), now + 10)).toBe(true));
-  it('rejects a stale one, a wrong secret and a tampered body', () => {
-    expect(verifySignature(secret, body, signPayload(secret, body, now), now + 301)).toBe(false);
-    expect(verifySignature(secret, body, signPayload('other', body, now), now)).toBe(false);
-    expect(verifySignature(secret, Buffer.from('{"id":"evt_2"}'), signPayload(secret, body, now), now)).toBe(false);
-    expect(verifySignature(secret, body, undefined, now)).toBe(false);
   });
 });

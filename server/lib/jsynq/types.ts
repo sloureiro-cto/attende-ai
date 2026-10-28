@@ -9,7 +9,6 @@ export type JsynqAgent = {
   description?: string;
   systemPrompt?: string;
   isActive?: boolean;
-  knowledgeTrust?: 'trusted' | 'untrusted';
 };
 
 export type JsynqBinding = {
@@ -39,31 +38,11 @@ export type JsynqKnowledgeSource = {
   errorMessage?: string;
 };
 
-/** P3 limits document (what we PUT; server-managed fields come back on GET). */
-export type JsynqLimitsInput = {
-  status: 'active' | 'suspended';
-  validUntil: string | null;
-  limits: {
-    messagingChannels?: number;
-    agents?: number;
-    aiRepliesPerMonth?: number;
-    knowledgeDocuments?: number;
-    members?: number;
-    outboundMessages?: { max: number; windowEndsAt: string | null } | null;
-  };
-  rateLimitProfile?: 'strict' | 'standard' | null;
-};
+export type JsynqLanguage = 'portuguese' | 'english' | 'spanish';
+export const JSYNQ_LANGUAGE: Record<'pt' | 'en' | 'es', JsynqLanguage> = { pt: 'portuguese', en: 'english', es: 'spanish' };
 
-export type JsynqLimitsDoc = JsynqLimitsInput & { version: number; updatedAt: string; outboundUsed: number };
-
-export type JsynqUsage = {
-  month: string;
-  meters: { aiReplies: number; outboundMessages: number };
-  live: { messagingChannels: number; agents: number; knowledgeDocuments: number; members: number };
-  limits: JsynqLimitsDoc | null;
-};
-
-export type JsynqLoginToken = {
+/** What JSYNQ answers at login / signup verification (`BuildAuthUserLoginResponseService`). No token: the app mints it. */
+export type JsynqLoginSummary = {
   id: string;
   email: string;
   name?: string;
@@ -72,8 +51,11 @@ export type JsynqLoginToken = {
   isVerified?: boolean;
   twoFactorEnabled?: boolean;
   workspaceId: string | null;
-  accessToken: string;
-  expiresIn: number;
+  stripeCustomerId?: string;
 };
 
-export type JsynqWebhookEndpoint = { id: string; url: string; events: string[]; status: string; secret?: string };
+export type JsynqOwnedWorkspace = { _id: string; name?: string; createdAt?: string; deleted?: boolean };
+
+export type JsynqProject = { _id: string; title?: string; projectType?: { title?: string } | string | null };
+
+export type JsynqTool = { toolId: string; toolName: string; provider?: string };

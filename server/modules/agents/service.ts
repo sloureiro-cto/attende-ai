@@ -4,8 +4,7 @@ import { codedError } from '../../lib/errors';
 import { sha256Hex } from '../../lib/crypto';
 import { viaJsynq } from '../../lib/jsynq';
 import { errMessage, log } from '../../lib/logger';
-import { isOverLimit } from '../billing/deriveEntitlements';
-import { getEntitlements } from '../billing/service';
+import { forgetPausedBindings, pauseReasonsOf } from '../billing/enforcement';
 import { AGENT_CAPABILITIES, AGENT_RATE_LIMIT, AGENT_TOOL_NAMES, agentModelConfig, buildBindingPolicy } from './lib/agentProfile';
 import { runDryRun, type DryRunResult } from './lib/dryRun';
 import { validateAgentForm, type FromTemplateBody, type PatchSetupBody } from './lib/formSchema';
@@ -44,8 +43,9 @@ export const CREATE_STALE_MS = 2 * 60_000;
 const promptHash = (prompt: string) => sha256Hex(prompt);
 
 /**
- * Attende agents on top of JSYNQ: a short form becomes a JSYNQ agent (prompt compiled here,
- * `toolNames`, `knowledgeTrust: 'untrusted'`) plus one paused binding per line. The form stays here
+ * Attende agents on top of JSYNQ: a short form becomes a JSYNQ agent (prompt compiled here, with
+ * the untrusted-knowledge fencing; tool ids resolved from the workspace registry) plus one paused
+ * binding per line. The form stays here
  * as the source of truth; `compiledPromptHash` detects prompts edited in JSYNQ.
  */
 export class AgentService {
@@ -86,11 +86,8 @@ export class AgentService {
     const existing = await AgentSetupModel.findOne({ workspaceId: ctx.workspaceId, clientRequestId: body.clientRequestId }).lean<IAgentSetup>();
     if (existing?.state === 'ready') return { view: await this.toView(existing), created: false };
 
-    const current = await AgentSetupModel.countDocuments({ workspaceId: ctx.workspaceId, state: { $ne: 'failed' }, clientRequestId: { $ne: body.clientRequestId } });
-    const ent = await getEntitlements(ctx.workspaceId);
-    if (ent && isOverLimit(ent.limits.agents, current)) {
-      throw codedError(403, CODES.QUOTA_AGENTS, 'Your plan reached its limit of AI agents', { resource: 'agents', limit: ent.limits.agents });
-    }
+    // Plan: the Attende agents that exist in JSYNQ (`GET /api/agents`) plus creates in flight.
+    await this.ports.assertPlanAllows('agents', { exceptClientRequestId: body.clientRequestId });
     await this.assertLines(body.lines);
     await this.assertHandoffTarget(form);
 
@@ -98,6 +95,8 @@ export class AgentService {
     const profile = compileAgentProfile(body.templateKey, form);
     const created: { agentId?: string; bindingIds: string[] } = { bindingIds: [] };
     try {
+      const toolIds = await this.ports.resolveToolIds(AGENT_TOOL_NAMES);
+      if (toolIds.length < AGENT_TOOL_NAMES.length) log.warn('agent.tools_unresolved', { workspaceId: ctx.workspaceId, resolved: toolIds.length });
       const agent = await viaJsynq(() =>
         this.ports.createAgent({
           name: profile.name,
@@ -105,8 +104,8 @@ export class AgentService {
           type: 'specialized',
           category: template.category === 'sales' ? 'sales' : 'support',
           modelConfig: agentModelConfig(),
-          toolNames: [...AGENT_TOOL_NAMES],
-          knowledgeTrust: 'untrusted',
+          // Unresolved: JSYNQ's defaults apply (its platform tools are injected per run and gated per binding).
+          ...(toolIds.length ? { availableTools: toolIds } : {}),
           systemPrompt: profile.systemPrompt,
           confirmationRequired: false,
           allowSubAgents: false,
@@ -256,6 +255,10 @@ export class AgentService {
 
   async goLive(ctx: AgentContext, id: string): Promise<AgentView> {
     const setup = await this.load(ctx.workspaceId, id);
+    // Agents paused for the month's AI replies stay paused until the quota resets or the plan grows.
+    if ((await pauseReasonsOf(ctx.workspaceId)).includes('ai_quota')) {
+      throw codedError(403, 'ATTENDE_QUOTA_EXCEEDED', 'Your plan reached its limit of AI replies this month', { resource: 'aiReplies' });
+    }
     if (setup.lines.length === 0) throw codedError(409, CODES.NOT_READY, 'Connect at least one line before going live', { reason: 'no_lines' });
     const statuses = await viaJsynq(() => this.ports.lineStatuses(setup.lines));
     const disconnected = statuses.filter((s) => !s.connected);
@@ -297,6 +300,8 @@ export class AgentService {
     for (const line of setup.lines) {
       if (line.bindingId && statuses.get(line.bindingId) === 'active') await viaJsynq(() => this.ports.pauseBinding(line.bindingId!));
     }
+    // Paused by a person: a workspace-wide resume (reactivation, new quota month) must not bring it back.
+    await forgetPausedBindings(ctx.workspaceId, setup.lines.flatMap((l) => (l.bindingId ? [l.bindingId] : [])));
     return this.toView(setup);
   }
 

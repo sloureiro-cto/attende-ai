@@ -23,7 +23,7 @@ export type RuntimeDeps = {
   log: (event: string, data?: Record<string, unknown>) => void;
 };
 
-/** One inbound message, as JSYNQ forwards it (see docs/jsynq-dependencies.md). */
+/** One inbound message, as the phase-4 worker reads it from the JSYNQ websocket. */
 export type InboundMessage = ConversationKey & {
   sessionId: string;
   /** JSYNQ message id; redeliveries carry the same id. */

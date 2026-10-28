@@ -2,24 +2,16 @@ import request from 'supertest';
 import type { TestApp } from '../helpers/app';
 import { createApp } from '../helpers/app';
 import { resetEnvCache } from '../../config/env';
-import type { Deps } from '../../deps';
-import { partnerClient, userClient } from '../../lib/jsynq';
 import { clearMembershipCache } from '../../middleware/auth';
-import { AutomationRunModel } from '../../modules/automations/models';
-import { createAutomationsRuntime } from '../../modules/automations/runtime/factory';
-import { jsynqConversationGateway } from '../../modules/automations/runtime/jsynqGateway';
-import { EntitlementModel, PlanModel, SubscriptionModel } from '../../modules/billing/models';
+import { AgentPauseModel, EntitlementModel, PlanModel, SubscriptionModel } from '../../modules/billing/models';
 import { BillingService } from '../../modules/billing/service';
-import { WorkspaceEventModel } from '../../modules/jsynq-webhooks/models';
-import { signPayload } from '../../modules/jsynq-webhooks/signature';
-import { SignupModel, TrialClaimModel } from '../../modules/signup/models';
-import { FakeJsynq, PARTNER_KEY } from '../helpers/fakeJsynq';
-import { FakeMailer } from '../helpers/fakeMailer';
+import { recordAiReply, resumeAiQuotaPauses } from '../../modules/billing/usage';
+import { OrphanWorkspaceModel, SignupModel, TrialClaimModel } from '../../modules/signup/models';
+import { testDeps } from '../helpers/deps';
+import { FakeJsynq } from '../helpers/fakeJsynq';
 import { FakeStripe } from '../helpers/fakeStripe';
 import { clearMongo, startMongo, stopMongo } from '../helpers/mongo';
 import { userToken } from '../helpers/tokens';
-
-const JSYNQ_WEBHOOK_SECRET = 'jsynq-test-webhook-secret';
 
 const sdrForm = {
   businessName: 'Clínica Sorriso',
@@ -33,10 +25,15 @@ const sdrForm = {
   sdr: { goal: 'book_meeting', qualificationQuestions: ['Qual serviço você procura?'] },
 };
 
-describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', () => {
+const STARTER_LIMITS = { lines: 1, agents: 1, aiRepliesPerMonth: 1000, seats: 2, docs: 20 };
+
+/** Each signup from its own address: the per-IP signup rate limit lives for the whole file. */
+let visitor = 0;
+const ip = () => `198.51.100.${(visitor += 1)}`;
+
+describe('E2E on JSYNQ staging routes: signup -> trial -> agent -> go-live -> over-limit -> cancel -> agents paused', () => {
   let jsynq: FakeJsynq;
   let stripe: FakeStripe;
-  let mailer: FakeMailer;
   let app: TestApp;
 
   beforeAll(async () => {
@@ -56,9 +53,7 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     clearMembershipCache();
     jsynq.reset();
     stripe = new FakeStripe();
-    mailer = new FakeMailer();
-    const deps: Deps = { stripe, partner: partnerClient(PARTNER_KEY), user: userClient, mailer, now: () => new Date() };
-    app = createApp(deps, null);
+    app = createApp(testDeps({ stripe }), null);
     await PlanModel.create({
       slug: 'attende_starter',
       title: 'Starter',
@@ -70,26 +65,29 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     });
   });
 
+  /** Account (JSYNQ `POST /api/users`) + the code JSYNQ e-mailed (`PATCH /api/users/verify-otp`). */
   const signUp = async (email: string) => {
     await request(app)
       .post('/api/attende/signup')
+      .set('x-forwarded-for', ip())
       .send({ name: 'Maria Souza', email, password: 'Senha#2026', businessName: 'Clínica Sorriso', locale: 'pt' })
       .expect(201);
-    return request(app).post('/api/attende/signup/verify').send({ email, otp: mailer.lastOtp(email) });
+    return request(app).post('/api/attende/signup/verify').send({ email, otp: jsynq.otpOf(email) });
   };
+  /** The session NextAuth mints from the verify proof: same claims, same secret. */
+  const sessionOf = (id: string, email: string, workspaceId: string | null = null) => userToken({ id, email, workspaceId });
 
-  it('runs the whole lifecycle against JSYNQ and Stripe', async () => {
-    // 1. signup + OTP -> JSYNQ user through the partner API
+  it('runs the whole lifecycle against JSYNQ and Stripe, with no partner API call', async () => {
+    // 1. signup + JSYNQ's own OTP
     const verified = await signUp('maria@clinica.com.br');
     expect(verified.status).toBe(200);
-    expect(verified.body).toMatchObject({ email: 'maria@clinica.com.br', workspaceId: null, signup: { state: 'verified', businessName: 'Clínica Sorriso' } });
+    expect(verified.body).toMatchObject({ email: 'maria@clinica.com.br', isVerified: true, workspaceId: null, signup: { state: 'verified', businessName: 'Clínica Sorriso' } });
+    expect(verified.body.accessToken).toBeUndefined();
     const userId: string = verified.body.id;
-    expect(jsynq.users.get(userId)?.managed).toBe(true);
-    const signup = await SignupModel.findOne({ email: 'maria@clinica.com.br' }).lean();
-    expect(signup?.passwordEnc).toBeUndefined();
-    let token: string = verified.body.accessToken;
+    expect(jsynq.users.get(userId)).toMatchObject({ verified: true, language: 'portuguese' });
+    let token = sessionOf(userId, 'maria@clinica.com.br');
 
-    // 2. card + trial
+    // 2. card + trial: JSYNQ workspace and CRM project created as the user
     const intent = await request(app).post('/api/attende/signup/setup-intent').set('Authorization', `Bearer ${token}`).send({}).expect(200);
     expect(intent.body.clientSecret).toMatch(/^seti_/);
     stripe.addCard('pm_card_ok');
@@ -97,28 +95,28 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     expect(trial.status).toBe(201);
     expect(trial.body).toMatchObject({ subscriptionStatus: 'trialing', plan: { slug: 'attende_starter' }, alreadyStarted: false, entitlements: { status: 'trialing', tier: 'attende_starter' } });
     const workspaceId: string = trial.body.workspaceId;
-    expect(jsynq.workspaces.get(workspaceId)?.features).toEqual({ conversationAnalytics: true });
-    expect(jsynq.limits.get(workspaceId)).toMatchObject({
-      status: 'active',
-      rateLimitProfile: 'strict',
-      limits: { messagingChannels: 1, agents: 1, aiRepliesPerMonth: 1000, knowledgeDocuments: 20, members: 2, outboundMessages: { max: 50 } },
-    });
+    expect(jsynq.workspaces.get(workspaceId)).toMatchObject({ name: 'Clínica Sorriso', owner: userId, language: 'portuguese' });
+    const crm = jsynq.projects.filter((p) => p.workspaceId === workspaceId);
+    expect(crm).toEqual([expect.objectContaining({ title: 'Clínica Sorriso', projectType: { title: 'crm' }, columns: expect.arrayContaining(['Lead']) })]);
+    expect((await SignupModel.findOne({ userId }).lean())?.crmProjectId).toBe(crm[0]!._id);
     expect(await TrialClaimModel.countDocuments({ status: 'consumed' })).toBe(2);
     const sub = [...stripe.subscriptions.values()][0]!;
     expect(sub).toMatchObject({ priceId: 'price_starter_brl_month', metadata: { app: 'attende', workspaceId } });
 
-    // idempotent retry
+    // idempotent retry: same workspace, nothing new in JSYNQ
     const again = await request(app).post('/api/attende/signup/start-trial').set('Authorization', `Bearer ${token}`).send({ paymentMethodId: 'pm_card_ok' });
     expect(again.status).toBe(200);
     expect(again.body).toMatchObject({ workspaceId, alreadyStarted: true });
+    expect(jsynq.workspaces.size).toBe(1);
 
     // The frontend refreshes its session: the JWT now carries the workspace.
-    token = userToken({ id: userId, email: 'maria@clinica.com.br', workspaceId });
+    token = sessionOf(userId, 'maria@clinica.com.br', workspaceId);
     const auth = { Authorization: `Bearer ${token}` };
 
     const ent = await request(app).get('/api/attende/entitlements').set(auth).expect(200);
-    expect(ent.body).toMatchObject({ entitlements: { status: 'trialing', trialDaysLeft: 7 }, access: { allowed: true }, usage: { aiReplies: { used: 3, limit: 1000 }, agents: { used: 0, limit: 1 } } });
-    expect(ent.body.subscription).toMatchObject({ status: 'trialing', cancelAtPeriodEnd: false, canceledAt: null });
+    expect(ent.body).toMatchObject({ entitlements: { status: 'trialing', trialDaysLeft: 7 }, access: { allowed: true } });
+    // JSYNQ's own seeded default agent is not an Attende agent.
+    expect(ent.body.usage).toMatchObject({ aiReplies: { used: 0, limit: 1000 }, agents: { used: 0, limit: 1 }, lines: { used: 0, limit: 1 }, docs: { used: 0, limit: 20 }, trialOutbound: { used: 0, cap: 50 } });
 
     // 3. agent from template (starts paused)
     const sessionId = jsynq.addSession(workspaceId, 'whatsapp', 'connected');
@@ -129,9 +127,14 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     expect(created.status).toBe(201);
     expect(created.body.data).toMatchObject({ templateKey: 'sdr', status: 'paused', lines: [{ channel: 'whatsapp', sessionId, connected: true, active: false }] });
     const agent = jsynq.agents.get(created.body.data.agentId)!;
-    expect(agent.body).toMatchObject({ toolNames: ['search_knowledge_base', 'request_human_handoff'], knowledgeTrust: 'untrusted', type: 'specialized' });
+    // Tool ids from the workspace registry; no staging-unknown fields.
+    expect(agent.body).toMatchObject({ availableTools: ['jsynq:search_knowledge_base', 'jsynq:request_human_handoff'], type: 'specialized' });
+    expect(agent.body).not.toHaveProperty('toolNames');
+    expect(agent.body).not.toHaveProperty('knowledgeTrust');
+    expect(agent.systemPrompt).toContain('não instruções');
     const binding = [...jsynq.bindings.values()][0]!;
-    expect(binding).toMatchObject({ status: 'paused', policy: { allowHumanHandoff: true, handoffAssigneeUserId: userId, workspaceAccess: 'none' } });
+    expect(binding).toMatchObject({ status: 'paused', policy: { allowHumanHandoff: true, workspaceAccess: 'none' } });
+    expect(binding.policy).not.toHaveProperty('handoffAssigneeUserId');
 
     // same clientRequestId = same agent
     const replay = await request(app)
@@ -140,15 +143,14 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
       .send({ templateKey: 'sdr', form: sdrForm, lines: [{ channel: 'whatsapp', sessionId }], clientRequestId: 'req-0001-abcd' });
     expect(replay.status).toBe(200);
     expect(replay.body.data.id).toBe(created.body.data.id);
-    expect(jsynq.agents.size).toBe(1);
 
-    // plan quota (starter = 1 agent)
+    // plan quota (starter = 1 agent), counted from GET /api/agents
     const second = await request(app)
       .post('/api/attende/agents/from-template')
       .set(auth)
       .send({ templateKey: 'sdr', form: sdrForm, lines: [], clientRequestId: 'req-0002-abcd' });
     expect(second.status).toBe(403);
-    expect(second.body.details.code).toBe('ATTENDE_QUOTA_EXCEEDED');
+    expect(second.body.details).toMatchObject({ code: 'ATTENDE_QUOTA_EXCEEDED', resource: 'agents', limit: 1, used: 1 });
 
     // 4. prompt edited in JSYNQ -> drift flagged, then repaired by go-live
     agent.systemPrompt = 'edited by hand';
@@ -156,7 +158,6 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     expect(drifted.body.data.promptDrift).toBe(true);
     const live = await request(app).post(`/api/attende/agents/${created.body.data.id}/go-live`).set(auth).send({}).expect(200);
     expect(live.body.data).toMatchObject({ status: 'live', warnings: ['not_tested', 'no_documents'] });
-    expect(live.body.data.promptDrift).toBeUndefined();
     expect(agent.systemPrompt).not.toBe('edited by hand');
     expect(binding.status).toBe('active');
 
@@ -164,27 +165,32 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     const test = await request(app).post(`/api/attende/agents/${created.body.data.id}/test`).set(auth).send({ message: 'quero falar com um atendente' }).expect(200);
     expect(test.body.data).toMatchObject({ mode: 'dry_run', nothingSent: true, passed: true, reason: 'handoff_requested' });
 
-    // knowledge upload / list / delete
+    // knowledge upload / list / delete (docs counted from the JSYNQ knowledge sources)
     const up = await request(app).post(`/api/attende/agents/${created.body.data.id}/knowledge`).set(auth).attach('file', Buffer.from('preços'), { filename: 'precos.txt', contentType: 'text/plain' });
     expect(up.status).toBe(201);
     const docs = await request(app).get(`/api/attende/agents/${created.body.data.id}/knowledge`).set(auth).expect(200);
     expect(docs.body.data.documents).toEqual([expect.objectContaining({ name: 'precos.txt', indexStatus: 'ready', pageCount: 2 })]);
+    expect((await request(app).get('/api/attende/entitlements').set(auth)).body.usage).toMatchObject({ agents: { used: 1 }, lines: { used: 1 }, docs: { used: 1 } });
     await request(app).delete(`/api/attende/agents/${created.body.data.id}/knowledge/${up.body.data.documentId}`).set(auth).expect(200);
     expect(jsynq.documents.size).toBe(0);
 
-    // 5. JSYNQ webhook: usage.limit_reached (signed, deduplicated)
-    const envelope = JSON.stringify({ id: 'evt_0001', type: 'usage.limit_reached', workspaceId, occurredAt: new Date().toISOString(), data: { meter: 'aiReplies', max: 1000, period: 'cal:2026-10' } });
-    const sig = signPayload(JSYNQ_WEBHOOK_SECRET, envelope, Math.floor(Date.now() / 1000));
-    const hook = await request(app).post('/api/jsynq/webhooks').set('Content-Type', 'application/json').set('X-Jsynq-Signature', sig).send(envelope);
-    expect(hook.status).toBe(200);
-    expect(hook.body).toEqual({ received: true });
-    const dup = await request(app).post('/api/jsynq/webhooks').set('Content-Type', 'application/json').set('X-Jsynq-Signature', sig).send(envelope);
-    expect(dup.body).toEqual({ received: true, duplicate: true });
-    expect(await WorkspaceEventModel.countDocuments({ workspaceId, type: 'usage.limit_reached' })).toBe(1);
-    const forged = await request(app).post('/api/jsynq/webhooks').set('Content-Type', 'application/json').set('X-Jsynq-Signature', `t=${Math.floor(Date.now() / 1000)},v1=${'0'.repeat(64)}`).send(envelope);
-    expect(forged.status).toBe(401);
+    // 5. over-limit refusals for what the app sends straight to JSYNQ
+    const lines = await request(app).post('/api/attende/limits/check').set(auth).send({ resource: 'lines' });
+    expect(lines.status).toBe(403);
+    expect(lines.body.details).toMatchObject({ code: 'ATTENDE_QUOTA_EXCEEDED', resource: 'lines', limit: 1, used: 1 });
+    await request(app).post('/api/attende/limits/check').set(auth).send({ resource: 'seats', adding: 1 }).expect(200);
+    jsynq.pendingInvites.set(workspaceId, 1);
+    const seats = await request(app).post('/api/attende/limits/check').set(auth).send({ resource: 'seats', adding: 1 });
+    expect(seats.status).toBe(403);
+    expect(seats.body.details).toMatchObject({ resource: 'seats', limit: 2, used: 2 });
+    await request(app).post('/api/attende/limits/check').set(auth).send({ resource: 'outbound' }).expect(200);
+    await request(app).post('/api/attende/usage/outbound').set(auth).send({ count: 50 }).expect(200);
+    const capped = await request(app).post('/api/attende/limits/check').set(auth).send({ resource: 'outbound' });
+    expect(capped.status).toBe(403);
+    expect(capped.body.details).toMatchObject({ resource: 'trialOutbound', limit: 50, used: 50 });
+    expect((await request(app).get('/api/attende/entitlements').set(auth)).body.usage.trialOutbound).toEqual({ used: 50, cap: 50 });
 
-    // 6a. The customer schedules the cancellation in the portal: still entitled, and the app can say when it ends.
+    // 6a. The customer schedules the cancellation in the portal: still entitled, agents keep answering.
     const canceledAt = new Date('2026-10-20T12:00:00Z');
     Object.assign(sub, { cancelAtPeriodEnd: true, canceledAt });
     const scheduled = stripe.signedEvent('customer.subscription.updated', sub);
@@ -192,7 +198,7 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     expect(await SubscriptionModel.findOne({ workspaceId }).lean()).toMatchObject({ cancelAtPeriodEnd: true, canceledAt });
     const pending = await request(app).get('/api/attende/entitlements').set(auth).expect(200);
     expect(pending.body.access).toEqual({ allowed: true });
-    expect(pending.body.subscription).toMatchObject({ status: 'trialing', cancelAtPeriodEnd: true, canceledAt: canceledAt.toISOString(), currentPeriodEnd: sub.currentPeriodEnd!.toISOString() });
+    expect(binding.status).toBe('active');
 
     // 6b. ...and undoes it.
     Object.assign(sub, { cancelAtPeriodEnd: false, canceledAt: null });
@@ -200,19 +206,32 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     await request(app).post('/api/stripe/webhook').set('Content-Type', 'application/json').set('Stripe-Signature', undone.header).send(undone.payload).expect(200);
     expect((await request(app).get('/api/attende/entitlements').set(auth)).body.subscription).toMatchObject({ cancelAtPeriodEnd: false, canceledAt: null });
 
-    // 6c. Stripe: the customer cancels -> JSYNQ limits suspended, app gated
+    // 6c. Stripe: the customer cancels -> the agents' bindings are paused in JSYNQ, the app is gated
     sub.canceledAt = canceledAt;
     sub.status = 'canceled';
     const { payload, header } = stripe.signedEvent('customer.subscription.deleted', sub);
     await request(app).post('/api/stripe/webhook').set('Content-Type', 'application/json').set('Stripe-Signature', header).send(payload).expect(200);
-    expect(jsynq.limits.get(workspaceId)).toMatchObject({ status: 'suspended' });
     expect((await EntitlementModel.findOne({ workspaceId }).lean())?.status).toBe('canceled');
+    expect(binding.status).toBe('paused');
+    expect(await AgentPauseModel.findOne({ workspaceId }).lean()).toMatchObject({ reasons: ['access'], bindingIds: [binding._id] });
     const blocked = await request(app).get('/api/attende/agents').set(auth);
     expect(blocked.status).toBe(402);
     expect(blocked.body).toMatchObject({ reference: 'ATTENDE_SUBSCRIPTION_INACTIVE', details: { code: 'ATTENDE_SUBSCRIPTION_INACTIVE' } });
+    const noChannel = await request(app).post('/api/attende/limits/check').set(auth).send({ resource: 'lines' });
+    expect(noChannel.status).toBe(402);
     const after = await request(app).get('/api/attende/entitlements').set(auth).expect(200);
     expect(after.body.access).toMatchObject({ allowed: false, code: 'ATTENDE_SUBSCRIPTION_INACTIVE' });
-    expect(after.body.subscription).toMatchObject({ status: 'canceled', cancelAtPeriodEnd: false, canceledAt: canceledAt.toISOString() });
+
+    // A replayed webhook does not pause twice or fail.
+    const replayDeleted = stripe.signedEvent('customer.subscription.deleted', sub);
+    await request(app).post('/api/stripe/webhook').set('Content-Type', 'application/json').set('Stripe-Signature', replayDeleted.header).send(replayDeleted.payload).expect(200);
+
+    // 6d. Reactivation resumes exactly the bindings that were paused.
+    Object.assign(sub, { status: 'active', canceledAt: null, trialEnd: null });
+    const back = stripe.signedEvent('customer.subscription.updated', sub);
+    await request(app).post('/api/stripe/webhook').set('Content-Type', 'application/json').set('Stripe-Signature', back.header).send(back.payload).expect(200);
+    expect(binding.status).toBe('active');
+    expect(await AgentPauseModel.countDocuments({ workspaceId })).toBe(0);
 
     const badSig = await request(app).post('/api/stripe/webhook').set('Content-Type', 'application/json').set('Stripe-Signature', 't=1,v1=bad').send(payload);
     expect(badSig.status).toBe(400);
@@ -220,6 +239,70 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     // billing portal
     const portal = await request(app).post('/api/attende/billing/portal').set(auth).send({ kind: 'payment_method', returnUrl: 'https://evil.example/x' }).expect(200);
     expect(portal.body.data.url).toContain(encodeURIComponent('http://app.test/billing'));
+
+    // Only staging routes were called: no partner API, no limits/usage/features/webhook endpoints.
+    expect(jsynq.calls.filter((c) => /\/partner\/|\/limits|\/usage|\/features|webhook-endpoints|inbound-routing/.test(c))).toEqual([]);
+  });
+
+  it('AI-reply quota: recordAiReply pauses the agents at the limit; go-live refuses; next month resumes them', async () => {
+    const owner = '9'.repeat(24);
+    const workspaceId = jsynq.addWorkspace(owner);
+    const sessionId = jsynq.addSession(workspaceId);
+    await EntitlementModel.create({ workspaceId, tier: 'attende_starter', status: 'active', limits: { ...STARTER_LIMITS, aiRepliesPerMonth: 3 }, currentPeriodEnd: new Date(Date.now() + 20 * 86_400_000) });
+    await SubscriptionModel.create({ workspaceId, userId: owner, stripeCustomerId: 'cus_q', status: 'active' });
+    const auth = { Authorization: `Bearer ${userToken({ id: owner, workspaceId })}` };
+    const created = await request(app).post('/api/attende/agents/from-template').set(auth).send({ templateKey: 'sdr', form: sdrForm, lines: [{ channel: 'whatsapp', sessionId }], clientRequestId: 'quota-0001' }).expect(201);
+    await request(app).post(`/api/attende/agents/${created.body.data.id}/go-live`).set(auth).send({}).expect(200);
+    const binding = [...jsynq.bindings.values()][0]!;
+    expect(binding.status).toBe('active');
+
+    const now = new Date('2026-10-28T12:00:00Z');
+    const deps = testDeps({ now: () => now });
+    expect(await recordAiReply(deps, workspaceId, 2)).toMatchObject({ used: 2, limit: 3, paused: false });
+    expect(await recordAiReply(deps, workspaceId)).toMatchObject({ used: 3, paused: true });
+    expect(binding.status).toBe('paused');
+    const relive = await request(app).post(`/api/attende/agents/${created.body.data.id}/go-live`).set(auth).send({});
+    expect(relive.status).toBe(403);
+    expect(relive.body.details).toMatchObject({ code: 'ATTENDE_QUOTA_EXCEEDED', resource: 'aiReplies' });
+
+    // Same month: still over. Next month: resumed.
+    expect(await resumeAiQuotaPauses(deps)).toBe(0);
+    expect(await resumeAiQuotaPauses(testDeps({ now: () => new Date('2026-11-01T00:05:00Z') }))).toBe(1);
+    expect(binding.status).toBe('active');
+  });
+
+  it('a person pausing an agent during a workspace pause keeps it paused on resume', async () => {
+    const owner = '8'.repeat(24);
+    const workspaceId = jsynq.addWorkspace(owner);
+    const sessionId = jsynq.addSession(workspaceId);
+    await EntitlementModel.create({ workspaceId, tier: 'attende_starter', status: 'active', limits: { ...STARTER_LIMITS, aiRepliesPerMonth: 1 } });
+    const auth = { Authorization: `Bearer ${userToken({ id: owner, workspaceId })}` };
+    const created = await request(app).post('/api/attende/agents/from-template').set(auth).send({ templateKey: 'sdr', form: sdrForm, lines: [{ channel: 'whatsapp', sessionId }], clientRequestId: 'keep-0001' }).expect(201);
+    await request(app).post(`/api/attende/agents/${created.body.data.id}/go-live`).set(auth).send({}).expect(200);
+    await recordAiReply(testDeps({ now: () => new Date('2026-10-28T12:00:00Z') }), workspaceId);
+    expect([...jsynq.bindings.values()][0]!.status).toBe('paused');
+    await request(app).post(`/api/attende/agents/${created.body.data.id}/pause`).set(auth).send({}).expect(200);
+    expect(await resumeAiQuotaPauses(testDeps({ now: () => new Date('2026-11-02T00:00:00Z') }))).toBe(1);
+    expect([...jsynq.bindings.values()][0]!.status).toBe('paused');
+  });
+
+  it('reconcile pauses the agents of a trial that ended without a webhook', async () => {
+    const owner = 'b'.repeat(24);
+    const workspaceId = jsynq.addWorkspace(owner);
+    const sessionId = jsynq.addSession(workspaceId);
+    await EntitlementModel.create({ workspaceId, tier: 'attende_starter', status: 'trialing', limits: STARTER_LIMITS, trialEndsAt: new Date(Date.now() + 86_400_000) });
+    await SubscriptionModel.create({ workspaceId, userId: owner, stripeCustomerId: 'cus_x', status: 'trialing' });
+    const auth = { Authorization: `Bearer ${userToken({ id: owner, workspaceId })}` };
+    const created = await request(app).post('/api/attende/agents/from-template').set(auth).send({ templateKey: 'sdr', form: sdrForm, lines: [{ channel: 'whatsapp', sessionId }], clientRequestId: 'trial-0001' }).expect(201);
+    await request(app).post(`/api/attende/agents/${created.body.data.id}/go-live`).set(auth).send({}).expect(200);
+
+    const later = testDeps({ stripe, now: () => new Date(Date.now() + 2 * 86_400_000) });
+    const out = await new BillingService(later).reconcile();
+    expect(out).toMatchObject({ enforced: 1 });
+    expect([...jsynq.bindings.values()][0]!.status).toBe('paused');
+    // Run again: nothing more to do, still paused.
+    await new BillingService(later).reconcile();
+    expect(await AgentPauseModel.findOne({ workspaceId }).lean()).toMatchObject({ reasons: ['access'] });
   });
 
   it('lists the invoices of the workspace customer, and an empty list without one', async () => {
@@ -262,27 +345,51 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     expect((await request(app).get('/api/attende/billing/invoices').set('Authorization', `Bearer ${outsider}`)).body.reference).toBe('WORKSPACE_FORBIDDEN');
   });
 
-  it('existing JSYNQ account: 409 USER_EXISTS_UNMANAGED, then the trial continues with that user', async () => {
-    jsynq.users.set('a'.repeat(24), { id: 'a'.repeat(24), email: 'joao@empresa.com', name: 'João', managed: false });
-    const res = await signUp('joao@empresa.com');
+  it('existing JSYNQ account: 409 USER_EXISTS_UNMANAGED at signup, then the trial continues with that user', async () => {
+    const existing = jsynq.addUser('joao@empresa.com', { id: 'a'.repeat(24) });
+    const res = await request(app).post('/api/attende/signup').set('x-forwarded-for', ip()).send({ name: 'João Silva', email: 'joao@empresa.com', password: 'Senha#2026', businessName: 'Empresa', locale: 'pt' });
     expect(res.status).toBe(409);
     expect(res.body.reference).toBe('USER_EXISTS_UNMANAGED');
+    // No code to verify for someone else's account.
+    expect((await request(app).post('/api/attende/signup/verify').send({ email: 'joao@empresa.com', otp: '123456' })).body.reference).toBe('USER_EXISTS_UNMANAGED');
 
-    const token = userToken({ id: 'a'.repeat(24), email: 'joao@empresa.com', workspaceId: null });
+    const token = sessionOf(existing, 'joao@empresa.com');
     stripe.addCard('pm_card_joao');
     const trial = await request(app).post('/api/attende/signup/start-trial').set('Authorization', `Bearer ${token}`).send({ paymentMethodId: 'pm_card_joao' });
     expect(trial.status).toBe(201);
-    expect(jsynq.workspaces.get(trial.body.workspaceId)?.owner).toBe('a'.repeat(24));
+    expect(jsynq.workspaces.get(trial.body.workspaceId)?.owner).toBe(existing);
+  });
+
+  it('verify: wrong codes count, five lock the code until a resend, and a verified e-mail never verifies again', async () => {
+    await request(app).post('/api/attende/signup').set('x-forwarded-for', ip()).send({ name: 'Ana Lima', email: 'ana@lima.com', password: 'Senha#2026', businessName: 'Lima', locale: 'en' }).expect(201);
+    for (let i = 0; i < 5; i += 1) {
+      const wrong = await request(app).post('/api/attende/signup/verify').send({ email: 'ana@lima.com', otp: '000000' });
+      expect(wrong.body.reference).toBe('SIGNUP_OTP_INVALID');
+    }
+    expect((await request(app).post('/api/attende/signup/verify').send({ email: 'ana@lima.com', otp: jsynq.otpOf('ana@lima.com') })).body.reference).toBe('SIGNUP_OTP_EXPIRED');
+    await request(app).post('/api/attende/signup/resend').send({ email: 'ana@lima.com' }).expect(202);
+    expect(jsynq.calls).toContain('POST /api/verification-otps');
+    const ok = await request(app).post('/api/attende/signup/verify').send({ email: 'ana@lima.com', otp: jsynq.otpOf('ana@lima.com') });
+    expect(ok.status).toBe(200);
+    expect(ok.body.signup.state).toBe('verified');
+    const twice = await request(app).post('/api/attende/signup/verify').send({ email: 'ana@lima.com', otp: '123456' });
+    expect(twice.status).toBe(409);
+    // A second submit of a pending signup does not create another JSYNQ user: it asks JSYNQ for a new code.
+    await request(app).post('/api/attende/signup').set('x-forwarded-for', ip()).send({ name: 'Bia Lima', email: 'bia@lima.com', password: 'Senha#2026', businessName: 'Lima', locale: 'es' }).expect(201);
+    await request(app).post('/api/attende/signup').set('x-forwarded-for', ip()).send({ name: 'Bia Lima', email: 'bia@lima.com', password: 'Senha#2026', businessName: 'Lima B', locale: 'es' }).expect(201);
+    expect(jsynq.calls.filter((c) => c === 'POST /api/users')).toHaveLength(2);
+    expect([...jsynq.users.values()].filter((u) => u.email === 'bia@lima.com')).toHaveLength(1);
   });
 
   it('compensates when Stripe fails after the workspace exists, and the card can be retried', async () => {
     const verified = await signUp('ana@loja.com');
-    const token = verified.body.accessToken;
+    const token = sessionOf(verified.body.id, 'ana@loja.com');
     stripe.addCard('pm_card_declined');
     stripe.failNextSubscription = Object.assign(new Error('Your card was declined.'), { type: 'StripeCardError' });
     const failed = await request(app).post('/api/attende/signup/start-trial').set('Authorization', `Bearer ${token}`).send({ paymentMethodId: 'pm_card_declined' });
     expect(failed.status).toBe(402);
     expect(failed.body.reference).toBe('SIGNUP_PAYMENT_FAILED');
+    expect(jsynq.calls.some((c) => c.startsWith('DELETE /api/workspaces/'))).toBe(true);
     expect(jsynq.workspaces.size).toBe(0);
     expect(await TrialClaimModel.countDocuments()).toBe(0);
     expect((await SignupModel.findOne({ email: 'ana@loja.com' }).lean())?.state).toBe('failed');
@@ -290,112 +397,56 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     stripe.addCard('pm_card_good');
     const ok = await request(app).post('/api/attende/signup/start-trial').set('Authorization', `Bearer ${token}`).send({ paymentMethodId: 'pm_card_good' });
     expect(ok.status).toBe(201);
+    expect(jsynq.workspaces.size).toBe(1);
+  });
+
+  it('a workspace JSYNQ would not delete is recorded as an orphan and reused by the retry', async () => {
+    const verified = await signUp('rui@loja.com');
+    const token = sessionOf(verified.body.id, 'rui@loja.com');
+    stripe.addCard('pm_card_declined');
+    stripe.failNextSubscription = Object.assign(new Error('Your card was declined.'), { type: 'StripeCardError' });
+    const realDelete = jsynq.workspaces.delete.bind(jsynq.workspaces);
+    jsynq.workspaces.delete = () => {
+      throw new Error('JSYNQ down');
+    };
+    await request(app).post('/api/attende/signup/start-trial').set('Authorization', `Bearer ${token}`).send({ paymentMethodId: 'pm_card_declined' }).expect(402);
+    jsynq.workspaces.delete = realDelete;
+    const [orphanId] = [...jsynq.workspaces.keys()];
+    expect(await OrphanWorkspaceModel.findOne({ workspaceId: orphanId }).lean()).toMatchObject({ userId: verified.body.id });
+
+    stripe.addCard('pm_card_good');
+    const ok = await request(app).post('/api/attende/signup/start-trial').set('Authorization', `Bearer ${token}`).send({ paymentMethodId: 'pm_card_good' });
+    expect(ok.status).toBe(201);
+    expect(ok.body.workspaceId).toBe(orphanId);
+    expect(jsynq.workspaces.size).toBe(1);
+  });
+
+  it('a retry after a crash right after POST /api/workspaces adopts that workspace instead of creating another', async () => {
+    const verified = await signUp('lia@loja.com');
+    const userId: string = verified.body.id;
+    // The crashed attempt: JSYNQ created the workspace, the id was never saved, the lock went stale.
+    const startedAt = new Date(Date.now() - 10 * 60_000);
+    await SignupModel.updateOne({ userId }, { $set: { state: 'trial_starting', lockedAt: startedAt, workspaceCreateStartedAt: startedAt } });
+    const crashed = jsynq.addWorkspace(userId);
+    jsynq.workspaces.get(crashed)!.name = 'Clínica Sorriso';
+    jsynq.workspaces.get(crashed)!.createdAt = new Date(startedAt.getTime() + 1000).toISOString();
+
+    stripe.addCard('pm_card_lia');
+    const ok = await request(app).post('/api/attende/signup/start-trial').set('Authorization', `Bearer ${sessionOf(userId, 'lia@loja.com')}`).send({ paymentMethodId: 'pm_card_lia' });
+    expect(ok.status).toBe(201);
+    expect(ok.body.workspaceId).toBe(crashed);
+    expect(jsynq.workspaces.size).toBe(1);
   });
 
   it('one trial per card', async () => {
     const a = await signUp('one@a.com');
     stripe.addCard('pm_shared', 'fp_same');
-    await request(app).post('/api/attende/signup/start-trial').set('Authorization', `Bearer ${a.body.accessToken}`).send({ paymentMethodId: 'pm_shared' }).expect(201);
+    await request(app).post('/api/attende/signup/start-trial').set('Authorization', `Bearer ${sessionOf(a.body.id, 'one@a.com')}`).send({ paymentMethodId: 'pm_shared' }).expect(201);
     const b = await signUp('two@b.com');
     stripe.addCard('pm_shared_2', 'fp_same');
-    const res = await request(app).post('/api/attende/signup/start-trial').set('Authorization', `Bearer ${b.body.accessToken}`).send({ paymentMethodId: 'pm_shared_2' });
+    const res = await request(app).post('/api/attende/signup/start-trial').set('Authorization', `Bearer ${sessionOf(b.body.id, 'two@b.com')}`).send({ paymentMethodId: 'pm_shared_2' });
     expect(res.status).toBe(409);
     expect(res.body.reference).toBe('SIGNUP_TRIAL_ALREADY_USED');
-  });
-
-  it('reconcile retries limits JSYNQ did not acknowledge', async () => {
-    const owner = 'b'.repeat(24);
-    const ws = jsynq.addWorkspace(owner);
-    await SubscriptionModel.create({ workspaceId: ws, userId: owner, stripeCustomerId: 'cus_x', status: 'active' });
-    await EntitlementModel.create({ workspaceId: ws, tier: 'attende_starter', status: 'active', limits: { lines: 1, agents: 1, aiRepliesPerMonth: 1000, seats: 2, docs: 20 }, currentPeriodEnd: new Date(Date.now() + 86_400_000) });
-    jsynq.failures[`PUT /api/partner/v1/workspaces/${ws}/limits`] = 400;
-    const billing = new BillingService({ stripe, partner: partnerClient(PARTNER_KEY), now: () => new Date() });
-    expect(await billing.syncLimits(ws)).toBe(false);
-    expect(jsynq.limits.has(ws)).toBe(false);
-    const out = await billing.reconcile();
-    expect(out.limits).toBe(1);
-    expect(jsynq.limits.get(ws)).toMatchObject({ status: 'active', rateLimitProfile: 'standard' });
-  });
-
-  it('advanced automation: inbound routing, a signed inbound call and per-step actions on the JSYNQ partner API', async () => {
-    const owner = '1'.repeat(24);
-    const COL = '2'.repeat(24);
-    const BOARD = '4'.repeat(24);
-    const workspaceId = jsynq.addWorkspace(owner);
-    const sessionId = jsynq.addSession(workspaceId, 'whatsapp');
-    await EntitlementModel.create({ workspaceId, tier: 'attende_starter', status: 'active', limits: { lines: 1, agents: 1, aiRepliesPerMonth: 1000, seats: 2, docs: 20 } });
-    const auth = { Authorization: `Bearer ${userToken({ id: owner, workspaceId })}` };
-    // The webhook endpoint is registered first: the inbound URL must be on its origin.
-    await partnerClient(PARTNER_KEY).createWebhookEndpoint({ url: 'https://attende-api.test/jsynq/webhooks', events: ['channel.connected'] });
-
-    // A URL on another origin is refused by JSYNQ.
-    const wrong = jsynqConversationGateway(PARTNER_KEY, { inboundUrl: 'https://elsewhere.test/jsynq/inbound' });
-    await expect(wrong.setInboundRouting(workspaceId, [{ channel: 'whatsapp', sessionId }])).rejects.toMatchObject({ status: 422 });
-
-    const gateway = jsynqConversationGateway(PARTNER_KEY, { inboundUrl: 'https://attende-api.test/jsynq/inbound' });
-    const runtime = createAutomationsRuntime({ gateway })!;
-    const withRuntime = createApp({ stripe, partner: partnerClient(PARTNER_KEY), user: userClient, mailer, now: () => new Date() }, runtime);
-    jsynq.conversations.set('c1', { contactName: 'Ana', linkedCardId: 'card1', vars: { 'lead.name': 'Ana' } });
-
-    const created = await request(withRuntime)
-      .post('/api/messaging-automations/advanced')
-      .set(auth)
-      .send({
-        name: 'Qualificação',
-        status: 'active',
-        trigger: { kind: 'new_conversation', dedupeDays: 0 },
-        channels: [{ channel: 'whatsapp', enabledSessionIds: [sessionId] }],
-        startNodeId: 'ask',
-        nodes: [
-          { id: 'ask', kind: 'send_message', x: 0, y: 0, text: 'Oi {{lead.name}}! Quer falar com vendas?', replyMode: 'buttons', options: [{ id: 'yes', label: 'Sim' }, { id: 'no', label: 'Não' }] },
-          { id: 'mv', kind: 'move_stage', x: 0, y: 100, columnId: COL, projectId: '3'.repeat(24) },
-          { id: 'mv2', kind: 'move_stage', x: 0, y: 150, columnId: COL, boardId: BOARD },
-          { id: 'ho', kind: 'handoff', x: 0, y: 200, message: 'Vou chamar alguém.', assignMode: 'member_list', userIds: [owner] },
-        ],
-        edges: [
-          { id: 'e1', from: 'ask', output: 'yes', to: 'mv' },
-          { id: 'e2', from: 'mv', output: 'next', to: 'mv2' },
-          { id: 'e3', from: 'mv2', output: 'next', to: 'ho' },
-        ],
-      });
-    expect(created.status).toBe(201);
-    expect(jsynq.inboundRouting.get(workspaceId)).toEqual({ url: 'https://attende-api.test/jsynq/inbound', sessions: [{ channel: 'whatsapp', sessionId }] });
-
-    const inbound = (body: Record<string, unknown>) => {
-      const raw = JSON.stringify({ workspaceId, channel: 'whatsapp', sessionId, conversationId: 'c1', ...body });
-      return request(withRuntime)
-        .post('/api/jsynq/inbound')
-        .set('Content-Type', 'application/json')
-        .set('User-Agent', 'JSYNQ-Webhooks/1.0')
-        .set('X-Jsynq-Signature', signPayload(JSYNQ_WEBHOOK_SECRET, raw, Math.floor(Date.now() / 1000)))
-        .send(raw);
-    };
-
-    // JSYNQ's payload: no optionId, ever.
-    expect((await inbound({ messageId: 'wamid.1', text: 'oi', firstInbound: true })).body).toEqual({ handled: true });
-    const runId = (await AutomationRunModel.findOne({ conversationId: 'c1' }).lean())!.run!.runId;
-    expect(jsynq.actions).toEqual([{ method: 'POST', path: `/workspaces/${workspaceId}/conversations/whatsapp/c1/messages`, body: { text: 'Oi Ana! Quer falar com vendas?\n\n1. Sim\n2. Não' }, key: `${runId}:ask:wamid.1` }]);
-
-    // Media without text: not an answer to the buttons, the run keeps waiting and owns the message.
-    expect((await inbound({ messageId: 'wamid.2', text: '', firstInbound: false })).body).toEqual({ handled: true });
-    expect(jsynq.actions).toHaveLength(1);
-
-    // A redelivery of the same message is a no-op.
-    expect((await inbound({ messageId: 'wamid.1', text: 'oi', firstInbound: true })).body).toEqual({ handled: true });
-    expect(jsynq.actions).toHaveLength(1);
-
-    expect((await inbound({ messageId: 'wamid.3', text: 'Sim' })).body).toEqual({ handled: true });
-    const conv = `/workspaces/${workspaceId}/conversations/whatsapp/c1`;
-    expect(jsynq.actions.slice(1)).toEqual([
-      // Same column twice in one run: two steps, two keys, both moves run (no replay).
-      { method: 'POST', path: `${conv}/card/move`, body: { columnId: COL }, key: `${runId}:mv:wamid.3` },
-      { method: 'POST', path: `${conv}/card/move`, body: { columnId: COL, boardId: BOARD }, key: `${runId}:mv2:wamid.3` },
-      { method: 'POST', path: `${conv}/messages`, body: { text: 'Vou chamar alguém.' }, key: `${runId}:ho:wamid.3:message` },
-      { method: 'POST', path: `${conv}/handoff`, body: { assignMode: 'member_list', userIds: [owner], reason: 'Advanced automation handoff' }, key: `${runId}:ho:wamid.3` },
-    ]);
-    expect((await AutomationRunModel.findOne({ conversationId: 'c1' }).lean())?.run?.status).toBe('handed_off');
-    // Nothing called the endpoints JSYNQ does not have.
-    expect(jsynq.calls.some((c) => /evaluate-condition|\/extract$/.test(c))).toBe(false);
   });
 
   it('refuses a workspace the user does not belong to, and a header that contradicts the token', async () => {
@@ -409,5 +460,6 @@ describe('E2E: signup -> trial -> agent -> go-live -> usage webhook -> cancel', 
     expect(mismatch.status).toBe(409);
     expect((await request(app).get('/api/attende/entitlements')).status).toBe(401);
     expect((await request(app).get('/api/attende/agents').set('Authorization', `Bearer ${mine}`)).body.reference).toBe('ATTENDE_NOT_ENTITLED');
+    expect((await request(app).post('/api/attende/limits/check').set('Authorization', `Bearer ${mine}`).send({ resource: 'lines' })).body.reference).toBe('ATTENDE_NOT_ENTITLED');
   });
 });

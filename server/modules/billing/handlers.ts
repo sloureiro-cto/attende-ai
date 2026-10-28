@@ -6,11 +6,13 @@ import { AppError } from '../../lib/errors';
 import { json, ok, route } from '../../lib/http';
 import { errMessage, log } from '../../lib/logger';
 import { ctxOf, requireUser, requireWorkspace } from '../../middleware/auth';
-import { AgentSetupModel } from '../agents/models';
+import type { UserClient } from '../../lib/jsynq';
 import { decideAccess } from './deriveEntitlements';
+import { liveCount, type PlanResource } from './limits';
 import { PlanModel, ProcessedEventModel, SubscriptionModel } from './models';
 import { BillingService, getEntitlements } from './service';
 import { SUBSCRIPTION_APP_TAG } from './stripeGateway';
+import { counters, monthOf } from './usage';
 
 const DAY_MS = 86_400_000;
 const HANDLED_STRIPE_EVENTS = new Set([
@@ -70,11 +72,11 @@ const workspaceGuards = [requireUser, requireWorkspace];
  */
 export const getEntitlementsRoute = route(workspaceGuards, async (ctx) => {
   const { deps } = ctx;
-  const { workspaceId } = ctxOf(ctx);
+  const { workspaceId, token } = ctxOf(ctx);
   const ent = await getEntitlements(workspaceId);
   const decision = decideAccess(ent, deps.now());
   const trialEndsAt = ent?.status === 'trialing' && ent.trialEndsAt ? new Date(ent.trialEndsAt) : null;
-  const [usage, sub] = await Promise.all([ent ? usageOf(deps, workspaceId, ent) : null, SubscriptionModel.findOne({ workspaceId }).lean()]);
+  const [usage, sub] = await Promise.all([ent ? usageOf(deps, deps.user(token), workspaceId, ent) : null, SubscriptionModel.findOne({ workspaceId }).lean()]);
   const plan = sub?.planSlug ? await PlanModel.findOne({ slug: sub.planSlug }).lean() : null;
   const price = plan?.prices.find((p) => p.id === sub?.priceId);
   return json({
@@ -134,24 +136,28 @@ export const postPortal = route(workspaceGuards, async (ctx) => {
   return ok({ url: session.url });
 });
 
-/** Usage block: local counts for agents/docs, JSYNQ (`GET .../usage`) for meters, lines and the trial outbound counter. */
-async function usageOf(deps: Pick<Deps, 'partner' | 'now'>, workspaceId: string, ent: NonNullable<Awaited<ReturnType<typeof getEntitlements>>>) {
-  const [agents, docsAgg] = await Promise.all([
-    AgentSetupModel.countDocuments({ workspaceId }),
-    AgentSetupModel.aggregate<{ total: number }>([{ $match: { workspaceId } }, { $group: { _id: null, total: { $sum: { $size: '$documents' } } } }]),
-  ]);
-  let jsynq: Awaited<ReturnType<Deps['partner']['getUsage']>> | null = null;
-  try {
-    jsynq = await deps.partner.getUsage(workspaceId);
-  } catch (error) {
-    log.warn('usage.jsynq_unavailable', { workspaceId, error: errMessage(error) });
-  }
+/**
+ * Usage block (same shape as before): AI replies and the trial outbound counter from this
+ * service's own counters, lines/agents/docs counted live from the JSYNQ lists with the caller's
+ * token. A list JSYNQ could not answer reads `null` (unknown), never 0.
+ */
+async function usageOf(deps: Pick<Deps, 'now'>, client: UserClient, workspaceId: string, ent: NonNullable<Awaited<ReturnType<typeof getEntitlements>>>) {
+  const now = deps.now();
+  const live = async (resource: PlanResource) => {
+    try {
+      return await liveCount(client, workspaceId, resource);
+    } catch (error) {
+      log.warn('usage.jsynq_unavailable', { workspaceId, resource, error: errMessage(error) });
+      return null;
+    }
+  };
+  const [local, lines, agents, docs] = await Promise.all([counters(workspaceId, now), live('lines'), live('agents'), live('docs')]);
   return {
-    month: jsynq?.month ?? deps.now().toISOString().slice(0, 7),
-    aiReplies: { used: jsynq?.meters.aiReplies ?? null, limit: ent.limits.aiRepliesPerMonth },
-    lines: { used: jsynq?.live.messagingChannels ?? null, limit: ent.limits.lines },
+    month: monthOf(now),
+    aiReplies: { used: local.aiReplies, limit: ent.limits.aiRepliesPerMonth },
+    lines: { used: lines, limit: ent.limits.lines },
     agents: { used: agents, limit: ent.limits.agents },
-    docs: { used: docsAgg[0]?.total ?? 0, limit: ent.limits.docs },
-    trialOutbound: ent.status === 'trialing' ? { used: jsynq?.limits?.outboundUsed ?? null, cap: ent.trialOutboundCap ?? null } : null,
+    docs: { used: docs, limit: ent.limits.docs },
+    trialOutbound: ent.status === 'trialing' ? { used: local.trialOutbound, cap: ent.trialOutboundCap ?? null } : null,
   };
 }

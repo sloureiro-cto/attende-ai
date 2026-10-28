@@ -1,16 +1,16 @@
 import 'server-only';
 import { env } from './config/env';
-import { partnerClient, userClient, type PartnerClient, type UserClient } from './lib/jsynq';
-import { createMailer, type Mailer } from './lib/mailer';
+import { accountsClient, userClient, type AccountsClient, type UserClient } from './lib/jsynq';
 import type { AutomationsRuntime } from './modules/automations/runtime/factory';
 import { stripeGateway, type StripeGateway } from './modules/billing/stripeGateway';
 
 /** Outside-world collaborators. Tests swap any of them. */
 export type Deps = {
   stripe: StripeGateway;
-  partner: PartnerClient;
+  /** JSYNQ's public signup routes (no credential). */
+  accounts: AccountsClient;
+  /** JSYNQ routes as a user: the request's JWT, or a server-minted one (`serviceToken`). */
   user: (token: string) => UserClient;
-  mailer: Mailer;
   now: () => Date;
 };
 
@@ -18,9 +18,8 @@ export function defaultDeps(): Deps {
   const e = env();
   return {
     stripe: stripeGateway(e.STRIPE_SECRET_KEY, e.STRIPE_WEBHOOK_SECRET),
-    partner: partnerClient(),
+    accounts: accountsClient(),
     user: userClient,
-    mailer: createMailer(),
     now: () => new Date(),
   };
 }
@@ -38,8 +37,7 @@ export const setDeps = (deps: Deps | null): void => {
 
 /**
  * The advanced automations runtime. It does not run inside Next.js (no timers in serverless): it
- * stays null here, so `POST /api/jsynq/inbound` answers `{handled:false}` and saves do not sync the
- * inbound routing. The worker (phase 4) owns it. Tests set one.
+ * stays null here. The worker (phase 4) owns it and feeds it from the JSYNQ websocket. Tests set one.
  */
 export const getAutomationsRuntime = (): AutomationsRuntime | null => runtime;
 export const setAutomationsRuntime = (value: AutomationsRuntime | null): void => {

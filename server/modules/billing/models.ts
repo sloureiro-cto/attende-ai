@@ -1,6 +1,5 @@
 import 'server-only';
 import mongoose, { Schema, type Model } from 'mongoose';
-import type { JsynqLimitsInput } from '../../lib/jsynq';
 import type { Entitlements } from './deriveEntitlements';
 import type { TierLimits } from './tiers';
 
@@ -107,29 +106,53 @@ const ProcessedEventSchema = new Schema<IProcessedEvent>(
 ProcessedEventSchema.index({ processedAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 45 });
 export const ProcessedEventModel = model('ProcessedEvent', ProcessedEventSchema);
 
-// ---- limits_sync: desired JSYNQ limits vs what JSYNQ acknowledged -----------------------------
+// ---- usage_counters: what Attende meters itself (JSYNQ has no per-workspace meter for us) -----
 
-export interface ILimitsSync {
+/** `period` is a UTC month (`2026-10`) or `trial` (the trial outbound cap spans the whole trial). */
+export interface IUsageCounter {
   workspaceId: string;
-  desired: JsynqLimitsInput;
-  desiredHash: string;
-  syncedHash?: string;
-  syncedAt?: Date;
-  jsynqVersion?: number;
-  attempts: number;
+  period: string;
+  aiReplies: number;
+  outbound: number;
+}
+const UsageCounterSchema = new Schema<IUsageCounter>(
+  {
+    workspaceId: { type: String, required: true },
+    period: { type: String, required: true },
+    aiReplies: { type: Number, default: 0 },
+    outbound: { type: Number, default: 0 },
+  },
+  { timestamps: true, collection: 'usage_counters' }
+);
+UsageCounterSchema.index({ workspaceId: 1, period: 1 }, { unique: true });
+export const UsageCounterModel = model('UsageCounter', UsageCounterSchema);
+
+// ---- agent_pauses: Attende bindings this service paused, and why ------------------------------
+
+export const PAUSE_REASONS = ['access', 'ai_quota'] as const;
+export type PauseReason = (typeof PAUSE_REASONS)[number];
+
+/**
+ * The workspace's Attende agents are paused by this service while any reason holds: `access`
+ * (trial ended, subscription canceled, paid period long over) or `ai_quota` (monthly AI replies
+ * used up). `bindingIds` are the JSYNQ bindings that were active when paused: only those resume.
+ */
+export interface IAgentPause {
+  workspaceId: string;
+  reasons: PauseReason[];
+  bindingIds: string[];
+  pausedAt: Date;
   lastError?: string;
 }
-const LimitsSyncSchema = new Schema<ILimitsSync>(
+const AgentPauseSchema = new Schema<IAgentPause>(
   {
     workspaceId: { type: String, required: true, unique: true },
-    desired: { type: Schema.Types.Mixed, required: true },
-    desiredHash: { type: String, required: true },
-    syncedHash: String,
-    syncedAt: Date,
-    jsynqVersion: Number,
-    attempts: { type: Number, default: 0 },
+    reasons: { type: [String], enum: PAUSE_REASONS, default: [] },
+    bindingIds: { type: [String], default: [] },
+    pausedAt: { type: Date, required: true },
     lastError: String,
   },
-  { timestamps: true, collection: 'limits_sync' }
+  { timestamps: true, collection: 'agent_pauses' }
 );
-export const LimitsSyncModel = model('LimitsSync', LimitsSyncSchema);
+AgentPauseSchema.index({ reasons: 1 });
+export const AgentPauseModel = model('AgentPause', AgentPauseSchema);

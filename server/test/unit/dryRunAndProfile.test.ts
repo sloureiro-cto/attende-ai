@@ -234,14 +234,10 @@ describe('buildBindingPolicy handoff assignee', () => {
     handoff: { triggers: [], keywords: [], target: { kind: 'user', userId: 'f'.repeat(24) } },
   });
 
-  it('maps a user target to policy.handoffAssigneeUserId', () => {
+  it('never sends handoffAssigneeUserId (not a staging binding field; the phase-4 worker assigns)', () => {
     if (!base.ok) throw new Error(JSON.stringify(base.issues));
-    expect(buildBindingPolicy(base.form).handoffAssigneeUserId).toBe('f'.repeat(24));
-  });
-
-  it('sets no assignee for the team target', () => {
-    if (!base.ok) throw new Error('invalid');
-    const form = { ...base.form, handoff: { ...base.form.handoff, target: { kind: 'team' as const } } };
-    expect(buildBindingPolicy(form)).not.toHaveProperty('handoffAssigneeUserId');
+    expect(base.form.handoff.target).toEqual({ kind: 'user', userId: 'f'.repeat(24) });
+    expect(buildBindingPolicy(base.form)).not.toHaveProperty('handoffAssigneeUserId');
+    expect(buildBindingPolicy(base.form).allowHumanHandoff).toBe(true);
   });
 });

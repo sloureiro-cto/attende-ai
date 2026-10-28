@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb"
 import type { NextAuthConfig, User } from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import Google from "next-auth/providers/google"
+import { generateApiToken as signApiToken } from "lib/auth/apiToken"
 import { googleOAuthRedirectProxyUrl } from "lib/auth/authRedirectProxy"
 import { botsAuthCookies } from "lib/auth/botsAuthCookies"
 import { type Login2faProofPayload, LOGIN_2FA_PROOF_PURPOSE } from "lib/auth/loginProof"
@@ -26,21 +27,7 @@ const workspaces = db.collection("workspaces")
 /** Buffer time before expiry to refresh token (30 minutes in milliseconds) */
 const TOKEN_REFRESH_BUFFER_MS = 30 * 60 * 1000
 
-function generateApiToken(token: Record<string, unknown>): string {
-  return jwt.sign(
-    {
-      id: token.id,
-      email: token.email,
-      name: token.name,
-      image: token.image,
-      workspaceId: token.workspaceId,
-      stripeCustomerId: token.stripeCustomerId,
-      currency: token.currency,
-    },
-    secret!,
-    { expiresIn: "1d" }
-  )
-}
+const generateApiToken = (token: Record<string, unknown>): string => signApiToken(token as { id: unknown }, secret!)
 
 function mapUserResponseToUser(body: UserResponse): User {
   return {

@@ -1,6 +1,6 @@
 import 'server-only';
 import { jsynqRequest, unwrap } from './http';
-import type { Channel, JsynqAgent, JsynqBinding, JsynqKnowledgeSource, JsynqSession, JsynqWorkspace } from './types';
+import type { Channel, JsynqAgent, JsynqBinding, JsynqKnowledgeSource, JsynqLanguage, JsynqOwnedWorkspace, JsynqProject, JsynqSession, JsynqTool, JsynqWorkspace } from './types';
 
 const SESSION_PATH: Record<Channel, string> = {
   whatsapp: '/api/whatsapp-lite/sessions',
@@ -18,6 +18,54 @@ export function userClient(token: string) {
     jsynqRequest<T>({ method, path, auth: token, ...opts });
 
   return {
+    // --- workspaces (any signed-in user; delete = any member, soft delete) -------------------
+
+    /** `POST /api/workspaces`: the caller becomes owner and member. JSYNQ also gives it its free plan and seeds its default agent. */
+    async createWorkspace(input: { name: string; language: JsynqLanguage }): Promise<{ _id: string }> {
+      const res = await call<{ workspace?: { _id?: unknown } }>('POST', '/api/workspaces', { body: input, timeoutMs: 45_000 });
+      const id = res.body?.workspace?._id;
+      if (!id) throw new Error('JSYNQ workspace creation returned no id');
+      return { _id: String(id) };
+    },
+    /** `GET /api/workspaces/check-owner`: the caller's own (not deleted) workspaces. */
+    async listOwnedWorkspaces(): Promise<JsynqOwnedWorkspace[]> {
+      const res = await call<{ workspaces?: Array<JsynqOwnedWorkspace & { _id: unknown }> }>('GET', '/api/workspaces/check-owner');
+      return (res.body?.workspaces ?? []).map((w) => ({ ...w, _id: String(w._id) }));
+    },
+    async deleteWorkspace(workspaceId: string): Promise<void> {
+      await call('DELETE', `/api/workspaces/${encodeURIComponent(workspaceId)}`);
+    },
+
+    // --- projects (workspace from the JWT claim) ------------------------------------------
+
+    async listProjects(): Promise<JsynqProject[]> {
+      const res = await call<{ projects?: JsynqProject[] }>('GET', '/api/projects', { query: { limit: 50 } });
+      return res.body?.projects ?? [];
+    },
+    /** `POST /api/projects`; with `projectType: {title: 'crm'}` JSYNQ creates the board and its default CRM columns. */
+    async createProject(input: { title: string; private: boolean; projectType: { title: 'crm' | 'kanban' } }): Promise<{ _id: string }> {
+      const res = await call<{ project?: { _id?: unknown } }>('POST', '/api/projects', { body: input, timeoutMs: 30_000 });
+      const id = res.body?.project?._id;
+      if (!id) throw new Error('JSYNQ project creation returned no id');
+      return { _id: String(id) };
+    },
+
+    // --- tools ----------------------------------------------------------------------------
+
+    /** `GET /api/workspaces/:id/mcp-tools`: the workspace's tool registry (platform tools have provider `jsynq`). */
+    async listTools(workspaceId: string, query: { search?: string; provider?: string } = {}): Promise<JsynqTool[]> {
+      const res = await call<unknown>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/mcp-tools`, { query: { ...query, limit: 50 } });
+      return unwrap<JsynqTool[]>(res.body) ?? [];
+    },
+
+    // --- members --------------------------------------------------------------------------
+
+    /** Pending workspace invites (`GET /api/invites/workspaces?status=pending`): they take a seat once accepted. */
+    async countPendingInvites(): Promise<number> {
+      const res = await call<{ pagination?: { total?: number }; invites?: unknown[] }>('GET', '/api/invites/workspaces', { query: { status: 'pending', limit: 1 } });
+      return res.body?.pagination?.total ?? res.body?.invites?.length ?? 0;
+    },
+
     /** 200 = member (or owner), 403 = not. Also carries `owner`, `members` and `businessHours`. */
     async getWorkspace(workspaceId: string): Promise<JsynqWorkspace | null> {
       const res = await call<{ workspace: JsynqWorkspace | null }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}`);
@@ -76,6 +124,11 @@ export function userClient(token: string) {
     },
     async deleteDocument(documentId: string): Promise<void> {
       await call('DELETE', `/api/documents/${encodeURIComponent(documentId)}`, { timeoutMs: 20_000 });
+    },
+    /** Every library document of the workspace knowledge (JSYNQ lists at most 200). */
+    async listKnowledgeDocuments(): Promise<JsynqKnowledgeSource[]> {
+      const res = await call<unknown>('GET', '/api/workspace-knowledge/sources', { query: { kinds: 'library_document' } });
+      return unwrap<{ items?: JsynqKnowledgeSource[] }>(res.body)?.items ?? [];
     },
     async listKnowledgeSources(refIds: string[]): Promise<JsynqKnowledgeSource[]> {
       if (refIds.length === 0) return [];

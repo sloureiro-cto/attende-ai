@@ -1,12 +1,10 @@
 import request from 'supertest';
-import { partnerClient, userClient } from '../../lib/jsynq';
 import { createApp } from '../helpers/app';
-import { FakeMailer } from '../helpers/fakeMailer';
-import { FakeStripe } from '../helpers/fakeStripe';
+import { testDeps } from '../helpers/deps';
 import { startMongo, stopMongo } from '../helpers/mongo';
 
 describe('cron routes', () => {
-  const app = createApp({ stripe: new FakeStripe(), partner: partnerClient('pk_test_partner_key'), user: userClient, mailer: new FakeMailer(), now: () => new Date() }, null);
+  const app = createApp(testDeps(), null);
 
   beforeAll(startMongo);
   afterAll(stopMongo);

@@ -52,8 +52,9 @@ export type AttendeeHandoff = {
   message?: string;
   /**
    * Who should take over. `team`: the conversation waits in the shared inbox for anyone. `user`: on an
-   * automatic handover JSYNQ also assigns it to that member (binding `policy.handoffAssigneeUserId`), unless it
-   * already has an assignee or the person left the workspace.
+   * automatic handover the Attende worker (phase 4) assigns it to that member through JSYNQ's conversation
+   * assign route, unless it already has an assignee or the person left the workspace. Stored here only:
+   * JSYNQ's binding policy has no assignee field.
    */
   target?: { kind: 'team' | 'user'; userId?: string };
 };

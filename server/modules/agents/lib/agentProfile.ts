@@ -6,8 +6,12 @@ import { FORM_LIMITS } from './formSchema';
 /**
  * Everything the JSYNQ agent and its bindings need besides the compiled prompt. Pure, so the
  * "restricted tool surface" contract is unit-tested:
- *  - tools: only knowledge search + human handoff (`toolNames`, resolved by JSYNQ);
- *  - knowledge is fenced as untrusted data (`knowledgeTrust: 'untrusted'`);
+ *  - tools: only knowledge search + human handoff. JSYNQ staging takes tool ids (`availableTools`),
+ *    resolved by name from the workspace's tool registry (`GET /api/workspaces/:id/mcp-tools`);
+ *    the WhatsApp tool gate then keeps a bound run to its own conversation, and
+ *    `request_human_handoff` only exists when the binding sets `allowHumanHandoff`;
+ *  - knowledge is fenced as untrusted data in the compiled prompt (JSYNQ staging has no
+ *    `knowledgeTrust` flag);
  *  - capabilities: no internet, no workspace data, knowledge base on.
  */
 export const AGENT_TOOL_NAMES = ['search_knowledge_base', 'request_human_handoff'] as const;
@@ -47,16 +51,15 @@ export function activeWindow(form: AttendeeAgentForm) {
 export type BindingPolicy = Record<string, unknown> & {
   sendReply: boolean;
   allowHumanHandoff: boolean;
-  handoffAssigneeUserId?: string;
 };
 
 /**
- * JSYNQ binding policy (sent whole: JSYNQ replaces `policy` on PATCH). `handoffAssigneeUserId`
- * makes JSYNQ assign automatic handovers to that member (`form.handoff.target.kind === 'user'`).
+ * JSYNQ binding policy (sent whole: JSYNQ replaces `policy` on PATCH). Only fields JSYNQ staging's
+ * binding model has. Who takes over a handed-off conversation (`form.handoff.target`) is not a
+ * binding field there: the worker (phase 4) assigns it through the conversation assign route.
  */
 export function buildBindingPolicy(form: AttendeeAgentForm, crm?: { projectId: string; columnId: string }): BindingPolicy {
   const window = activeWindow(form);
-  const target = form.handoff.target;
   return {
     sendReply: true,
     stopOnUserIntervention: true,
@@ -68,7 +71,6 @@ export function buildBindingPolicy(form: AttendeeAgentForm, crm?: { projectId: s
     allowReadingOtherConversations: false,
     allowImageGeneration: false,
     allowHumanHandoff: true,
-    ...(target?.kind === 'user' && target.userId ? { handoffAssigneeUserId: target.userId } : {}),
     ...(crm
       ? { autoCreateLead: true, autoCreateLeadProjectId: crm.projectId, autoCreateLeadColumnId: crm.columnId, autoCreateLeadSourceText: 'Attende-ai' }
       : { autoCreateLead: false }),

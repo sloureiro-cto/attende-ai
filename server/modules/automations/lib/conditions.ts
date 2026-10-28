@@ -180,7 +180,7 @@ export type ConditionContext = {
  * business hours, chat type and boolean composition. Conditions that read JSYNQ data or call a
  * model (`llm_*`, `new_lead`, `linked_card_in`, `event_date_days_ahead`, `from_*`,
  * `instagram_comment`) need JSYNQ context or a model, and JSYNQ has no endpoint to evaluate them:
- * they do not match (see docs/jsynq-dependencies.md §2.4).
+ * they do not match (JSYNQ has no condition-evaluation route; docs/jsynq-apis-used.md).
  */
 export const LOCAL_CONDITION_TYPES = new Set(['all', 'any', 'first_inbound', 'contains', 'not_contains', 'regex', 'within_business_hours', 'outside_business_hours', 'chat_type']);
 
