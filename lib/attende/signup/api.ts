@@ -1,6 +1,6 @@
 import { headers } from "next/headers"
 import { auth } from "auth"
-import { apiBaseUrl, missingBaseMessage, toApiError } from "lib/attende/serverApi"
+import { callAttende, toApiError } from "lib/attende/serverApi"
 
 export type AttendeApiResult<T> =
   | { ok: true; status: number; data: T }
@@ -15,16 +15,13 @@ type Options = {
 }
 
 /**
- * Calls `/attende/*` on the Attende backend (`ATTENDE_API_URL`). The platform's shared `FetchClient` keeps only the error message, but the signup contract
+ * Calls `/attende/*` on the Attende API (in process, or `ATTENDE_API_URL`). The platform's shared `FetchClient` keeps only the error message, but the signup contract
  * branches on the stable `reference`, so this helper keeps it. It never throws: network problems become `status: 0`.
  *
  * Public calls forward the visitor's IP and country so the backend rate limits and picks the currency per visitor,
  * not per Next.js server.
  */
 export async function attendeFetch<T>(path: string, options: Options = {}): Promise<AttendeApiResult<T>> {
-  const base = apiBaseUrl("attende")
-  if (!base) return { ok: false, status: 500, message: missingBaseMessage("attende") }
-
   const requestHeaders: Record<string, string> = { "Content-Type": "application/json" }
 
   if (options.session) {
@@ -45,12 +42,11 @@ export async function attendeFetch<T>(path: string, options: Options = {}): Prom
 
   let response: Response
   try {
-    response = await fetch(`${base}${path}`, {
+    response = await callAttende(path, {
       method: options.method ?? "GET",
       headers: requestHeaders,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
-      cache: "no-store",
+      timeoutMs: options.timeoutMs ?? 30_000,
     })
   } catch {
     return { ok: false, status: 0, message: "network" }

@@ -1,5 +1,5 @@
 import { auth } from "auth"
-import { apiBaseUrl, missingBaseMessage, toApiError } from "lib/attende/serverApi"
+import { callAttende, toApiError } from "lib/attende/serverApi"
 import type { AgentActionResult, AgentErrorDetails } from "./types"
 
 type Options = {
@@ -28,12 +28,10 @@ function parseError(status: number, payload: unknown): AgentActionResult<never> 
 }
 
 /**
- * Calls `/attende/agents*` on the Attende backend (`ATTENDE_API_URL`) with the signed-in user's token. It supports
+ * Calls `/attende/agents*` on the Attende API (in process, or `ATTENDE_API_URL`) with the signed-in user's token. It supports
  * multipart uploads and keeps the agent error details, so it has its own thin client. Never throws.
  */
 export async function agentsFetch<T>(path: string, options: Options = {}): Promise<AgentActionResult<T>> {
-  const base = apiBaseUrl("attende")
-  if (!base) return { success: false, status: 500, message: missingBaseMessage("attende") }
   const session = await auth()
   if (!session?.apiToken) return { success: false, status: 401, code: "AUTH_REQUIRED" }
 
@@ -42,12 +40,11 @@ export async function agentsFetch<T>(path: string, options: Options = {}): Promi
 
   let response: Response
   try {
-    response = await fetch(`${base}/attende/agents${path}`, {
+    response = await callAttende(`/attende/agents${path}`, {
       method: options.method ?? "GET",
       headers,
       body: options.form ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
-      signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
-      cache: "no-store",
+      timeoutMs: options.timeoutMs ?? 30_000,
     })
   } catch {
     return { success: false, status: 0, message: "network" }

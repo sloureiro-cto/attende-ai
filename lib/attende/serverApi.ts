@@ -3,7 +3,9 @@ import type { AttendeActionError, AttendeActionResult } from "./result"
 
 /**
  * Server-side clients for the two APIs this app calls with the signed-in user's token (`session.apiToken`, as Bearer):
- * - `attende*`: the Attende backend (`ATTENDE_API_URL`): signup, entitlements, billing portal, agents, advanced automations;
+ * - `attende*`: the Attende API: signup, entitlements, billing portal, agents, advanced automations. It is served by this
+ *   app (`app/api/attende/*`, `app/api/messaging-automations/advanced*`, code in `server/`) and called in process; set
+ *   `ATTENDE_API_URL` only to call another deployment over HTTP instead;
  * - `jsynq*`: generic JSYNQ endpoints (`BACKEND_URL`): the CRM board table (funnel) and conversation analytics (reports).
  * Both answer errors as `{error, code, message, reference?, details?}`. These helpers never throw.
  */
@@ -83,6 +85,33 @@ async function toResult<T>(response: Response): Promise<AttendeActionResult<T>> 
   return { success: true, data: unwrapData<T>(payload) }
 }
 
+export type AttendeCallInit = {
+  method?: string
+  headers?: Record<string, string>
+  body?: BodyInit
+  timeoutMs?: number
+}
+
+/**
+ * One call to the Attende API, `path` relative to its `/api` (e.g. `/attende/entitlements`). With `ATTENDE_API_URL` set it
+ * is a fetch to that base; otherwise the request runs in process through this app's own route handlers (same handler,
+ * same status and body, no HTTP round trip to itself). Like fetch, it throws only on network errors.
+ */
+export async function callAttende(path: string, init: AttendeCallInit = {}): Promise<Response> {
+  const base = apiBaseUrl("attende")
+  if (base) {
+    return fetch(`${base}${path}`, {
+      method: init.method ?? "GET",
+      headers: init.headers,
+      body: init.body,
+      signal: AbortSignal.timeout(init.timeoutMs ?? READ_TIMEOUT_MS),
+      cache: "no-store",
+    })
+  }
+  const { attendeLocalFetch } = await import("server/local")
+  return attendeLocalFetch(path, { method: init.method, headers: init.headers, body: init.body })
+}
+
 export type ApiMethod = "GET" | "POST" | "PATCH" | "DELETE"
 export type RequestOptions = { query?: Query; body?: unknown; timeoutMs?: number }
 
@@ -93,27 +122,32 @@ export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {}
 ): Promise<AttendeActionResult<T>> {
-  const base = apiBaseUrl(target)
-  if (!base) return { success: false, status: 500, message: missingBaseMessage(target) }
+  const base = target === "jsynq" ? apiBaseUrl(target) : undefined
+  if (target === "jsynq" && !base) return { success: false, status: 500, message: missingBaseMessage(target) }
   const authorization = await userBearer()
   if (!authorization) return { success: false, status: 401, reference: "AUTH_REQUIRED" }
   const headers: Record<string, string> = { Authorization: authorization }
   if (options.body !== undefined) headers["Content-Type"] = "application/json"
+  const body = options.body === undefined ? undefined : JSON.stringify(options.body)
+  const url = `${path}${buildQuery(options.query)}`
   try {
-    const response = await fetch(`${base}${path}${buildQuery(options.query)}`, {
-      method,
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      signal: AbortSignal.timeout(options.timeoutMs ?? READ_TIMEOUT_MS),
-      cache: "no-store",
-    })
+    const response =
+      target === "attende"
+        ? await callAttende(url, { method, headers, body, timeoutMs: options.timeoutMs })
+        : await fetch(`${base}${url}`, {
+            method,
+            headers,
+            body,
+            signal: AbortSignal.timeout(options.timeoutMs ?? READ_TIMEOUT_MS),
+            cache: "no-store",
+          })
     return await toResult<T>(response)
   } catch {
     return { success: false, status: 0, message: "network" }
   }
 }
 
-// --- Attende backend (ATTENDE_API_URL) ---------------------------------------------------------------
+// --- Attende API (in process, or ATTENDE_API_URL) -----------------------------------------------------------
 export const attendeGet = <T>(path: string, query?: Query) => apiRequest<T>("attende", "GET", path, { query })
 export const attendePost = <T>(path: string, body: unknown = {}, timeoutMs?: number) =>
   apiRequest<T>("attende", "POST", path, { body, timeoutMs })

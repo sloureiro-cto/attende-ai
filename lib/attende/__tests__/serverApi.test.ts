@@ -1,10 +1,12 @@
 /**
  * @jest-environment node
  */
-import { apiRequest, attendeGet, jsynqGet, toApiError } from "../serverApi"
+import { apiRequest, attendeGet, attendePost, jsynqGet, toApiError } from "../serverApi"
 
 const mockAuth = jest.fn()
 jest.mock("auth", () => ({ auth: () => mockAuth() }))
+const mockLocal = jest.fn()
+jest.mock("server/local", () => ({ attendeLocalFetch: (...a: unknown[]) => mockLocal(...a) }))
 
 const fetchMock = jest.fn()
 const ENV = { ...process.env }
@@ -56,14 +58,28 @@ describe("serverApi", () => {
     })
   })
 
-  it("never throws: no env, no session and network failures become results", async () => {
+  it("without ATTENDE_API_URL, runs the request in process through this app's route handlers", async () => {
     delete process.env.ATTENDE_API_URL
-    expect(await apiRequest("attende", "GET", "/x")).toMatchObject({
+    mockLocal.mockResolvedValue(json(200, { success: true, data: { ok: 1 } }))
+    expect(await attendePost("/attende/billing/portal", { kind: "manage" })).toEqual({ success: true, data: { ok: 1 } })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(mockLocal).toHaveBeenCalledWith("/attende/billing/portal", {
+      method: "POST",
+      headers: { Authorization: "Bearer tok", "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "manage" }),
+    })
+    mockLocal.mockResolvedValue(json(402, { error: true, code: 402, message: "x", reference: "ATTENDE_TRIAL_EXPIRED" }))
+    expect(await attendeGet("/attende/agents", { page: 2 })).toMatchObject({ success: false, status: 402, reference: "ATTENDE_TRIAL_EXPIRED" })
+    expect(mockLocal.mock.calls[1][0]).toBe("/attende/agents?page=2")
+  })
+
+  it("never throws: no env, no session and network failures become results", async () => {
+    delete process.env.BACKEND_URL
+    expect(await apiRequest("jsynq", "GET", "/x")).toMatchObject({
       success: false,
       status: 500,
-      message: "ATTENDE_API_URL is not configured",
+      message: "BACKEND_URL is not configured",
     })
-    process.env.ATTENDE_API_URL = "http://attende.test/api"
     mockAuth.mockResolvedValueOnce(null)
     expect(await apiRequest("attende", "GET", "/x")).toMatchObject({
       success: false,
