@@ -22,6 +22,6 @@ export async function POST(request: Request, { params }: { params: { id: string 
   }
   const outgoing = new FormData()
   outgoing.append("file", file, file.name)
-  const result = await agentsFetch<KnowledgeDocument>(`/${encodeURIComponent(params.id)}/knowledge`, { method: "POST", form: outgoing, timeoutMs: 55_000 })
+  const result = await agentsFetch<KnowledgeDocument>(`/${encodeURIComponent(params.id)}/knowledge`, { method: "POST", form: outgoing })
   return NextResponse.json(result, { status: result.success ? 201 : result.status || 502 })
 }

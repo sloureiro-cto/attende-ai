@@ -23,14 +23,14 @@ export async function getAttendeAgentAction(id: string): Promise<AgentActionResu
 
 /** Idempotent per `clientRequestId`: a retry returns the agent created the first time. The agent starts paused. */
 export async function createAttendeAgentAction(input: CreateAgentInput): Promise<AgentActionResult<AgentView>> {
-  return agentsFetch<AgentView>("/from-template", { method: "POST", body: input, timeoutMs: 60_000 })
+  return agentsFetch<AgentView>("/from-template", { method: "POST", body: input })
 }
 
 export async function updateAttendeAgentSetupAction(
   id: string,
   input: { form: AgentForm; lines?: AgentLine[]; crm?: CrmTarget | null }
 ): Promise<AgentActionResult<AgentView>> {
-  return agentsFetch<AgentView>(`/${enc(id)}/setup`, { method: "PATCH", body: input, timeoutMs: 60_000 })
+  return agentsFetch<AgentView>(`/${enc(id)}/setup`, { method: "PATCH", body: input })
 }
 
 export async function goLiveAttendeAgentAction(id: string): Promise<AgentActionResult<AgentView>> {

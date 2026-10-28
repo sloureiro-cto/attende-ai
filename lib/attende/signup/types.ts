@@ -1,4 +1,4 @@
-/** Shapes of `/api/attende/signup` on the Attende backend (`ATTENDE_API_URL`; README of attend-ai-backend). */
+/** Shapes of `/api/attende/signup` on the Attende API (`server/modules/signup`). */
 export type SignupActionError = { success: false; status: number; reference?: string; message?: string }
 export type SignupActionResult<T> = { success: true; data: T } | SignupActionError
 

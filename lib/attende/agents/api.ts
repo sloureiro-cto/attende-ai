@@ -8,7 +8,6 @@ type Options = {
   body?: unknown
   /** Multipart body (uploads). The content type (with its boundary) is set by fetch. */
   form?: FormData
-  timeoutMs?: number
 }
 
 /**
@@ -28,7 +27,7 @@ function parseError(status: number, payload: unknown): AgentActionResult<never> 
 }
 
 /**
- * Calls `/attende/agents*` on the Attende API (in process, or `ATTENDE_API_URL`) with the signed-in user's token. It supports
+ * Calls `/attende/agents*` on the Attende API (in process) with the signed-in user's token. It supports
  * multipart uploads and keeps the agent error details, so it has its own thin client. Never throws.
  */
 export async function agentsFetch<T>(path: string, options: Options = {}): Promise<AgentActionResult<T>> {
@@ -44,7 +43,6 @@ export async function agentsFetch<T>(path: string, options: Options = {}): Promi
       method: options.method ?? "GET",
       headers,
       body: options.form ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
-      timeoutMs: options.timeoutMs ?? 30_000,
     })
   } catch {
     return { success: false, status: 0, message: "network" }

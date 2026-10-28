@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   if (!authorization) return NextResponse.json({ success: false, status: 401, reference: "AUTH_REQUIRED" }, { status: 401 })
   let upstream: Response
   try {
-    upstream = await callAttende(`/attende/funnel/export.csv${buildQuery(query)}`, { headers: { Authorization: authorization }, timeoutMs: 60_000 })
+    upstream = await callAttende(`/attende/funnel/export.csv${buildQuery(query)}`, { headers: { Authorization: authorization } })
   } catch {
     return NextResponse.json({ success: false, status: 502 }, { status: 502 })
   }

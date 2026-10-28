@@ -11,11 +11,10 @@ type Options = {
   body?: unknown
   /** Send the signed-in user's apiToken. Public endpoints (signup, verify, plans) must leave this off. */
   session?: boolean
-  timeoutMs?: number
 }
 
 /**
- * Calls `/attende/*` on the Attende API (in process, or `ATTENDE_API_URL`). The platform's shared `FetchClient` keeps only the error message, but the signup contract
+ * Calls `/attende/*` on the Attende API (in process). The platform's shared `FetchClient` keeps only the error message, but the signup contract
  * branches on the stable `reference`, so this helper keeps it. It never throws: network problems become `status: 0`.
  *
  * Public calls forward the visitor's IP and country so the backend rate limits and picks the currency per visitor,
@@ -46,7 +45,6 @@ export async function attendeFetch<T>(path: string, options: Options = {}): Prom
       method: options.method ?? "GET",
       headers: requestHeaders,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      timeoutMs: options.timeoutMs ?? 30_000,
     })
   } catch {
     return { ok: false, status: 0, message: "network" }

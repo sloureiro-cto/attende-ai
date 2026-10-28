@@ -20,7 +20,7 @@ function toResult<T>(result: AttendeApiResult<T>): SignupActionResult<T> {
 
 /** Public. Never fails: a missing catalog just means prices are shown at checkout. */
 export async function getSignupPlansAction(): Promise<SignupPlansResponse> {
-  const result = await attendeFetch<unknown>("/attende/signup/plans", { timeoutMs: 6000 })
+  const result = await attendeFetch<unknown>("/attende/signup/plans", {})
   return result.ok ? parseSignupPlans(result.data) : { trial: DEFAULT_TRIAL, plans: [] }
 }
 
@@ -78,6 +78,6 @@ export async function createSignupSetupIntentAction(): Promise<SignupActionResul
 /** Session. Creates the workspace and the 7-day trial subscription. Idempotent on the backend. */
 export async function startAttendeTrialAction(input: { paymentMethodId: string; planSlug?: string }): Promise<SignupActionResult<StartTrialData>> {
   return toResult(
-    await attendeFetch<StartTrialData>("/attende/signup/start-trial", { method: "POST", body: input, session: true, timeoutMs: 60_000 })
+    await attendeFetch<StartTrialData>("/attende/signup/start-trial", { method: "POST", body: input, session: true })
   )
 }

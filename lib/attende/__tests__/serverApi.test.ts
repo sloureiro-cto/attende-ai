@@ -14,7 +14,7 @@ const ENV = { ...process.env }
 beforeEach(() => {
   jest.clearAllMocks()
   global.fetch = fetchMock as unknown as typeof fetch
-  process.env = { ...ENV, ATTENDE_API_URL: "http://attende.test/api/", BACKEND_URL: "http://jsynq.test/api" }
+  process.env = { ...ENV, BACKEND_URL: "http://jsynq.test/api" }
   mockAuth.mockResolvedValue({ apiToken: "tok" })
 })
 afterAll(() => {
@@ -25,13 +25,14 @@ const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
 describe("serverApi", () => {
-  it("calls the Attende backend with the user's token and unwraps { data }", async () => {
-    fetchMock.mockResolvedValue(json(200, { success: true, data: { url: "https://x" } }))
+  it("calls the Attende API in process with the user's token and unwraps { data }", async () => {
+    mockLocal.mockResolvedValue(json(200, { success: true, data: { url: "https://x" } }))
     const res = await attendeGet<{ url: string }>("/attende/entitlements", { a: 1, b: undefined, c: ["x", "y"] })
     expect(res).toEqual({ success: true, data: { url: "https://x" } })
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe("http://attende.test/api/attende/entitlements?a=1&c=x%2Cy")
+    const [path, init] = mockLocal.mock.calls[0]
+    expect(path).toBe("/attende/entitlements?a=1&c=x%2Cy")
     expect(init.headers).toEqual({ Authorization: "Bearer tok" })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it("calls JSYNQ for the generic endpoints", async () => {
@@ -41,7 +42,7 @@ describe("serverApi", () => {
   })
 
   it("keeps the backend code from `reference` or from `details.code`", async () => {
-    fetchMock.mockResolvedValueOnce(
+    mockLocal.mockResolvedValueOnce(
       json(503, { error: true, code: 503, message: "JSYNQ is unavailable", reference: "JSYNQ_UNAVAILABLE" })
     )
     expect(await attendeGet("/attende/agents")).toMatchObject({
@@ -58,8 +59,8 @@ describe("serverApi", () => {
     })
   })
 
-  it("without ATTENDE_API_URL, runs the request in process through this app's route handlers", async () => {
-    delete process.env.ATTENDE_API_URL
+  it("runs POSTs in process through this app's route handlers, never over HTTP", async () => {
+    process.env.ATTENDE_API_URL = "http://old-backend.test/api"
     mockLocal.mockResolvedValue(json(200, { success: true, data: { ok: 1 } }))
     expect(await attendePost("/attende/billing/portal", { kind: "manage" })).toEqual({ success: true, data: { ok: 1 } })
     expect(fetchMock).not.toHaveBeenCalled()
@@ -86,7 +87,10 @@ describe("serverApi", () => {
       status: 401,
       reference: "AUTH_REQUIRED",
     })
-    fetchMock.mockRejectedValueOnce(new Error("down"))
+    mockLocal.mockRejectedValueOnce(new Error("down"))
     expect(await apiRequest("attende", "GET", "/x")).toMatchObject({ success: false, status: 0 })
+    fetchMock.mockRejectedValueOnce(new Error("down"))
+    process.env.BACKEND_URL = "http://jsynq.test/api"
+    expect(await apiRequest("jsynq", "GET", "/x")).toMatchObject({ success: false, status: 0 })
   })
 })
