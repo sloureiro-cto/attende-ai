@@ -265,7 +265,7 @@ an `agentExecutionId`, and not `senderAgent.source: 'inbound_rule'` (a template 
 | --- | --- |
 | Context (contact name/phone, linked card) | inbox deep link (above) |
 | Send a text | `POST /api/{channel}-lite/sessions/:s/conversations/:id/messages` `{text}` |
-| Send a WhatsApp template | none: Meta templates are sent by JSYNQ's separate WhatsApp gateway, not by the JSYNQ API. The step fails (`TEMPLATE_SEND_UNAVAILABLE`) |
+| Send a WhatsApp template | none: Meta templates are sent by JSYNQ's separate WhatsApp gateway, not by the JSYNQ API. The step fails (`TEMPLATE_SEND_UNAVAILABLE`); the builder shows it disabled and an existing one blocks activation |
 | Move the linked card | `PUT /api/projects/:p/cards/:id` `{column}` (no linked card: `NO_LINKED_CARD`; there is no find-or-create route) |
 | Add a label | `GET /api/projects/:p/labels`, `POST /api/projects/:p/label` `{text, color}` when missing, `PUT /api/projects/:p/cards/:id` `{addLabelIds: [id]}` |
 | Update a card field | `PUT /api/projects/:p/cards/:id` `{customFields: [{fieldId, value}]}` (JSYNQ merges with the card's fields) |
