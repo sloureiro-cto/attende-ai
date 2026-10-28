@@ -21,6 +21,7 @@ const addFunnelCommentAction = jest.fn()
 const deleteFunnelCommentAction = jest.fn()
 const loadFunnelAttachmentsAction = jest.fn()
 const loadFunnelStagesAction = jest.fn()
+const loadFunnelDealConversationAction = jest.fn()
 const loadFunnelStageSettingsAction = jest.fn()
 const deleteFunnelStageAction = jest.fn()
 jest.mock("actions/attende/funnel", () => ({
@@ -40,6 +41,7 @@ jest.mock("actions/attende/funnel", () => ({
   deleteFunnelCommentAction: (...a: unknown[]) => deleteFunnelCommentAction(...a),
   loadFunnelAttachmentsAction: (...a: unknown[]) => loadFunnelAttachmentsAction(...a),
   loadFunnelStagesAction: (...a: unknown[]) => loadFunnelStagesAction(...a),
+  loadFunnelDealConversationAction: (...a: unknown[]) => loadFunnelDealConversationAction(...a),
   loadFunnelStageSettingsAction: (...a: unknown[]) => loadFunnelStageSettingsAction(...a),
   deleteFunnelStageAction: (...a: unknown[]) => deleteFunnelStageAction(...a),
 }))
@@ -83,6 +85,7 @@ beforeEach(() => {
   // The drawer's checklist and comments load in the background; tests that need them resolve them.
   loadFunnelChecklistAction.mockReturnValue(new Promise(() => undefined))
   loadFunnelCommentsAction.mockReturnValue(new Promise(() => undefined))
+  loadFunnelDealConversationAction.mockReturnValue(new Promise(() => undefined))
   loadFunnelAttachmentsAction.mockReturnValue(new Promise(() => undefined))
   window.history.replaceState(null, "", "/funnel")
   window.localStorage.clear()
@@ -145,53 +148,60 @@ describe("FunnelView URL state", () => {
     renderFunnel(initial(page([row(1)])))
     fireEvent.click(screen.getByRole("button", { name: "Filters" }))
     const panel = screen.getByRole("dialog", { name: "Filter deals" })
-    fireEvent.click(within(within(panel).getByRole("group", { name: "Handling" })).getByRole("radio", { name: "Human handling" }))
     fireEvent.change(within(panel).getByLabelText("From"), { target: { value: "2026-10-01" } })
     // A draft: nothing loads until Apply.
     expect(loadFunnelPageAction).not.toHaveBeenCalled()
     fireEvent.click(within(panel).getByRole("button", { name: "Apply" }))
     await waitFor(() => expect(loadFunnelPageAction).toHaveBeenCalledTimes(1))
-    expect(loadFunnelPageAction.mock.calls[0]![0]).toMatchObject({ handling: "human", createdFrom: "2026-10-01" })
-    expect(window.location.search).toContain("handling=human")
+    expect(loadFunnelPageAction.mock.calls[0]![0]).toMatchObject({ createdFrom: "2026-10-01" })
+    expect(window.location.search).toContain("from=2026-10-01")
     expect(screen.queryByRole("dialog", { name: "Filter deals" })).toBeNull()
-    expect(screen.getByRole("button", { name: "Filters, 2 on" })).toHaveTextContent("2")
+    expect(screen.getByRole("button", { name: "Filters, 1 on" })).toHaveTextContent("1")
 
     const chips = screen.getByRole("list", { name: "Active filters" })
-    expect(within(chips).getAllByRole("listitem").map((c) => c.textContent)).toEqual(["Handling: Human handling", expect.stringMatching(/^Created between: from /)])
-    fireEvent.click(within(chips).getByRole("button", { name: "Remove filter: Handling: Human handling" }))
+    const chip = within(chips).getAllByRole("listitem")
+    expect(chip.map((c) => c.textContent)).toEqual([expect.stringMatching(/^Created between: from /)])
+    fireEvent.click(within(chips).getByRole("button", { name: /^Remove filter: Created between/ }))
     await waitFor(() => expect(loadFunnelPageAction).toHaveBeenCalledTimes(2))
-    expect(loadFunnelPageAction.mock.calls[1]![0]).toMatchObject({ handling: "any", createdFrom: "2026-10-01" })
-    expect(screen.getByRole("button", { name: "Filters, 1 on" })).toBeInTheDocument()
+    expect(loadFunnelPageAction.mock.calls[1]![0]).toMatchObject({ createdFrom: null })
+  })
+
+  it("does not offer the conversation filters (no card list can apply them)", () => {
+    renderFunnel(initial(page([row(1)])))
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }))
+    const panel = screen.getByRole("dialog", { name: "Filter deals" })
+    expect(within(panel).queryByRole("group", { name: "Handling" })).toBeNull()
+    expect(within(panel).queryByText("Channel")).toBeNull()
   })
 
   it("drops the draft when the popover closes without Apply", () => {
     renderFunnel(initial(page([row(1)])))
     fireEvent.click(screen.getByRole("button", { name: "Filters" }))
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Filter deals" })).getByRole("radio", { name: "AI active" }))
+    fireEvent.change(within(screen.getByRole("dialog", { name: "Filter deals" })).getByLabelText("From"), { target: { value: "2026-10-01" } })
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Filter deals" }), { key: "Escape" })
     expect(screen.queryByRole("dialog", { name: "Filter deals" })).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Filters" }))
-    expect(within(within(screen.getByRole("dialog", { name: "Filter deals" })).getByRole("group", { name: "Handling" })).getByRole("radio", { name: "Any" })).toBeChecked()
+    expect(within(screen.getByRole("dialog", { name: "Filter deals" })).getByLabelText("From")).toHaveValue("")
     expect(loadFunnelPageAction).not.toHaveBeenCalled()
     expect(screen.queryByRole("list", { name: "Active filters" })).toBeNull()
   })
 
   it("clears every popover filter from the popover and keeps the stage", async () => {
     loadFunnelPageAction.mockResolvedValue(ok(page([row(1)])))
-    const filters = { ...DEFAULT_FILTERS, stages: [stage(2).id], channel: "sms" as const, openConversation: "yes" as const }
+    const filters = { ...DEFAULT_FILTERS, stages: [stage(2).id], assignee: id(9), createdFrom: "2026-10-01" }
     renderFunnel(initial(page([row(1)]), { state: state({ filters }) }))
     expect(within(screen.getByRole("list", { name: "Active filters" })).getAllByRole("listitem")).toHaveLength(2)
     fireEvent.click(screen.getByRole("button", { name: "Filters, 2 on" }))
     fireEvent.click(within(screen.getByRole("dialog", { name: "Filter deals" })).getByRole("button", { name: "Clear all" }))
     await waitFor(() => expect(loadFunnelPageAction).toHaveBeenCalledTimes(1))
-    expect(loadFunnelPageAction.mock.calls[0]![0]).toMatchObject({ stages: [stage(2).id], channel: null, openConversation: "any" })
+    expect(loadFunnelPageAction.mock.calls[0]![0]).toMatchObject({ stages: [stage(2).id], assignee: null, createdFrom: null })
     expect(screen.queryByRole("list", { name: "Active filters" })).toBeNull()
     expect(screen.getByRole("button", { name: "Filters" })).toBeInTheDocument()
   })
 
   it("clears everything from the chips row", async () => {
     loadFunnelPageAction.mockResolvedValue(ok(page([row(1)])))
-    renderFunnel(initial(page([row(1)]), { state: state({ filters: { ...DEFAULT_FILTERS, stages: [stage(2).id], channel: "sms" } }) }))
+    renderFunnel(initial(page([row(1)]), { state: state({ filters: { ...DEFAULT_FILTERS, stages: [stage(2).id], createdFrom: "2026-10-01" } }) }))
     const chipsRow = screen.getByRole("list", { name: "Active filters" }).parentElement!
     fireEvent.click(within(chipsRow).getByRole("button", { name: "Clear all" }))
     await waitFor(() => expect(loadFunnelPageAction).toHaveBeenCalledTimes(1))
@@ -208,9 +218,9 @@ describe("FunnelView URL state", () => {
   })
 
   it("exports with the current filters", () => {
-    renderFunnel(initial(page([row(1)]), { state: state({ filters: { ...DEFAULT_FILTERS, channel: "sms" }, maskPhone: true }) }))
+    renderFunnel(initial(page([row(1)]), { state: state({ filters: { ...DEFAULT_FILTERS, createdFrom: "2026-10-01" }, maskPhone: true }) }))
     const link = screen.getByRole("link", { name: /Export CSV/ })
-    expect(link.getAttribute("href")).toBe("/funnel/export?channel=sms&mask=1")
+    expect(link.getAttribute("href")).toBe("/funnel/export?from=2026-10-01&mask=1")
   })
 })
 
@@ -231,7 +241,7 @@ describe("FunnelView load more", () => {
 
   it("offers to keep looking when a partial first page is empty", async () => {
     loadFunnelPageAction.mockResolvedValueOnce(ok(page([row(7)])))
-    renderFunnel(initial(page([], { partial: true, hasMore: true, nextCursor: "c1" }), { state: state({ filters: { ...DEFAULT_FILTERS, channel: "sms" } }) }))
+    renderFunnel(initial(page([], { partial: true, hasMore: true, nextCursor: "c1" }), { state: state({ filters: { ...DEFAULT_FILTERS, createdFrom: "2026-10-01" } }) }))
     expect(screen.queryByText("Nothing matches these filters")).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Load more" }))
     await waitFor(() => expect(within(table()).getByText("Ana 7")).toBeInTheDocument())
@@ -662,6 +672,14 @@ describe("FunnelView presentation", () => {
   it("shows the handling with the glossary words", () => {
     renderFunnel(initial(page([row(1, { conversation: { ...row(1).conversation!, handling: "human" } })]), { state: state({ deal: row(1).cardId }) }))
     expect(within(dialog()).getByText("WhatsApp · Human handling")).toBeInTheDocument()
+  })
+
+  it("asks for the deal's conversation when the list row has none", async () => {
+    const r = row(1)
+    loadFunnelDealConversationAction.mockResolvedValueOnce(ok({ ...r.conversation!, channel: "sms", handling: "human" }))
+    renderFunnel(initial(page([{ ...r, conversation: null }]), { state: state({ deal: r.cardId }) }))
+    expect(await within(dialog()).findByText("SMS · Human handling")).toBeInTheDocument()
+    expect(loadFunnelDealConversationAction).toHaveBeenCalledWith(r.cardId)
   })
 })
 

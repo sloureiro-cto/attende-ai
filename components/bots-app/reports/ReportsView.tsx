@@ -30,7 +30,7 @@ import { KpiTile } from "./KpiTile"
 import { HonestyNote, NotMeasured } from "./NotMeasured"
 import { OutcomesCard } from "./OutcomesCard"
 import { ReportsFilters } from "./ReportsFilters"
-import { ReportsBlocked, ReportsError, ReportsFilteredEmpty, ReportsFirstTime, ReportsInvalidFilters, ReportsSkeleton } from "./ReportsStates"
+import { ReportsBlocked, ReportsError, ReportsFilteredEmpty, ReportsFirstTime, ReportsInvalidFilters, ReportsPreparing, ReportsSkeleton } from "./ReportsStates"
 import { type ReportsI18n, useAttendeReportsT } from "./useAttendeReportsT"
 import { useReportData } from "./useReportData"
 import { PageLayout } from "../ui/PageLayout"
@@ -88,6 +88,7 @@ export function ReportsView({ initial }: Props) {
     else if (error.status === 400) body = <ReportsInvalidFilters t={t} onReset={reset} />
     else body = <ReportsError t={t} onRetry={reload} code={error.reference} />
   } else if (!data) body = <ReportsSkeleton />
+  else if (overview?.status?.state === "preparing") body = <ReportsPreparing t={t} />
   else if (overview && isEmptyOverview(overview)) body = hasFilters ? <ReportsFilteredEmpty t={t} onReset={reset} /> : <ReportsFirstTime t={t} />
   else if (overview) {
     const range = formatDayRange(overview.range.from, overview.range.to, language)

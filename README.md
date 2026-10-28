@@ -8,9 +8,8 @@ Attende-ai talks to two APIs, always with the signed-in user's token (`session.a
 
 - the **Attende API**, served by this app (route handlers in `app/api/`, domain code in `server/`, moved from
   [`attend-ai-backend`](https://github.com/sloureiro-cto/attend-ai-backend)): signup and trial, plan and entitlements,
-  Stripe billing, AI agent setup and advanced automations. It has its own MongoDB (`ATTENDE_MONGODB_URI`);
-- the **JSYNQ API**: users and sign-in, workspaces, channels, inbox, contacts and cards, plus the generic CRM board
-  table (the funnel) and conversation analytics (the reports). The Attende API also calls it, only through routes
+  Stripe billing, AI agent setup, advanced automations, the funnel and the reports. It has its own MongoDB (`ATTENDE_MONGODB_URI`);
+- the **JSYNQ API**: users and sign-in, workspaces, channels, inbox, contacts and cards. The Attende API also calls it, only through routes
   that exist on JSYNQ today (no partner API): JSYNQ's public signup routes, and its user routes with the user's token
   or one the server mints with `AUTH_SECRET`. The full list, per feature, is in
   [`docs/jsynq-apis-used.md`](docs/jsynq-apis-used.md), with the operator steps JSYNQ needs.
@@ -23,7 +22,7 @@ A running JSYNQ API (and access to its MongoDB, for sign-in) and an Attende Mong
 | --- | --- |
 | Attende API | Served here; server actions call its route handlers in process (`callAttende` in `lib/attende/serverApi.ts`), with the user's token, same paths and bodies as over HTTP. Optional `ATTENDE_API_URL` (base including `/api`) sends those calls over HTTP to another deployment instead. |
 | `ATTENDE_MONGODB_URI` | The Attende database (plans, signups, subscriptions, entitlements, usage counters, agent pauses, agent setups, automations). Not the JSYNQ database. |
-| `BACKEND_URL` | JSYNQ API base URL used on the server (server components, server actions, route handlers). The funnel reads `/crm/boards/default` and `/crm/boards/:id/table*` and moves deals with `PATCH /crm/cards/:id/column`; the reports read `/conversation-analytics/*`. |
+| `BACKEND_URL` | JSYNQ API base URL used on the server (server components, server actions, route handlers). The funnel's deal details (contact, checklist, comments, attachments, stages settings) call it directly; the funnel table and the reports go through the Attende API (`/api/attende/funnel*`, `/api/attende/reports/*`). |
 | `NEXT_PUBLIC_BACKEND_URL` | Same API as seen from the browser (direct uploads, realtime). Inlined at build time. |
 | `MONGODB_URI` | JSYNQ MongoDB. NextAuth (`@auth/mongodb-adapter`) and a few server actions read it. |
 | `AUTH_SECRET` | Encrypts the session cookie and signs the API token sent to the JSYNQ API. Must match the secret the API verifies. The Attende API signs the same token (`lib/auth/apiToken.ts`) to act as a member when nobody is signed in (start-trial, Stripe webhooks, crons). |
@@ -83,8 +82,10 @@ Errors have one shape: `{error, code, message, reference?, details?}`; agent err
 | POST | `/api/attende/limits/check`, `/api/attende/usage/outbound` | user + workspace (the app's own plan checks before channel, invite and send actions) |
 | GET/POST/PATCH/DELETE | `/api/attende/agents/*` (templates, from-template, `:id`, setup, go-live, pause, test, knowledge) | user + workspace + plan |
 | GET/POST/PATCH/DELETE | `/api/messaging-automations/advanced*` (list, create, preview, `:id`, stats, stats/series) | user + workspace + plan |
+| GET/PATCH | `/api/attende/funnel` (deals), `/funnel/stages`, `/funnel/contacts`, `/funnel/export.csv`, `PATCH /funnel/:cardId/stage`, `/funnel/:cardId/conversation` | user + workspace + plan (JSYNQ checks board access with the user's token) |
+| GET | `/api/attende/reports/overview`, `/reports/agents`, `/reports/outcomes` | user + workspace + plan |
 | POST | `/api/stripe/webhook` | Stripe signature (`STRIPE_WEBHOOK_SECRET`) |
-| GET | `/api/cron/billing-reconcile` (every 15 min), `/api/cron/agent-sweeper` (hourly) | `Authorization: Bearer <CRON_SECRET>` (Vercel Cron, `vercel.json`) |
+| GET | `/api/cron/billing-reconcile` (every 15 min), `/api/cron/agent-sweeper` (hourly), `/api/cron/reports` (every 10 min) | `Authorization: Bearer <CRON_SECRET>` (Vercel Cron, `vercel.json`) |
 
 The middleware lets these paths through without a session cookie: each route authenticates itself.
 

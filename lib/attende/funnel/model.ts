@@ -16,10 +16,16 @@ export const VIRTUALIZE_AFTER = 200
 export const MIN_SEARCH_CHARS = 2
 export const MAX_SEARCH_CHARS = 80
 export const MAX_STAGE_FILTERS = 50
-/** The backend's CSV export stops at this many rows (`GET /attende/funnel/export.csv`). */
+/** The CSV export stops at this many rows (`GET /api/attende/funnel/export.csv`). */
 export const EXPORT_ROW_CAP = 10_000
 
 const ID_RE = /^[a-f0-9]{24}$/i
+
+/**
+ * Channel, open-conversation and AI/human handling filters need each card's conversation, and no JSYNQ card list
+ * returns it (`docs/jsynq-apis-used.md`). Off: the popover hides them and links that carry them are read without them.
+ */
+export const CONVERSATION_FILTERS_AVAILABLE: boolean = false
 
 export type FunnelFilters = {
   stages: string[]
@@ -89,9 +95,9 @@ export function parseFunnelParams(params: Params): FunnelUrlState {
       assignee: readId(params, "assignee"),
       label: readId(params, "label"),
       source: readId(params, "source"),
-      channel: (FUNNEL_CHANNELS as readonly string[]).includes(channelRaw ?? "") ? (channelRaw as FunnelChannel) : null,
-      openConversation: open === "yes" || open === "no" ? open : "any",
-      handling: handling === "ai" || handling === "human" ? handling : "any",
+      channel: CONVERSATION_FILTERS_AVAILABLE && (FUNNEL_CHANNELS as readonly string[]).includes(channelRaw ?? "") ? (channelRaw as FunnelChannel) : null,
+      openConversation: CONVERSATION_FILTERS_AVAILABLE && (open === "yes" || open === "no") ? open : "any",
+      handling: CONVERSATION_FILTERS_AVAILABLE && (handling === "ai" || handling === "human") ? handling : "any",
       createdFrom: isDay(from) ? from : null,
       createdTo: isDay(to) ? to : null,
       sort: read(params, "sort") === "updated_asc" ? "updated_asc" : "updated_desc",

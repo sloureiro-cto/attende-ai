@@ -3,10 +3,11 @@ import type { AttendeActionError, AttendeActionResult } from "./result"
 
 /**
  * Server-side clients for the two APIs this app calls with the signed-in user's token (`session.apiToken`, as Bearer):
- * - `attende*`: the Attende API: signup, entitlements, billing portal, agents, advanced automations. It is served by this
+ * - `attende*`: the Attende API: signup, entitlements, billing portal, agents, advanced automations, the funnel and the
+ *   reports. It is served by this
  *   app (`app/api/attende/*`, `app/api/messaging-automations/advanced*`, code in `server/`) and called in process; set
  *   `ATTENDE_API_URL` only to call another deployment over HTTP instead;
- * - `jsynq*`: generic JSYNQ endpoints (`BACKEND_URL`): the CRM board table (funnel) and conversation analytics (reports).
+ * - `jsynq*`: generic JSYNQ endpoints (`BACKEND_URL`), e.g. deal attachment files.
  * Both answer errors as `{error, code, message, reference?, details?}`. These helpers never throw.
  */
 
@@ -151,12 +152,12 @@ export async function apiRequest<T>(
 export const attendeGet = <T>(path: string, query?: Query) => apiRequest<T>("attende", "GET", path, { query })
 export const attendePost = <T>(path: string, body: unknown = {}, timeoutMs?: number) =>
   apiRequest<T>("attende", "POST", path, { body, timeoutMs })
+export const attendePatch = <T>(path: string, body: unknown = {}) => apiRequest<T>("attende", "PATCH", path, { body })
 
 // --- JSYNQ generic endpoints (BACKEND_URL) -----------------------------------------------------------
 export const jsynqGet = <T>(path: string, query?: Query) => apiRequest<T>("jsynq", "GET", path, { query })
-export const jsynqPatch = <T>(path: string, body: unknown) => apiRequest<T>("jsynq", "PATCH", path, { body })
 
-/** Opens a streaming GET on JSYNQ with the user's token (CSV export, files). The caller pipes `response.body`; errors come back as `null`. */
+/** Opens a streaming GET on JSYNQ with the user's token (deal attachment files). The caller pipes `response.body`; errors come back as `null`. */
 export async function jsynqStream(path: string, query?: Query, signal?: AbortSignal): Promise<Response | null> {
   const base = apiBaseUrl("jsynq")
   const authorization = await userBearer()

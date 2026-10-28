@@ -35,9 +35,9 @@ describe("serverApi", () => {
   })
 
   it("calls JSYNQ for the generic endpoints", async () => {
-    fetchMock.mockResolvedValue(json(200, { success: true, data: { boardId: "b" } }))
-    await jsynqGet("/crm/boards/default")
-    expect(fetchMock.mock.calls[0][0]).toBe("http://jsynq.test/api/crm/boards/default")
+    fetchMock.mockResolvedValue(json(200, { success: true, data: { projects: [] } }))
+    await jsynqGet("/projects")
+    expect(fetchMock.mock.calls[0][0]).toBe("http://jsynq.test/api/projects")
   })
 
   it("keeps the backend code from `reference` or from `details.code`", async () => {

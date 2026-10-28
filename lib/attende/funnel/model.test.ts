@@ -39,9 +39,6 @@ describe("funnel URL state", () => {
       assignee: id(3),
       label: id(4),
       source: id(5),
-      channel: "sms",
-      open: "yes",
-      handling: "human",
       from: "2026-10-01",
       to: "2026-10-22",
       sort: "updated_asc",
@@ -52,6 +49,10 @@ describe("funnel URL state", () => {
     expect(state.filters.stages).toEqual([id(1), id(2)])
     expect(state).toMatchObject({ tab: "contacts", pageSize: 100, maskPhone: true, deal: id(6) })
     expect(parseFunnelParams(stateToSearchParams(state))).toEqual(state)
+  })
+
+  it("reads links without the conversation filters, which no card list can apply", () => {
+    expect(parseFunnelParams({ channel: "sms", open: "yes", handling: "human" }).filters).toMatchObject({ channel: null, openConversation: "any", handling: "any" })
   })
 
   it("keeps the URL short: defaults are omitted", () => {

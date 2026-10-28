@@ -40,13 +40,12 @@ import {
 } from "lib/attende/funnel/deal"
 import { DEFAULT_URL_STATE, filtersToApiQuery, type FunnelFilters, MAX_SEARCH_CHARS, PAGE_SIZES, parseFunnelParams, stateToSearchParams } from "lib/attende/funnel/model"
 import { cleanStageName, type ColumnStatus, columnStatusOf, isStageKind, kindOfColumnStatus, sortStages, type StageSetting } from "lib/attende/funnel/stages"
-import type { ContactsPage, FunnelPage, FunnelStage, StageKind, StagesData } from "lib/attende/funnel/types"
+import type { ContactsPage, FunnelPage, FunnelRow, FunnelStage, StageKind, StagesData } from "lib/attende/funnel/types"
 import type { AttendeActionResult } from "lib/attende/result"
-import { funnelTablePath, onBoardResult } from "lib/attende/funnel/board"
-import { jsynqGet, jsynqPatch } from "lib/attende/serverApi"
+import { attendeGet, attendePatch } from "lib/attende/serverApi"
 
 const ID_RE = /^[a-f0-9]{24}$/i
-/** Cursors are opaque base64url tokens minted by the backend; anything else is refused before a request. */
+/** Cursors are opaque base64url tokens minted by the Attende API; anything else is refused before a request. */
 const CURSOR_RE = /^[A-Za-z0-9_\-+/=]{1,2048}$/
 
 export type FunnelOption = { id: string; name: string; color?: string | null }
@@ -61,56 +60,53 @@ const okCursor = (cursor: string | null | undefined) => cursor == null || CURSOR
 /** Never trust the client: the filters go through the same parser as the URL (ids, enums and dates validated). */
 const sanitize = (filters: FunnelFilters): FunnelFilters => parseFunnelParams(stateToSearchParams({ ...DEFAULT_URL_STATE, filters })).filters
 
-/** One page of the deals table. Pass `nextCursor` back unchanged; a `partial` page can be short (see the contract). */
+// The deals table, stages, contacts and stage moves are served by the Attende API (`GET /api/attende/funnel*`), which
+// builds them from JSYNQ's existing CRM routes with the user's token (`server/modules/funnel`). A user who cannot open
+// the workspace's CRM board gets 404 `FUNNEL_NO_BOARD`.
+
+/** One page of the deals table. Pass `nextCursor` back unchanged. */
 export async function loadFunnelPageAction(filters: FunnelFilters, args: PageArgs = {}): Promise<AttendeActionResult<FunnelPage>> {
   if (!okCursor(args.cursor)) return invalid("FUNNEL_INVALID_CURSOR")
-  const path = await funnelTablePath()
-  if (!path.success) return path
-  return onBoardResult(
-    await jsynqGet<FunnelPage>(
-      path.data,
-      filtersToApiQuery(sanitize(filters), {
-        limit: okLimit(args.limit),
-        cursor: args.cursor,
-        maskPhone: args.maskPhone,
-      })
-    )
+  return attendeGet<FunnelPage>(
+    "/attende/funnel",
+    filtersToApiQuery(sanitize(filters), { limit: okLimit(args.limit), cursor: args.cursor, maskPhone: args.maskPhone })
   )
 }
 
 /** Stages of the funnel board in board order, with (cached, up to 20 s stale) counts for the chips. */
 export async function loadFunnelStagesAction(): Promise<AttendeActionResult<StagesData>> {
-  const path = await funnelTablePath()
-  if (!path.success) return path
-  return onBoardResult(await jsynqGet<StagesData>(`${path.data}/stages`))
+  return attendeGet<StagesData>("/attende/funnel/stages")
 }
 
 /** Contact directory, ordered by name. */
 export async function loadFunnelContactsAction(q: string, args: PageArgs = {}): Promise<AttendeActionResult<ContactsPage>> {
   if (!okCursor(args.cursor)) return invalid("FUNNEL_INVALID_CURSOR")
-  const path = await funnelTablePath()
-  if (!path.success) return path
   const search = q.trim().slice(0, MAX_SEARCH_CHARS)
-  return onBoardResult(
-    await jsynqGet<ContactsPage>(`${path.data}/contacts`, {
-      q: search.length >= 2 ? search : undefined,
-      limit: okLimit(args.limit),
-      cursor: args.cursor ?? undefined,
-      maskPhone: args.maskPhone ? "true" : undefined,
-    })
-  )
+  return attendeGet<ContactsPage>("/attende/funnel/contacts", {
+    q: search.length >= 2 ? search : undefined,
+    limit: okLimit(args.limit),
+    cursor: args.cursor ?? undefined,
+    maskPhone: args.maskPhone ? "true" : undefined,
+  })
 }
 
 /**
- * Moves a deal to another stage of its board (`PATCH /crm/cards/:id/column`, the same routine as a drag on the kanban:
- * automations fire). `stage` is null when the new column has no stage info.
+ * Moves a deal to another stage of the funnel board (the CRM kanban's card update: JSYNQ records the move and fires the
+ * card-moved automations). `stage` is null when the new column has no stage info.
  */
 export async function moveFunnelDealAction(
   cardId: string,
   columnId: string
 ): Promise<AttendeActionResult<{ cardId: string; stage: FunnelStage | null }>> {
   if (!ID_RE.test(cardId) || !ID_RE.test(columnId)) return invalid("FUNNEL_INVALID_IDS")
-  return jsynqPatch<{ cardId: string; stage: FunnelStage | null }>(`/crm/cards/${cardId}/column`, { columnId })
+  return attendePatch<{ cardId: string; stage: FunnelStage | null }>(`/attende/funnel/${cardId}/stage`, { columnId })
+}
+
+/** The deal's most recent conversation (any channel), for the drawer's "open in inbox" link. `null` without one. */
+export async function loadFunnelDealConversationAction(cardId: string): Promise<AttendeActionResult<FunnelRow["conversation"]>> {
+  if (!ID_RE.test(cardId)) return invalid("FUNNEL_INVALID_IDS")
+  const res = await attendeGet<{ conversation: FunnelRow["conversation"] }>(`/attende/funnel/${cardId}/conversation`)
+  return res.success ? { success: true, data: res.data?.conversation ?? null } : res
 }
 
 /**

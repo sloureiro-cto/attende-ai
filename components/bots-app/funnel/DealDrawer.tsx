@@ -4,7 +4,7 @@ import { CloseSquare, Edit2, MessageText1 } from "iconsax-react"
 import Link from "next/link"
 import { type FormEvent, type ReactNode, useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
-import { type FunnelOption, updateFunnelDealAction } from "actions/attende/funnel"
+import { type FunnelOption, loadFunnelDealConversationAction, updateFunnelDealAction } from "actions/attende/funnel"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "components/ui/sheet"
 import { formatDateTime } from "lib/attende/format"
 import { type ContactDraft, type DealPatch, type DealRef, parseMoneyInput } from "lib/attende/funnel/deal"
@@ -163,6 +163,23 @@ export function DealDrawer(props: Props) {
     setEditingContact(false)
     setDealStatus(null)
   }, [cardId])
+
+  // The deals list carries no conversation (no JSYNQ card list returns it): the drawer asks for the deal's own.
+  const [fetched, setFetched] = useState<{ cardId: string; conversation: FunnelRow["conversation"] } | null>(null)
+  const rowConversation = row?.conversation ?? null
+  useEffect(() => {
+    if (!cardId || rowConversation) return
+    let alive = true
+    void loadFunnelDealConversationAction(cardId)
+      .then((res) => {
+        if (alive && res.success) setFetched({ cardId, conversation: res.data })
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [cardId, rowConversation])
+  const conversation = rowConversation ?? (fetched && fetched.cardId === cardId ? fetched.conversation : null)
 
   const name = row ? rowName(row) || t("unnamed") : t("drawerTitle")
   const myFeedback = row && feedback?.cardId === row.cardId ? feedback : null
@@ -356,15 +373,15 @@ export function DealDrawer(props: Props) {
                   />
                 </Detail>
                 <Detail label={t("drawerConversation")}>
-                  {row.conversation ? (
+                  {conversation ? (
                     <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                       <span className="flex min-w-0 flex-col">
-                        <span className="truncate text-neutral-900">{t("conversationSummary", { channel: t(CHANNEL_KEY[row.conversation.channel]), handling: t(HANDLING_KEY[row.conversation.handling]) })}</span>
+                        <span className="truncate text-neutral-900">{t("conversationSummary", { channel: t(CHANNEL_KEY[conversation.channel]), handling: t(HANDLING_KEY[conversation.handling]) })}</span>
                         <span className="truncate text-body-12 text-neutral-500">
-                          {formatRelativeTime(row.conversation.lastMessageAt ?? row.lastMessageAt, now, language) || t("noMessages")}
+                          {formatRelativeTime(conversation.lastMessageAt ?? row.lastMessageAt, now, language) || t("noMessages")}
                         </span>
                       </span>
-                      <Link href={inboxHref(row.conversation)} className={actionClass({ size: "sm", className: "shrink-0" })}>
+                      <Link href={inboxHref(conversation)} className={actionClass({ size: "sm", className: "shrink-0" })}>
                         <MessageText1 size={15} aria-hidden />
                         {t("drawerOpenConversation")}
                       </Link>

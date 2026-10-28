@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "components/ui/popover"
 import { formatDate, formatNumber } from "lib/attende/format"
 import {
   activeSecondaryFilters,
+  CONVERSATION_FILTERS_AVAILABLE,
   CLEAR_SECONDARY_FILTERS,
   clearSecondaryFilter,
   FUNNEL_COLUMNS,
@@ -216,19 +217,22 @@ export function FiltersPopover({ filters, options, t, tn, onApply }: FiltersPopo
                 />
               )}
             </Field>
-            <Field label={t("filterChannel")}>
-              {() => (
-                <Picker
-                  label={t("filterChannel")}
-                  value={shown(channelOptions, draft.channel)}
-                  options={channelOptions}
-                  selected={draft.channel ?? ANY}
-                  onSelect={(v) => set({ channel: v === ANY ? null : (v as FunnelChannel) })}
-                />
-              )}
-            </Field>
+            {CONVERSATION_FILTERS_AVAILABLE && (
+              <Field label={t("filterChannel")}>
+                {() => (
+                  <Picker
+                    label={t("filterChannel")}
+                    value={shown(channelOptions, draft.channel)}
+                    options={channelOptions}
+                    selected={draft.channel ?? ANY}
+                    onSelect={(v) => set({ channel: v === ANY ? null : (v as FunnelChannel) })}
+                  />
+                )}
+              </Field>
+            )}
           </Group>
 
+          {CONVERSATION_FILTERS_AVAILABLE && (
           <Group title={t("filterGroupConversation")}>
             <Segmented
               name="funnel-open-conversation"
@@ -253,6 +257,7 @@ export function FiltersPopover({ filters, options, t, tn, onApply }: FiltersPopo
               onChange={(handling) => set({ handling })}
             />
           </Group>
+          )}
 
           <Group title={t("filterDates")}>
             <Field label={t("dateFrom")}>

@@ -206,6 +206,19 @@ describe("ReportsView states", () => {
     expect(screen.queryByTestId("activity-chart")).toBeNull()
   })
 
+  it("says the reports are being prepared, never zeros, until the first sync finished", () => {
+    render(<ReportsView initial={initial({ ...overview(), status: { state: "preparing", lastSyncAt: null } })} />)
+    expect(screen.getByText("Preparing your reports")).toBeInTheDocument()
+    expect(screen.queryByTestId("kpi-conversations")).toBeNull()
+    expect(screen.queryByText("No numbers for this period yet")).toBeNull()
+  })
+
+  it("shows the numbers once the first sync finished", () => {
+    render(<ReportsView initial={initial({ ...overview(), status: { state: "ready", lastSyncAt: "2026-10-22T10:00:00.000Z" } })} />)
+    expect(screen.getByTestId("kpi-conversations")).toBeInTheDocument()
+    expect(screen.queryByText("Preparing your reports")).toBeNull()
+  })
+
   it("explains an empty filtered view and offers to reset", () => {
     render(<ReportsView initial={initial(emptyOverview(), null, { ...FILTERS, channel: "sms" })} />)
     expect(screen.getByText("No activity for these filters")).toBeInTheDocument()

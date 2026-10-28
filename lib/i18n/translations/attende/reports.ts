@@ -370,6 +370,12 @@ const entries = {
   },
 
   // --- states ---
+  preparingTitle: { en: "Preparing your reports", pt: "Calculando seus relatórios", es: "Calculando tus informes" },
+  preparingHint: {
+    en: "We are reading the last 90 days of your conversations for the first time. This can take a few minutes on busy accounts; the numbers show up here as soon as they are complete.",
+    pt: "Estamos lendo pela primeira vez os últimos 90 dias das suas conversas. Em contas movimentadas isso leva alguns minutos; os números aparecem aqui assim que estiverem completos.",
+    es: "Estamos leyendo por primera vez los últimos 90 días de tus conversaciones. En cuentas con mucho movimiento tarda unos minutos; los números aparecen aquí en cuanto estén completos.",
+  },
   emptyTitle: { en: "No numbers for this period yet", pt: "Ainda não há números neste período", es: "Aún no hay números en este período" },
   emptyHint: {
     en: "Reports are rebuilt every 10 minutes from your conversations. If you just started, check back shortly or pick a longer period.",

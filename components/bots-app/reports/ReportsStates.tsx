@@ -1,6 +1,6 @@
 "use client"
 
-import { Chart21, Danger, Lock1, SearchStatus } from "iconsax-react"
+import { Chart21, Danger, Lock1, SearchStatus, Timer1 } from "iconsax-react"
 import Link from "next/link"
 import type { AttendeReportsT } from "./useAttendeReportsT"
 import { BOTS_BRAND } from "../brand"
@@ -69,6 +69,15 @@ export function ReportsBlocked({ t }: { t: AttendeReportsT }) {
         </Link>
       }
     />
+  )
+}
+
+/** The workspace's first sync has not finished: the numbers would be incomplete, so none are shown (never zeros). */
+export function ReportsPreparing({ t }: { t: AttendeReportsT }) {
+  return (
+    <div role="status" data-testid="reports-preparing">
+      <EmptyState icon={<Timer1 size={22} />} title={t("preparingTitle")} description={t("preparingHint")} />
+    </div>
   )
 }
 
