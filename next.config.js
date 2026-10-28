@@ -29,6 +29,8 @@ const config = {
     return [{ source: "/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] }]
   },
   experimental: {
+    // The Attende API (server/) runs these on Node as plain packages instead of bundling them.
+    serverComponentsExternalPackages: ["mongoose", "stripe", "nodemailer"],
     serverActions: {
       bodySizeLimit: "100mb",
     },
