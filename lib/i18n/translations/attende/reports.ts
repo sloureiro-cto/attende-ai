@@ -21,9 +21,14 @@ const entries = {
   periodValue: { en: "{range} (UTC days)", pt: "{range} (dias em UTC)", es: "{range} (días en UTC)" },
   periodCompare: { en: "Compared with {range}", pt: "Comparado com {range}", es: "Comparado con {range}" },
   freshness: {
-    en: "Data refreshed every 10 minutes · fetched at {time}",
-    pt: "Dados atualizados a cada 10 minutos · consultados às {time}",
-    es: "Datos actualizados cada 10 minutos · consultados a las {time}",
+    en: "Updated about every 10 min · last update at {time}",
+    pt: "Atualizado a cada ~10 min · última atualização às {time}",
+    es: "Actualizado cada ~10 min · última actualización a las {time}",
+  },
+  freshnessNoSync: {
+    en: "Updated about every 10 min",
+    pt: "Atualizado a cada ~10 min",
+    es: "Actualizado cada ~10 min",
   },
   freshnessInfoAria: { en: "How up to date is this report?", pt: "Quão atualizado está este relatório?", es: "¿Qué tan actualizado está este informe?" },
   freshnessHint: {
@@ -351,7 +356,11 @@ const entries = {
   },
   notMeasuredOptOuts: { en: "Customers who asked to stop receiving messages", pt: "Clientes que pediram para parar de receber mensagens", es: "Clientes que pidieron dejar de recibir mensajes" },
   notMeasuredCsat: { en: "Customer satisfaction score", pt: "Nota de satisfação do cliente", es: "Nota de satisfacción del cliente" },
-  notMeasuredConfirmed: { en: "Problems confirmed as solved", pt: "Problemas confirmados como resolvidos", es: "Problemas confirmados como resueltos" },
+  notMeasuredConfirmed: {
+    en: "AI resolution confirmed by the customer (the AI resolution rate above is an estimate)",
+    pt: "Resolução pela IA confirmada pelo cliente (a taxa de resolução pela IA acima é uma estimativa)",
+    es: "Resolución por la IA confirmada por el cliente (la tasa de resolución por la IA de arriba es una estimación)",
+  },
   notMeasuredAfterHours: {
     en: "Messages outside business hours (set your business hours to see this)",
     pt: "Mensagens fora do horário comercial (configure o horário comercial para ver)",
@@ -371,6 +380,11 @@ const entries = {
 
   // --- states ---
   preparingTitle: { en: "Preparing your reports", pt: "Calculando seus relatórios", es: "Calculando tus informes" },
+  preparingNote: {
+    en: "Until then, nothing is shown, so you never see incomplete numbers. Reports refresh about every 10 minutes.",
+    pt: "Até lá, nada é exibido, para você nunca ver números incompletos. Os relatórios são atualizados a cada ~10 min.",
+    es: "Hasta entonces no se muestra nada, para que nunca veas números incompletos. Los informes se actualizan cada ~10 min.",
+  },
   preparingHint: {
     en: "We are reading the last 90 days of your conversations for the first time. This can take a few minutes on busy accounts; the numbers show up here as soon as they are complete.",
     pt: "Estamos lendo pela primeira vez os últimos 90 dias das suas conversas. Em contas movimentadas isso leva alguns minutos; os números aparecem aqui assim que estiverem completos.",

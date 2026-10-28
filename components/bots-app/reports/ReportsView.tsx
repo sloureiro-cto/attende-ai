@@ -41,14 +41,14 @@ type Props = {
 
 /**
  * The period on screen and how fresh it is, always in the page bar. It describes the numbers being shown (the
- * loaded report), so while new filters load it keeps naming the window that is still on screen. `generatedAt` is
- * when the API answered, not when the data was last aggregated (the API does not return that), so it is worded
- * as "fetched at".
+ * loaded report), so while new filters load it keeps naming the window that is still on screen. The time is the end
+ * of the last completed sync (`status.lastSyncAt`); without one (still preparing) only the refresh rhythm is said.
  */
 function PeriodSummary({ overview, filters, i18n }: { overview: OverviewResponse | null; filters: ReportFilters; i18n: ReportsI18n }) {
   const { t, language } = i18n
   const range = overview?.range ?? filters
-  const fetchedAt = overview ? formatTime(overview.generatedAt, language) : ""
+  const lastSyncAt = overview?.status?.lastSyncAt ?? null
+  const updatedAt = lastSyncAt ? formatTime(lastSyncAt, language) : ""
   return (
     <div className="flex flex-col gap-1 text-body-12 text-neutral-700 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4" data-testid="report-period">
       <span className="inline-flex items-center gap-1.5">
@@ -59,10 +59,10 @@ function PeriodSummary({ overview, filters, i18n }: { overview: OverviewResponse
         </span>
       </span>
       {overview && <span>{t("periodCompare", { range: formatDayRange(overview.previousRange.from, overview.previousRange.to, language) })}</span>}
-      {overview && fetchedAt && (
+      {overview && (
         <span className="inline-flex items-center gap-1">
           <Refresh size={14} aria-hidden className="shrink-0" />
-          {t("freshness", { time: fetchedAt })}
+          {updatedAt ? t("freshness", { time: updatedAt }) : t("freshnessNoSync")}
           <InfoTip ariaLabel={t("freshnessInfoAria")}>{t("freshnessHint")}</InfoTip>
         </span>
       )}
@@ -88,7 +88,13 @@ export function ReportsView({ initial }: Props) {
     else if (error.status === 400) body = <ReportsInvalidFilters t={t} onReset={reset} />
     else body = <ReportsError t={t} onRetry={reload} code={error.reference} />
   } else if (!data) body = <ReportsSkeleton />
-  else if (overview?.status?.state === "preparing") body = <ReportsPreparing t={t} />
+  else if (overview?.status?.state === "preparing")
+    body = (
+      <div className="flex flex-col gap-6">
+        <ReportsPreparing t={t} />
+        <NotMeasured keys={overview.notAvailable} t={t} />
+      </div>
+    )
   else if (overview && isEmptyOverview(overview)) body = hasFilters ? <ReportsFilteredEmpty t={t} onReset={reset} /> : <ReportsFirstTime t={t} />
   else if (overview) {
     const range = formatDayRange(overview.range.from, overview.range.to, language)

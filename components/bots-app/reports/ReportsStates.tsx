@@ -76,7 +76,12 @@ export function ReportsBlocked({ t }: { t: AttendeReportsT }) {
 export function ReportsPreparing({ t }: { t: AttendeReportsT }) {
   return (
     <div role="status" data-testid="reports-preparing">
-      <EmptyState icon={<Timer1 size={22} />} title={t("preparingTitle")} description={t("preparingHint")} />
+      <EmptyState
+        icon={<Timer1 size={22} />}
+        title={t("preparingTitle")}
+        // Two whole sentences, each translated on its own.
+        description={`${t("preparingHint")} ${t("preparingNote")}`}
+      />
     </div>
   )
 }

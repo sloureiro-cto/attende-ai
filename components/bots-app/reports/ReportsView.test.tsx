@@ -107,7 +107,7 @@ describe("ReportsView numbers", () => {
     const bar = screen.getByTestId("report-period")
     expect(bar).toHaveTextContent(/Period: Oct 1\s–\s7, 2026 \(UTC days\)/)
     expect(bar).toHaveTextContent(/Compared with Sep 24\s–\s30/)
-    expect(bar).toHaveTextContent(/Data refreshed every 10 minutes · fetched at/)
+    expect(bar).toHaveTextContent(/Updated about every 10 min/)
     expect(bar.closest("header")).not.toBeNull()
   })
 
@@ -211,12 +211,19 @@ describe("ReportsView states", () => {
     expect(screen.getByText("Preparing your reports")).toBeInTheDocument()
     expect(screen.queryByTestId("kpi-conversations")).toBeNull()
     expect(screen.queryByText("No numbers for this period yet")).toBeNull()
+    expect(screen.getByText(/Reports refresh about every 10 minutes/)).toBeInTheDocument()
+    // What is never measured is said even before the first numbers.
+    const gap = screen.getByTestId("not-measured")
+    expect(gap).toHaveTextContent(/Customer satisfaction score/)
+    expect(gap).toHaveTextContent(/AI resolution confirmed by the customer/)
+    expect(screen.getByTestId("report-period")).toHaveTextContent(/Updated about every 10 min$/)
   })
 
   it("shows the numbers once the first sync finished", () => {
     render(<ReportsView initial={initial({ ...overview(), status: { state: "ready", lastSyncAt: "2026-10-22T10:00:00.000Z" } })} />)
     expect(screen.getByTestId("kpi-conversations")).toBeInTheDocument()
     expect(screen.queryByText("Preparing your reports")).toBeNull()
+    expect(screen.getByTestId("report-period")).toHaveTextContent(/Updated about every 10 min · last update at/)
   })
 
   it("explains an empty filtered view and offers to reset", () => {
