@@ -12,14 +12,17 @@ export type CreateSignupInput = {
 }
 export type CreateSignupData = { email: string; nextStep: "verify_email" }
 
-/** JSYNQ login summary of the new account (the backend's `accessToken` is dropped on the server), plus the signup. */
+/** JSYNQ login summary of the newly verified account (JSYNQ's `PATCH /users/verify-otp`), plus the signup. */
 export type VerifySignupData = {
   id: string
   email: string
   name: string
+  image?: string | null
+  onboarded?: boolean
   isVerified: boolean
   twoFactorEnabled: boolean
   workspaceId: string | null
+  stripeCustomerId?: string
   signup?: { businessName: string; planSlug: string | null; state: string }
 }
 

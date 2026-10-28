@@ -2,6 +2,7 @@
 
 import { pickData } from "actions/parseBackendEnvelope"
 import { FetchClient, HttpError } from "lib/api"
+import { attendePlanCheck } from "lib/attende/planGuard"
 import type { IInstagramSession, ResponseSlaRules } from "./types"
 
 const base = () => {
@@ -43,6 +44,9 @@ export async function createInstagramCheckoutAction(input: {
   successUrl: string
   cancelUrl: string
 }): Promise<IgActionResult<{ checkoutUrl: string; sessionId: string }>> {
+  // Attende plan (JSYNQ keeps no Attende limits): refuse before JSYNQ creates anything.
+  const plan = await attendePlanCheck("lines")
+  if (!plan.ok) return { success: false, error: plan.message }
   try {
     const raw = await FetchClient.post<unknown>(`${base()}/billing/checkout`, input)
     const data = pickData<{ checkoutUrl: string; sessionId: string }>(raw)
@@ -134,6 +138,9 @@ export async function subscribeInstagramWithPaymentMethodAction(input: {
   label: string
   paymentMethodId: string
 }): Promise<IgActionResult<{ sessionId: string }>> {
+  // Attende plan (JSYNQ keeps no Attende limits): refuse before JSYNQ creates anything.
+  const plan = await attendePlanCheck("lines")
+  if (!plan.ok) return { success: false, error: plan.message }
   try {
     const raw = await FetchClient.post<unknown>(`${base()}/billing/subscribe`, input)
     const data = pickData<{ sessionId: string }>(raw)
@@ -163,6 +170,9 @@ export async function getInstagramFreeAccountEligibilityAction(): Promise<
 
 /** Adds the workspace's free first Instagram account — no payment method needed. */
 export async function addFreeInstagramAccountAction(label: string): Promise<IgActionResult<{ sessionId: string }>> {
+  // Attende plan (JSYNQ keeps no Attende limits): refuse before JSYNQ creates anything.
+  const plan = await attendePlanCheck("lines")
+  if (!plan.ok) return { success: false, error: plan.message }
   try {
     const raw = await FetchClient.post<unknown>(`${base()}/billing/free`, { label })
     const data = pickData<{ sessionId: string }>(raw)

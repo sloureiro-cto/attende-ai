@@ -1,5 +1,6 @@
 "use server"
 
+import jwt from "jsonwebtoken"
 import { type AttendeApiResult, attendeFetch } from "lib/attende/signup/api"
 import { DEFAULT_TRIAL, parseSignupPlans, type SignupPlansResponse } from "lib/attende/signup/plans"
 import type {
@@ -10,6 +11,7 @@ import type {
   StartTrialData,
   VerifySignupData,
 } from "lib/attende/signup/types"
+import { SIGNUP_VERIFY_PROOF_PURPOSE, type SignupVerifyProofPayload } from "lib/auth/signupProof"
 
 function toResult<T>(result: AttendeApiResult<T>): SignupActionResult<T> {
   if (result.ok) return { success: true, data: result.data }
@@ -22,20 +24,21 @@ export async function getSignupPlansAction(): Promise<SignupPlansResponse> {
   return result.ok ? parseSignupPlans(result.data) : { trial: DEFAULT_TRIAL, plans: [] }
 }
 
-/** Public. Stores the pending signup and sends the e-mail code (the account itself is created by `verify`). */
+/** Public. Creates the (unverified) JSYNQ account; JSYNQ e-mails the code. 409 `USER_EXISTS_UNMANAGED`: sign in instead. */
 export async function createSignupAction(input: CreateSignupInput): Promise<SignupActionResult<CreateSignupData>> {
   return toResult(await attendeFetch<CreateSignupData>("/attende/signup", { method: "POST", body: input }))
 }
 
 /**
- * Public. Verifies the code and creates the account. The caller signs in with the e-mail and password afterwards.
- * A 409 `USER_EXISTS_UNMANAGED` means the e-mail already has an account: the person signs in with it, then starts the trial.
- * The backend also answers with an `accessToken`; it never leaves the server (the session comes from signing in).
+ * Public. Verifies the code with JSYNQ (which marks the account verified) and answers a one-minute `signupProof` the
+ * caller passes to `signIn("credentials", { signupProof })`: JSYNQ accounts made by its signup have 2FA on, so a
+ * password sign-in right after would ask for another code. The proof is signed with `AUTH_SECRET`, like the login 2FA
+ * proof, and only ever made from a verification JSYNQ just accepted.
  */
 export async function verifySignupAction(input: {
   email: string
   otp: string
-}): Promise<SignupActionResult<VerifySignupData>> {
+}): Promise<SignupActionResult<VerifySignupData & { signupProof: string }>> {
   const result = toResult(
     await attendeFetch<VerifySignupData & { accessToken?: unknown }>("/attende/signup/verify", {
       method: "POST",
@@ -44,7 +47,22 @@ export async function verifySignupAction(input: {
   )
   if (!result.success) return result
   const { accessToken: _token, ...data } = (result.data ?? {}) as VerifySignupData & { accessToken?: unknown }
-  return { success: true, data }
+  const payload: SignupVerifyProofPayload = {
+    purpose: SIGNUP_VERIFY_PROOF_PURPOSE,
+    user: {
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      image: data.image ?? null,
+      onboarded: data.onboarded ?? false,
+      isVerified: data.isVerified,
+      twoFactorEnabled: data.twoFactorEnabled,
+      workspaceId: data.workspaceId,
+      stripeCustomerId: data.stripeCustomerId,
+    },
+  }
+  const signupProof = jwt.sign(payload, process.env.AUTH_SECRET!, { expiresIn: "60s" })
+  return { success: true, data: { ...data, signupProof } }
 }
 
 /** Public. Always answers success (the backend never reveals whether the e-mail exists). */

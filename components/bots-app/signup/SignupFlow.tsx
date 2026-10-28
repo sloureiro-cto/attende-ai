@@ -4,9 +4,8 @@ import { ArrowLeft, Warning2 } from "iconsax-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { signIn, useSession } from "next-auth/react"
-import { useReducer, useRef, useState } from "react"
+import { useReducer, useState } from "react"
 import { createSignupAction, resendSignupAction, verifySignupAction } from "actions/attende/signup"
-import { loginWithPassword } from "actions/auth/loginWithPassword"
 import IconButton from "components/IconButton/IconButton"
 import VerifyOtpForm from "components/VerifyOtpForm/VerifyOtpForm"
 import {
@@ -18,7 +17,6 @@ import {
 import { normalizePlanSlug, SignupPlansResponse } from "lib/attende/signup/plans"
 import type { StartTrialData } from "lib/attende/signup/types"
 import type { SignupAccountValues } from "lib/attende/signup/validate"
-import { isLoginChallenge } from "types/auth/login"
 import { SignupAccountStep } from "./SignupAccountStep"
 import { SignupCardStep } from "./SignupCardStep"
 import { initialSignupState, signupReducer } from "./signupState"
@@ -36,15 +34,14 @@ type Props = {
 }
 
 /**
- * Account -> e-mail code -> card -> trial. The password lives only in a ref (it is needed once, to sign in after the
- * code is verified) and is never put in state, storage or the URL.
+ * Account -> e-mail code -> card -> trial. The password goes to JSYNQ once (account creation) and is never kept: after
+ * the code, the session comes from the one-minute sign-in proof the verify action returns.
  */
 export function SignupFlow({ catalog, initialPlan, resumeAtCard = false }: Props) {
   const { t, language } = useAcquisitionT()
   const router = useRouter()
   const { update } = useSession()
   const [state, dispatch] = useReducer(signupReducer, normalizePlanSlug(initialPlan), (slug) => (resumeAtCard ? { ...initialSignupState(slug), step: "card" as const } : initialSignupState(slug)))
-  const password = useRef("")
   const [error, setError] = useState<string | null>(null)
   const [emailInUse, setEmailInUse] = useState(false)
   /** The e-mail already has an account this signup did not create: sign in with it, then start the trial. */
@@ -57,7 +54,8 @@ export function SignupFlow({ catalog, initialPlan, resumeAtCard = false }: Props
 
   const fail = (reference: string | undefined, status: number) => {
     setError(t(signupErrorKey(reference, status)))
-    setEmailInUse(reference === "SIGNUP_EMAIL_IN_USE")
+    // An e-mail that already has an account (ours or JSYNQ's) gets the "sign in" link on the account step.
+    setEmailInUse(reference === "SIGNUP_EMAIL_IN_USE" || isExistingAccount(reference))
     setExistingAccount(isExistingAccount(reference))
     if (sendsBackToAccountStep(reference)) dispatch({ type: "back_to_account" })
   }
@@ -76,7 +74,6 @@ export function SignupFlow({ catalog, initialPlan, resumeAtCard = false }: Props
         planSlug,
       })
       if (!result.success) return fail(result.reference, result.status)
-      password.current = values.password
       dispatch({ type: "account_created", name: values.name.trim(), email: values.email.trim().toLowerCase(), businessName: values.businessName.trim(), planSlug })
     } catch {
       setError(t("errSIGNUP_GENERIC"))
@@ -85,30 +82,20 @@ export function SignupFlow({ catalog, initialPlan, resumeAtCard = false }: Props
     }
   }
 
-  /** `verify` creates the account (the backend answers with its login); this then signs in with the same e-mail and password. */
+  /** `verify` confirms the account in JSYNQ and answers a short sign-in proof; this signs in with it. */
   const verifyCode = async (otp: string) => {
     setBusy(true)
     setError(null)
     setExistingAccount(false)
     try {
       const verified = await verifySignupAction({ email: state.email, otp })
-      if (!verified.success) {
-        // The password typed here is not the existing account's: drop it.
-        if (isExistingAccount(verified.reference)) password.current = ""
-        return fail(verified.reference, verified.status)
-      }
+      if (!verified.success) return fail(verified.reference, verified.status)
 
-      const login = await loginWithPassword({ email: state.email, password: password.current })
-      if (!login.success || isLoginChallenge(login.data)) {
-        setError(t("otpSignInFailed"))
-        return
-      }
-      const signed = await signIn("credentials", { email: state.email, password: password.current, redirect: false })
+      const signed = await signIn("credentials", { signupProof: verified.data.signupProof, redirect: false })
       if (!signed?.ok) {
         setError(t("otpSignInFailed"))
         return
       }
-      password.current = ""
       dispatch({ type: "email_verified" })
     } catch {
       setError(t("errSIGNUP_GENERIC"))

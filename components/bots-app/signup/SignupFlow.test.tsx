@@ -1,10 +1,9 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { SignupFlow } from "./SignupFlow"
 
 const mockCreate = jest.fn()
 const mockVerify = jest.fn()
 const mockResend = jest.fn()
-const mockLogin = jest.fn()
 const mockSignIn = jest.fn()
 const mockUpdate = jest.fn()
 const mockPush = jest.fn()
@@ -21,7 +20,6 @@ class ResizeObserverStub {
 jest.mock("context/UserLanguageContext", () => ({ useUserLanguage: () => ({ userLanguage: "english" }) }))
 jest.mock("next/navigation", () => ({ useRouter: () => ({ push: mockPush, refresh: jest.fn() }) }))
 jest.mock("next-auth/react", () => ({ signIn: (...args: unknown[]) => mockSignIn(...args), useSession: () => ({ update: mockUpdate }) }))
-jest.mock("actions/auth/loginWithPassword", () => ({ loginWithPassword: (...args: unknown[]) => mockLogin(...args) }))
 jest.mock("types/auth/login", () => ({ isLoginChallenge: (data: { loginChallengeId?: string }) => Boolean(data?.loginChallengeId) }))
 jest.mock("actions/attende/signup", () => ({
   createSignupAction: (...args: unknown[]) => mockCreate(...args),
@@ -57,15 +55,14 @@ const fillAccount = () => {
 
 beforeEach(() => {
   jest.clearAllMocks()
-  mockLogin.mockResolvedValue({ success: true, data: { id: "u1" } })
   mockSignIn.mockResolvedValue({ ok: true })
   mockUpdate.mockResolvedValue(undefined)
 })
 
 describe("SignupFlow", () => {
-  it("walks account -> code -> card and signs in after the code", async () => {
+  it("walks account -> code -> card and signs in with the verify proof after the code", async () => {
     mockCreate.mockResolvedValue({ success: true, data: { email: "maria@empresa.com.br", nextStep: "verify_email" } })
-    mockVerify.mockResolvedValue({ success: true, data: { id: "u1" } })
+    mockVerify.mockResolvedValue({ success: true, data: { id: "u1", signupProof: "proof-jwt" } })
     render(<SignupFlow catalog={catalog} initialPlan="growth" />)
 
     fillAccount()
@@ -75,7 +72,21 @@ describe("SignupFlow", () => {
     fireEvent.click(screen.getByText("submit code"))
     await screen.findByText("card step for attende_growth")
     expect(mockVerify).toHaveBeenCalledWith({ email: "maria@empresa.com.br", otp: "123456" })
-    expect(mockSignIn).toHaveBeenCalledWith("credentials", expect.objectContaining({ email: "maria@empresa.com.br", password: "Segura#1", redirect: false }))
+    // JSYNQ accounts have 2FA on: no password sign-in (it would ask for another code), the proof instead.
+    expect(mockSignIn).toHaveBeenCalledWith("credentials", { signupProof: "proof-jwt", redirect: false })
+  })
+
+  it("an e-mail that already has a JSYNQ account gets the sign-in link on the account step", async () => {
+    mockCreate.mockResolvedValue({ success: false, status: 409, reference: "USER_EXISTS_UNMANAGED" })
+    render(<SignupFlow catalog={catalog} initialPlan="growth" />)
+    fillAccount()
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent("This e-mail already has an account. Sign in with it to start your trial.")
+    expect(within(alert).getByRole("link", { name: "Sign in" })).toHaveAttribute(
+      "href",
+      `/login?callbackUrl=${encodeURIComponent("/signup?existing=1&plan=attende_growth")}`
+    )
+    expect(screen.queryByText(/otp for/)).not.toBeInTheDocument()
   })
 
   it("sends an e-mail that already has an account to sign in, then back to the card step", async () => {
@@ -95,8 +106,7 @@ describe("SignupFlow", () => {
       "href",
       `/login?callbackUrl=${encodeURIComponent("/signup?existing=1&plan=attende_growth")}`
     )
-    // No sign-in with the password typed here, and no code form to retry.
-    expect(mockLogin).not.toHaveBeenCalled()
+    // No sign-in, and no code form to retry.
     expect(mockSignIn).not.toHaveBeenCalled()
     expect(screen.queryByText("submit code")).not.toBeInTheDocument()
   })
@@ -142,7 +152,7 @@ describe("SignupFlow", () => {
 
   it("tells the user to sign in when the account verified but the session could not start", async () => {
     mockCreate.mockResolvedValue({ success: true, data: { email: "m@x.com", nextStep: "verify_email" } })
-    mockVerify.mockResolvedValue({ success: true, data: { id: "u1" } })
+    mockVerify.mockResolvedValue({ success: true, data: { id: "u1", signupProof: "proof-jwt" } })
     mockSignIn.mockResolvedValue({ ok: false })
     render(<SignupFlow catalog={catalog} />)
     fillAccount()

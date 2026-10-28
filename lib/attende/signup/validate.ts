@@ -14,7 +14,8 @@ export function passwordProblem(password: string): SignupTranslationKey | null {
   if (password.length < PASSWORD_MIN) return "signupPasswordTooShort"
   if (password.length > PASSWORD_MAX) return "signupPasswordTooLong"
   if (!/\d/.test(password)) return "signupPasswordNeedsNumber"
-  if (!/[^A-Za-z0-9]/.test(password)) return "signupPasswordNeedsSymbol"
+  // Same symbol set as JSYNQ's signup (`POST /api/users`).
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) return "signupPasswordNeedsSymbol"
   return null
 }
 

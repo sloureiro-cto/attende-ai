@@ -2,6 +2,7 @@
 
 import { pickData } from "actions/parseBackendEnvelope"
 import { FetchClient, HttpError } from "lib/api"
+import { attendePlanCheck } from "lib/attende/planGuard"
 import type { ISmsSession, ResponseSlaRules, SmsSessionStatus } from "./types"
 
 const base = () => {
@@ -57,6 +58,9 @@ export async function createSmsSessionAction(input: {
   accountSid?: string
   authToken?: string
 }): Promise<SmsActionResult<ISmsSession>> {
+  // Attende plan (JSYNQ keeps no Attende limits): refuse before JSYNQ creates anything.
+  const plan = await attendePlanCheck("lines")
+  if (!plan.ok) return { success: false, error: plan.message }
   try {
     const body: Record<string, unknown> = {
       label: input.label.trim(),

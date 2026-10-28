@@ -10,6 +10,7 @@ import {
 } from "@/lib/whatsapp-lite/whatsappMediaLimits"
 import { pickData, pickMeta } from "actions/parseBackendEnvelope"
 import { FetchClient, HttpError } from "lib/api"
+import { attendePlanCheck, attendeRecordOutbound } from "lib/attende/planGuard"
 import { normalizeWhatsAppPhoneInput } from "./phoneNormalize"
 import type { ConversationTimelineEntry, PaginatedMeta, WhatsAppConversation, WhatsAppMessage } from "./types"
 
@@ -108,6 +109,9 @@ export async function sendWhatsAppTemplateAction(
     bodyPreview?: string
   }
 ): Promise<ConvActionResult<WhatsAppMessage>> {
+  // Attende plan: the trial caps sent messages and an ended plan sends nothing (JSYNQ keeps no Attende limits).
+  const plan = await attendePlanCheck("outbound")
+  if (!plan.ok) return { success: false, error: plan.message }
   try {
     const raw = await FetchClient.post<unknown>(
       `${base()}/sessions/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(
@@ -124,6 +128,7 @@ export async function sendWhatsAppTemplateAction(
     if (!data?._id) {
       return { success: false, error: "Invalid response from server" }
     }
+    await attendeRecordOutbound()
     return { success: true, data }
   } catch (e: unknown) {
     if (e instanceof HttpError) return { success: false, error: e.message }
@@ -137,6 +142,9 @@ export async function sendWhatsAppMessageAction(
   text: string,
   options?: { replyToWhatsAppMessageId?: string }
 ): Promise<SendWhatsAppMessageResult> {
+  // Attende plan: the trial caps sent messages and an ended plan sends nothing (JSYNQ keeps no Attende limits).
+  const plan = await attendePlanCheck("outbound")
+  if (!plan.ok) return { success: false, error: plan.message }
   try {
     const body: Record<string, string> = { text }
     const replyId = options?.replyToWhatsAppMessageId?.trim()
@@ -154,6 +162,7 @@ export async function sendWhatsAppMessageAction(
     }
     const envelope = raw as Record<string, unknown> | undefined
     const executionId = typeof envelope?.executionId === "string" ? envelope.executionId.trim() || undefined : undefined
+    await attendeRecordOutbound()
     return { success: true, data, executionId }
   } catch (e: unknown) {
     if (e instanceof HttpError) return { success: false, error: e.message }
@@ -309,6 +318,9 @@ export async function sendWhatsAppConversationMessageFormAction(
     outbound.append("replyToWhatsAppMessageId", replyToField)
   }
 
+  // Attende plan: the trial caps sent messages and an ended plan sends nothing (JSYNQ keeps no Attende limits).
+  const plan = await attendePlanCheck("outbound")
+  if (!plan.ok) return { success: false, error: plan.message }
   try {
     const raw = await FetchClient.postData<unknown>(
       `${base()}/sessions/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(
@@ -322,6 +334,7 @@ export async function sendWhatsAppConversationMessageFormAction(
     }
     const envelope = raw as Record<string, unknown> | undefined
     const executionId = typeof envelope?.executionId === "string" ? envelope.executionId.trim() || undefined : undefined
+    await attendeRecordOutbound()
     return { success: true, data, executionId }
   } catch (e: unknown) {
     if (e instanceof HttpError) {

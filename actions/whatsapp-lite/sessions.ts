@@ -7,6 +7,7 @@ import {
 } from "@/lib/whatsapp-lite/cloudApiCredentials"
 import { pickData } from "actions/parseBackendEnvelope"
 import { FetchClient, HttpError } from "lib/api"
+import { attendePlanCheck } from "lib/attende/planGuard"
 import { parseWhatsAppQrPollPayload, summarizeQrResponseForDebug } from "./qrResponse"
 import type { ResponseSlaRules, WhatsAppQrPollPayload, WhatsAppSession } from "./types"
 
@@ -43,6 +44,9 @@ export async function createWhatsAppSessionAction(input: {
   label: string
   syncHistory?: boolean
 }): Promise<SessionActionResult<WhatsAppSession>> {
+  // Attende plan (JSYNQ keeps no Attende limits): refuse before JSYNQ creates anything.
+  const plan = await attendePlanCheck("lines")
+  if (!plan.ok) return { success: false, error: plan.message }
   try {
     const raw = await FetchClient.post<unknown>(`${base()}/sessions`, {
       label: input.label.trim(),
@@ -97,6 +101,11 @@ export async function createEmbeddedSignupCloudApiSessionAction(input: {
   pin?: string
   pendingId?: string
 }): Promise<SessionActionResultWithRegistration<WhatsAppSession>> {
+  // Attende plan (JSYNQ keeps no Attende limits): refuse before JSYNQ creates anything.
+  if (!input.pendingId?.trim()) {
+    const plan = await attendePlanCheck("lines")
+    if (!plan.ok) return { success: false, error: plan.message }
+  }
   try {
     const pin = input.pin?.trim()
     const pendingId = input.pendingId?.trim()
@@ -132,6 +141,9 @@ export async function createCloudApiWhatsAppSessionAction(input: {
   label: string
   credentials: CloudApiCredentialsInput
 }): Promise<SessionActionResultWithRegistration<WhatsAppSession>> {
+  // Attende plan (JSYNQ keeps no Attende limits): refuse before JSYNQ creates anything.
+  const plan = await attendePlanCheck("lines")
+  if (!plan.ok) return { success: false, error: plan.message }
   try {
     const pin = normalizeCloudApiPin(input.credentials.pin)
     const raw = await FetchClient.post<unknown>(`${base()}/sessions/cloud-api`, {

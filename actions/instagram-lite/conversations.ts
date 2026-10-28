@@ -2,6 +2,7 @@
 
 import { pickData, pickMeta } from "actions/parseBackendEnvelope"
 import { FetchClient, HttpError } from "lib/api"
+import { attendePlanCheck, attendeRecordOutbound } from "lib/attende/planGuard"
 import type { IInstagramConversation, IInstagramMessage, InstagramWorkspaceTemplate, PaginatedMeta } from "./types"
 
 const base = () => {
@@ -86,6 +87,9 @@ export async function sendInstagramMessageAction(
   text?: string,
   formData?: FormData
 ): Promise<IgConvActionResult<SendInstagramMessageResult>> {
+  // Attende plan: the trial caps sent messages and an ended plan sends nothing (JSYNQ keeps no Attende limits).
+  const plan = await attendePlanCheck("outbound")
+  if (!plan.ok) return { success: false, error: plan.message }
   try {
     const url = `${base()}/sessions/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(
       conversationId
@@ -108,6 +112,7 @@ export async function sendInstagramMessageAction(
       typeof raw === "object" && raw !== null && "captionFailed" in raw
         ? Boolean((raw as { captionFailed?: boolean }).captionFailed)
         : false
+    await attendeRecordOutbound(list.length)
     return { success: true, data: { messages: list, captionFailed } }
   } catch (e: unknown) {
     if (e instanceof HttpError) return { success: false, error: e.message }

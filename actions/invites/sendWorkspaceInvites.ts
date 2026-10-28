@@ -5,6 +5,7 @@ import { ActionOutput } from "app/_types/Action"
 import { auth } from "auth"
 import { WORKSPACE_INVITES_PREFIX } from "constants/actions"
 import { FetchClient, HttpError } from "lib/api"
+import { attendePlanCheck } from "lib/attende/planGuard"
 
 type SendWorkspaceInvitesInput = {
   invitees: { email: string; role: string }[]
@@ -15,6 +16,9 @@ export async function sendWorkspaceInvitesAction({
   invitees,
   workspaceId,
 }: SendWorkspaceInvitesInput): Promise<ActionOutput<boolean>> {
+  // Attende plan (JSYNQ keeps no Attende limits): refuse before JSYNQ creates anything.
+  const plan = await attendePlanCheck("seats", invitees.length)
+  if (!plan.ok) return { success: false, error: plan.message }
   try {
     const session = await auth()
 
