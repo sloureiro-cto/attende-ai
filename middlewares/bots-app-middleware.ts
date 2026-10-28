@@ -16,6 +16,12 @@ const PUBLIC_EXACT = new Set(["/", "/login", "/robots.txt", "/healthz", "/health
 /** No session needed (auth endpoints, framework assets, brand assets). */
 /** `/whatsapp-connect`: static art of the (reused) WhatsApp connect modal. */
 const PUBLIC_PREFIXES = ["/api/auth", "/_next", "/bots-assets", "/favicon", "/whatsapp-connect", "/signup", "/pricing"]
+/**
+ * The Attende API (route handlers in app/api, code in server/). No session cookie check here: each route
+ * authenticates itself (user JWT as Bearer, Stripe/JSYNQ signature, or CRON_SECRET) and answers JSON errors.
+ */
+const API_PREFIXES = ["/api/attende", "/api/messaging-automations/advanced", "/api/cron"]
+const API_EXACT = new Set(["/api/stripe/webhook", "/api/jsynq/webhooks", "/api/jsynq/inbound"])
 /** The product. A session is required. */
 const PROTECTED_PREFIXES = [
   "/workspaces",
@@ -41,9 +47,10 @@ const PROTECTED_EXACT = new Set(["/settings"])
 const matchesPrefix = (pathname: string, prefix: string) =>
   pathname === prefix || pathname.startsWith(`${prefix}/`) || (prefix === "/favicon" && pathname.startsWith("/favicon"))
 
-export type BotsRouteKind = "public" | "protected" | "blocked"
+export type BotsRouteKind = "public" | "protected" | "api" | "blocked"
 
 export function classifyBotsAppPath(pathname: string): BotsRouteKind {
+  if (API_EXACT.has(pathname) || API_PREFIXES.some((p) => matchesPrefix(pathname, p))) return "api"
   if (PUBLIC_EXACT.has(pathname)) return "public"
   if (PUBLIC_PREFIXES.some((p) => matchesPrefix(pathname, p))) return "public"
   if (PROTECTED_PREFIXES.some((p) => matchesPrefix(pathname, p))) return "protected"
@@ -66,6 +73,8 @@ export async function handleBotsAppRequest(req: NextRequest): Promise<NextRespon
   }
 
   const kind = classifyBotsAppPath(pathname)
+  // Untouched: the route handler authenticates and answers (webhooks need the request exactly as sent).
+  if (kind === "api") return withNoIndex(NextResponse.next())
   if (kind === "blocked") {
     const url = req.nextUrl.clone()
     url.pathname = NOT_FOUND_REWRITE

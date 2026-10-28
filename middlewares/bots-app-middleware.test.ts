@@ -158,3 +158,33 @@ describe("handleBotsAppRequest: product and marketing routes", () => {
     expect(mockGetToken).not.toHaveBeenCalled()
   })
 })
+
+describe("handleBotsAppRequest: Attende API routes", () => {
+  it.each([
+    "/api/attende/entitlements",
+    "/api/attende/signup",
+    "/api/attende/signup/plans",
+    "/api/attende/agents/abc/knowledge/doc1",
+    "/api/attende/billing/portal",
+    "/api/messaging-automations/advanced",
+    "/api/messaging-automations/advanced/abc/stats/series",
+    "/api/stripe/webhook",
+    "/api/jsynq/webhooks",
+    "/api/jsynq/inbound",
+    "/api/cron/billing-reconcile",
+    "/api/cron/agent-sweeper",
+  ])("api: %s", (p) => expect(classifyBotsAppPath(p)).toBe("api"))
+
+  it.each(["/api/attendex", "/api/messaging-automations", "/api/messaging-automations/basic", "/api/stripe", "/api/stripe/webhooks", "/api/jsynq", "/api/jsynq/other", "/api/cronjobs"])(
+    "look-alikes stay blocked: %s",
+    (p) => expect(classifyBotsAppPath(p)).toBe("blocked")
+  )
+
+  it("lets a webhook POST through without a session and without reading the cookie", async () => {
+    mockGetToken.mockResolvedValue(null)
+    const res = await handleBotsAppRequest(req("/api/stripe/webhook", { method: "POST" }))
+    expect(res.status).toBe(200)
+    expect(res.headers.get("x-middleware-rewrite")).toBeNull()
+    expect(mockGetToken).not.toHaveBeenCalled()
+  })
+})
