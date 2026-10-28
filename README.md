@@ -94,8 +94,7 @@ before each create; AI replies and sent messages are counted locally; a trial th
 the AI-reply quota pause the workspace's agent bindings in JSYNQ, and they resume on reactivation or the next month.
 
 The advanced automations runtime (`server/modules/automations/runtime/`: inbound handling, waits and timers) is
-not run by Next.js. The worker (phase 4) will feed it from the JSYNQ websocket and give it a gateway on JSYNQ's
-existing user routes.
+not run by Next.js: the worker runs it (below).
 
 Tests: `yarn test:server` (node, dummy env from `server/test/setupEnv.ts`, in-memory MongoDB, fake JSYNQ and Stripe;
 no secrets). The integration tests drive the same route handlers through `server/test/helpers/app.ts`.
@@ -103,14 +102,70 @@ no secrets). The integration tests drive the same route handlers through `server
 Operational scripts (run with `tsx --conditions=react-server`, so `server-only` resolves on plain Node):
 `yarn attende:seed-plans [--apply]`, `yarn attende:migrate-from-jsynq --source <uri> [--apply]`.
 
+## Worker (`worker/`, `server/modules/worker/`)
+
+A small always-on Node process from the same repo and the same `server/` code. Run it with `yarn worker`
+(`tsx --conditions=react-server worker/index.ts`), or build `Dockerfile.worker` (Render, Railway, Fly).
+
+What it does, for every Attende workspace whose plan is active or trialing (the list is re-read every minute, so
+new and lapsed workspaces are picked up or dropped):
+
+- **Listens to JSYNQ:** one websocket per workspace on `messaging-inbox:<workspaceId>`, as the workspace owner
+  (`subscriptions.userId`) with a token it mints with `AUTH_SECRET` (1 h, refreshed by a new handshake every 45 min).
+  Reconnects with backoff (1 s to 30 s).
+- **Safety poll every 60 s** (and right after every reconnect): the inbox conversations whose `lastMessageAt` moved
+  since the last poll, and the unassigned `human_handoff` conversations. Both paths read the conversation's newest
+  messages and emit each message once (`worker_seen_messages`, TTL 7 days): inbound message, message sent (AI agent,
+  JSYNQ automation, a person, or the worker itself), conversation state.
+- **Advanced automations:** inbound messages go to the runtime (`onInboundMessage`, with the full text from the
+  messages endpoint); waits and no-reply timeouts tick every 15 s. The gateway acts on JSYNQ's existing routes (send
+  message, move the linked card, labels, card fields, handoff to people or to an AI agent); see
+  `docs/jsynq-apis-used.md`. `ADVANCED_AUTOMATIONS_RUNTIME_ENABLED=false` turns the runtime off (unset = on in the
+  worker; Next.js never runs it).
+- **AI-reply quota:** every AI agent reply it sees calls `recordAiReply()`; at the plan's limit the agents' bindings
+  are paused (the reconcile cron lifts it next month or after an upgrade).
+- **"Quem assume":** a conversation an Attende agent was answering that enters `human_handoff` without an assignee is
+  assigned to the member set in the agent's setup (`form.handoff.target`, `kind: 'user'`). An existing assignee is
+  never replaced; a member who left is skipped.
+- **Reports:** `runReportsSync` every 10 min. The Vercel cron stays as a fallback: both take the `job:reports` lease
+  and skip a run within 9 minutes of the previous one.
+
+**One active instance.** A Mongo lease (`worker_leases`, `_id: 'worker'`, 30 s, renewed every 10 s) decides which
+instance works; another deployed instance is a standby that takes over within ~30 s of the active one dying.
+`SIGTERM`/`SIGINT` stop it gracefully (sockets closed, in-flight work finished, lease released; forced exit at 25 s).
+
+**Health:** `GET /healthz` on `WORKER_HEALTH_PORT` (default 8080) answers 200 with `{leader, workspaces,
+socketsConnected, lastPollAt, eventsHandled}`; `GET /readyz` is 200 when Mongo is connected.
+
+**Environment:** `ATTENDE_MONGODB_URI`, `AUTH_SECRET` (the same as JSYNQ and the app), `JSYNQ_API_URL`; optional
+`JSYNQ_WS_URL` (default: `JSYNQ_API_URL` with `ws(s)://` and path `/ws`), `WORKER_HEALTH_PORT`,
+`ADVANCED_AUTOMATIONS_RUNTIME_ENABLED`, `JSYNQ_TIMEOUT_MS`, `LOG_LEVEL`. The worker does not need the Stripe keys or
+`FRONTEND_URL`.
+
+**Deploy notes:** one instance is enough (a second one only waits). It needs outbound access to JSYNQ (HTTPS and
+WSS) and to the Attende Mongo; nothing calls it except the platform's health check. Logs are one JSON line per event
+(ids and counts only, never tokens or message text).
+
+**Failure modes:**
+
+- Latency is 1-2 s from a contact's message to the automation's reply while the websocket is up; up to ~60 s (the
+  safety poll) when it drops or misses an event. Handoff assignment is up to 60 s for a handoff without an AI reply
+  (JSYNQ sends no websocket event for a state change).
+- Worker down: nothing is answered by automations, AI replies are not counted, handoffs are not assigned; on restart
+  the poll catches up messages of the last 24 h (older ones are history and are never replayed).
+- JSYNQ down or the owner left the workspace: calls fail and are logged (`worker.sync_failed`, `worker.poll_failed`);
+  the poll retries every minute.
+- Two instances: the lease keeps one active; a lost lease stops the work at once.
+
 ## Environment variables
 
 Every variable is listed with a one-line description in [`.env.example`](.env.example). Summary:
 
 - **Attende API:** `ATTENDE_MONGODB_URI`, `FRONTEND_URL` (optional, defaults to `AUTH_URL`), `STRIPE_SECRET_KEY`,
   `STRIPE_WEBHOOK_SECRET`, `BILLING_GRACE_DAYS`, `JSYNQ_API_URL`, `JSYNQ_TIMEOUT_MS`, `AGENT_MODEL`,
-  `EXTRA_DISPOSABLE_DOMAINS`, `CRON_SECRET`, `LOG_LEVEL`, `ADVANCED_AUTOMATIONS_RUNTIME_ENABLED` (worker only),
-  `ATTENDE_API_URL` (optional); it also uses `AUTH_SECRET`
+  `EXTRA_DISPOSABLE_DOMAINS`, `CRON_SECRET`, `LOG_LEVEL`, `ATTENDE_API_URL` (optional); it also uses `AUTH_SECRET`
+- **Worker:** `ATTENDE_MONGODB_URI`, `AUTH_SECRET`, `JSYNQ_API_URL`, `JSYNQ_WS_URL` (optional), `WORKER_HEALTH_PORT`
+  (default 8080), `ADVANCED_AUTOMATIONS_RUNTIME_ENABLED` (default on in the worker)
 - **JSYNQ API:** `BACKEND_URL`, `NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_WEBSOCKET_SERVER` (optional)
 - **Sign-in:** `MONGODB_URI`, `AUTH_SECRET`, `AUTH_URL` (optional), `AUTH_REDIRECT_PROXY_URL` (optional),
   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
