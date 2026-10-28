@@ -775,6 +775,16 @@ const entries = {
     pt: "Número conectado. Ele já estava registrado na Meta.",
     es: "Número conectado. Ya estaba registrado en Meta.",
   },
+  connectQuotaLines: {
+    en: "Your plan reached its limit of channels. See the plans in Billing to add another one.",
+    pt: "Seu plano atingiu o limite de canais. Veja os planos em Cobrança para adicionar outro.",
+    es: "Tu plan alcanzó el límite de canales. Mira los planes en Facturación para añadir otro.",
+  },
+  connectPlanInactive: {
+    en: "Your plan is not active, so new channels cannot be connected. Check Billing.",
+    pt: "Seu plano não está ativo, então não é possível conectar novos canais. Confira em Cobrança.",
+    es: "Tu plan no está activo, así que no se pueden conectar canales nuevos. Revisa Facturación.",
+  },
   connectPaidPlan: {
     en: "WhatsApp numbers are part of the paid plans. Upgrade to add one.",
     pt: "Números de WhatsApp fazem parte dos planos pagos. Faça upgrade para adicionar um.",

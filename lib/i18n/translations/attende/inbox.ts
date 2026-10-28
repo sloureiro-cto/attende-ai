@@ -190,6 +190,16 @@ const entries = {
   retrySend: { en: "Try again", pt: "Tentar novamente", es: "Intentar de nuevo" },
   discardFailed: { en: "Discard", pt: "Descartar", es: "Descartar" },
   sendFailed: { en: "Message not sent", pt: "Mensagem não enviada", es: "Mensaje no enviado" },
+  sendFailedQuota: {
+    en: "Not sent: your plan reached its limit of sent messages",
+    pt: "Não enviada: seu plano atingiu o limite de mensagens enviadas",
+    es: "No enviado: tu plan alcanzó el límite de mensajes enviados",
+  },
+  sendFailedPlanInactive: {
+    en: "Not sent: your plan is not active",
+    pt: "Não enviada: seu plano não está ativo",
+    es: "No enviado: tu plan no está activo",
+  },
   composerHint: { en: "Enter to send, Shift+Enter for a new line", pt: "Enter envia, Shift+Enter quebra a linha", es: "Enter envía, Shift+Enter nueva línea" },
   windowOpenHours: { en: "Reply window: {hours} h left", pt: "Janela de resposta: faltam {hours} h", es: "Ventana de respuesta: quedan {hours} h" },
   windowOpenMinutes: { en: "Reply window closes in {minutes} min", pt: "A janela de resposta fecha em {minutes} min", es: "La ventana de respuesta cierra en {minutes} min" },

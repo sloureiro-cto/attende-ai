@@ -28,6 +28,7 @@ import {
 import type { WhatsAppSession } from "actions/whatsapp-lite/types"
 import { showToast } from "app/utils/showToast"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "components/ui/dialog"
+import { planBlockKind } from "lib/attende/planBlock"
 import { isMessagingChannelPlanError } from "lib/plans/canAddMessagingChannelLine"
 import { ChannelGlyph } from "./ChannelGlyph"
 import { CloudCredentialsFields, PinInput } from "./CloudCredentialsFields"
@@ -161,7 +162,12 @@ export function ConnectWhatsAppDialog({ open, onOpenChange, initialSession = nul
   const { qrDataUrl, failed: qrFailed, refresh: refreshQr } = useQrPairing(session?._id ?? null, open && step === "qr", handleConnected)
 
   // Backend messages are English-only and technical: show our own copy (the plan case keeps its specific hint).
-  const planAwareError = (error: string) => (isMessagingChannelPlanError(error) ? t("connectPaidPlan") : t("connectGenericError"))
+  const planAwareError = (error: string) => {
+    const block = planBlockKind(error)
+    if (block === "quota") return t("connectQuotaLines")
+    if (block === "inactive") return t("connectPlanInactive")
+    return isMessagingChannelPlanError(error) ? t("connectPaidPlan") : t("connectGenericError")
+  }
   const registeredToast = (registration?: { skippedAlreadyRegistered?: boolean }) =>
     showToast("success", registration?.skippedAlreadyRegistered ? t("connectAlreadyRegistered") : t("connectRegistered"))
 

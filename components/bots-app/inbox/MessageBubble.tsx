@@ -4,6 +4,7 @@ import { Danger, DocumentText1, Flash } from "iconsax-react"
 import { memo } from "react"
 import { cn } from "@/lib/utils"
 import { formatTime } from "lib/attende/format"
+import { planBlockKind } from "lib/attende/planBlock"
 import type { ThreadMessage } from "lib/bots-app/inbox/model"
 import type { AttendeInboxKey } from "lib/i18n/translations/attende/inbox"
 import type { AttendeInboxT } from "./useAttendeInboxT"
@@ -30,6 +31,14 @@ const STATUS_KEY: Record<ThreadMessage["status"], AttendeInboxKey> = {
 function statusLabel(message: ThreadMessage, t: AttendeInboxT): string {
   if (message.clientId && message.status === "failed") return t("statusNotSent")
   return t(STATUS_KEY[message.status])
+}
+
+/** A send the plan refused says why (limit reached, plan not active); other failures keep the short "not sent". */
+function sendFailedText(error: string | null | undefined, t: AttendeInboxT): string {
+  const block = planBlockKind(error)
+  if (block === "quota") return t("sendFailedQuota")
+  if (block === "inactive") return t("sendFailedPlanInactive")
+  return t("sendFailed")
 }
 
 /** Who wrote it, when the API says so. `unknown` (an outbound row without a sender) gets no label rather than a guess. */
@@ -124,7 +133,7 @@ export const MessageBubble = memo(function MessageBubble({ message, grouped, lan
         <div className="mt-1 flex items-center gap-3 text-body-12" role="alert">
           <span className="flex items-center gap-1 text-error-dark">
             <Danger size={13} aria-hidden />
-            {t("sendFailed")}
+            {sendFailedText(message.error, t)}
           </span>
           <button type="button" className="font-semibold text-primary-dark hover:underline" onClick={() => void onRetry(message.clientId!)}>
             {t("retrySend")}

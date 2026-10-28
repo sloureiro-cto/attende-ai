@@ -8,6 +8,7 @@ import { showToast } from "app/utils/showToast"
 import Button from "components/Button/Button"
 import TextInput from "components/TextInput/TextInput"
 import { useCloudTemplateComposer } from "hooks/useCloudTemplateComposer"
+import { planBlockKind } from "lib/attende/planBlock"
 import type { AttendeInboxT } from "./useAttendeInboxT"
 
 type Props = {
@@ -69,7 +70,8 @@ export function WindowClosedComposer({ sessionId, conversationId, t, onSent }: P
     try {
       const res = await sendWhatsAppTemplateAction(sessionId, conversationId, payload)
       if (!res.success) {
-        showToast("error", t("windowTemplateSendError"))
+        const block = planBlockKind(res.error)
+        showToast("error", block === "quota" ? t("sendFailedQuota") : block === "inactive" ? t("sendFailedPlanInactive") : t("windowTemplateSendError"))
         return
       }
       showToast("success", t("windowTemplateSent"))
