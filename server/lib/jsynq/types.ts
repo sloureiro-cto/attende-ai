@@ -16,6 +16,9 @@ export type JsynqBinding = {
   agentId?: string;
   channel: string;
   sessionId?: string;
+  /** `all_inbound` = every inbound of the session; `conversation` = only `targetId`. */
+  targetType?: string;
+  targetId?: string | null;
   status: 'active' | 'paused' | 'completed';
   policy?: Record<string, unknown>;
 };
@@ -124,12 +127,23 @@ export type JsynqConversation = {
   linkedEntityId?: string | null;
   crmProjectId?: string | null;
   deletedAt?: string | null;
+  assignedUserId?: string | null;
+  /** WhatsApp / SMS contact; Instagram has `displayName` / `attendeeUsername`. */
+  contactName?: string | null;
+  contactPhone?: string | null;
+  displayName?: string | null;
+  attendeeUsername?: string | null;
 };
 
 export type JsynqInboxRow = { channel: Channel; sessionId: string; conversation: JsynqConversation };
 
 export type JsynqMessage = {
   _id: string;
+  conversationId?: string;
+  /** The text (WhatsApp content comes back decrypted by JSYNQ). Read only by the worker, never stored or logged. */
+  content?: string | null;
+  /** The member who sent it (`senderType: 'user'`). */
+  senderId?: string | null;
   direction?: 'inbound' | 'outbound';
   senderType?: 'contact' | 'agent' | 'user' | string;
   agentExecutionId?: string | null;

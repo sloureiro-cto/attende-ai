@@ -72,6 +72,13 @@ export interface ConversationGateway {
   setCardField(key: ConversationKey, cardId: string, fieldId: string, value: string, opts: ActionOpts): Promise<void>;
   /** `assign.assignMode` is always set: JSYNQ distributes only when it is present. */
   handoff(key: ConversationKey, assign: HandoffAssign & { assignMode: NonNullable<HandoffAssign['assignMode']> }, reason: string, opts: ActionOpts): Promise<void>;
+  /**
+   * Hands this one conversation to a JSYNQ agent: a conversation-level automation binding (`targetType:
+   * 'conversation'`) the gateway records so it can remove it later. Optional: a gateway without it refuses AI handoffs.
+   */
+  handoffToAi?(key: ConversationKey, agentId: string, opts: ActionOpts): Promise<void>;
+  /** Removes the conversation binding a previous AI handoff created (an automation takes the conversation back). */
+  releaseAi?(key: ConversationKey): Promise<void>;
   businessHours(workspaceId: string): Promise<BusinessHours | null>;
 }
 

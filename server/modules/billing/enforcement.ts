@@ -21,10 +21,15 @@ async function actorOf(workspaceId: string, setups: IAgentSetup[]): Promise<stri
   return setups[0]?.createdBy ?? null;
 }
 
+/** The member this service acts as in `workspaceId` (see `actorOf`), or null. The worker mints its websocket token for it. */
+export async function workspaceActor(workspaceId: string): Promise<string | null> {
+  const setups = await AgentSetupModel.find({ workspaceId, state: 'ready' }).select('createdBy').limit(1).lean<IAgentSetup[]>();
+  return actorOf(workspaceId, setups);
+}
+
 /** A JSYNQ client acting in `workspaceId` as its owner, or null when there is nobody to act as. */
 export async function workspaceClient(deps: Pick<Deps, 'user'>, workspaceId: string): Promise<UserClient | null> {
-  const setups = await AgentSetupModel.find({ workspaceId, state: 'ready' }).select('createdBy').limit(1).lean<IAgentSetup[]>();
-  const actor = await actorOf(workspaceId, setups);
+  const actor = await workspaceActor(workspaceId);
   return actor ? deps.user(serviceToken({ userId: actor }, workspaceId)) : null;
 }
 

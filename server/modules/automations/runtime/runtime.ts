@@ -167,6 +167,10 @@ export class AutomationRuntime {
     const claimed = await this.deps.store.claimStart(keyOf(conv), run, { automationId: automation.id, at: now });
     if (!claimed) return { started: false, reason: 'already_running' };
     this.log('advanced_automation.started', conv, { automationId: automation.id, runId: run.runId });
+    // The automation takes the conversation back from an AI it handed it to earlier.
+    if (this.deps.gateway.releaseAi) {
+      await this.deps.gateway.releaseAi(keyOf(conv)).catch((error) => this.log('advanced_automation.ai_release_failed', conv, { error: (error as Error)?.message }));
+    }
     const fresh = await this.deps.store.find(keyOf(conv));
     if (!fresh?.run) return { started: true };
     await this.advance(fresh, { type: 'start' }, eventId, depth);

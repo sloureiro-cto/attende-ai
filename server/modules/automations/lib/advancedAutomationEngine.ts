@@ -43,6 +43,9 @@ export type EngineEffect =
       type: 'handoff';
       nodeId: string;
       message?: string;
+      /** `ai`: hand the conversation to the JSYNQ agent `agentId` instead of a person. */
+      to?: 'person' | 'ai';
+      agentId?: string;
       assign?: {
         assignMode?: Extract<
           AdvancedAutomationNode,
@@ -250,6 +253,7 @@ export async function advanceAutomationRun(params: {
             type: 'handoff',
             nodeId: node.id,
             message: node.message,
+            ...(node.to === 'ai' ? { to: 'ai' as const, agentId: node.agentId } : {}),
             assign: {
               assignMode: node.assignMode,
               userIds: node.userIds,

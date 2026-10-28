@@ -32,11 +32,11 @@ export type AutomationsRuntime = {
 };
 
 /**
- * Wires the runtime around a `ConversationGateway`. There is no production gateway yet: the one on
- * the JSYNQ partner conversation API is gone (Option A, no JSYNQ changes), and the phase-4 worker
- * brings one over JSYNQ's existing user routes plus the `messaging-inbox` websocket, which then
- * calls `runtime.onInboundMessage`. Without a gateway, or while
- * `ADVANCED_AUTOMATIONS_RUNTIME_ENABLED` is off, this returns null: no timers run.
+ * Wires the runtime around a `ConversationGateway`. The production gateway is the worker's
+ * (`server/modules/worker/gateway.ts`, JSYNQ's existing user routes); the worker feeds
+ * `runtime.onInboundMessage` from the `messaging-inbox` websocket and its safety poll, and decides
+ * with `ADVANCED_AUTOMATIONS_RUNTIME_ENABLED` whether to build it at all. Without a gateway this
+ * returns null: no timers run (Next.js never builds one).
  */
 export function createAutomationsRuntime(opts: { gateway?: ConversationGateway; now?: () => Date } = {}): AutomationsRuntime | null {
   if (!opts.gateway) {

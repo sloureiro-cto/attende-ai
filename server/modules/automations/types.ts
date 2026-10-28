@@ -100,6 +100,14 @@ export type AdvancedAutomationNode =
       kind: 'handoff';
       /** Sent to the contact right before the conversation goes to a person. */
       message?: string;
+      /**
+       * `person` (default): the conversation goes to the team (`human_handoff`, assigned per `assignMode`).
+       * `ai`: a JSYNQ agent (`agentId`) takes this one conversation (a conversation-level binding the worker
+       * creates, and removes when an automation takes the conversation back).
+       */
+      to?: 'person' | 'ai';
+      /** JSYNQ agent id, required with `to: 'ai'`. */
+      agentId?: string;
       /** Who gets the conversation (same modes as lead distribution). Default: all CRM members. */
       assignMode?: AdvancedAutomationHandoffAssignMode;
       userIds?: string[];

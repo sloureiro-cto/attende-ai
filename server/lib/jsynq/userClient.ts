@@ -17,6 +17,28 @@ export function userClient(token: string) {
   const call = <T>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, opts: { body?: unknown; query?: Record<string, string | number | undefined>; form?: FormData; idempotent?: boolean; timeoutMs?: number } = {}) =>
     jsynqRequest<T>({ method, path, auth: token, ...opts });
 
+  /** `GET /api/workspaces/:w/messaging/inbox/conversations`: every channel, `lastMessageAt desc`, keyset cursor, limit <= 50. */
+  const inbox = async (
+    workspaceId: string,
+    query: { cursor?: string; limit?: number; conversationState?: string; assignee?: 'all' | 'unassigned'; conversationId?: string }
+  ): Promise<{ rows: JsynqInboxRow[]; nextCursor: string | null; hasMore: boolean }> => {
+    const res = await call<{ data?: JsynqInboxRow[]; meta?: { nextCursor?: string | null; hasMore?: boolean } }>(
+      'GET',
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/messaging/inbox/conversations`,
+      {
+        query: {
+          channel: 'all',
+          limit: query.limit ?? 50,
+          cursor: query.cursor,
+          conversationState: query.conversationState,
+          assignee: query.assignee,
+          conversationId: query.conversationId,
+        },
+      }
+    );
+    return { rows: res.body?.data ?? [], nextCursor: res.body?.meta?.nextCursor ?? null, hasMore: !!res.body?.meta?.hasMore };
+  };
+
   return {
     // --- workspaces (any signed-in user; delete = any member, soft delete) -------------------
 
@@ -211,13 +233,47 @@ export function userClient(token: string) {
     // --- messaging (reports) ----------------------------------------------------------------
 
     /** `GET /api/workspaces/:w/messaging/inbox/conversations`: every channel, `lastMessageAt desc`, keyset cursor, limit <= 50. */
-    async listInboxConversations(workspaceId: string, query: { cursor?: string; limit?: number }): Promise<{ rows: JsynqInboxRow[]; nextCursor: string | null; hasMore: boolean }> {
-      const res = await call<{ data?: JsynqInboxRow[]; meta?: { nextCursor?: string | null; hasMore?: boolean } }>(
-        'GET',
-        `/api/workspaces/${encodeURIComponent(workspaceId)}/messaging/inbox/conversations`,
-        { query: { channel: 'all', limit: query.limit ?? 50, cursor: query.cursor } }
-      );
-      return { rows: res.body?.data ?? [], nextCursor: res.body?.meta?.nextCursor ?? null, hasMore: !!res.body?.meta?.hasMore };
+    listInboxConversations: inbox,
+    /** One conversation through the inbox deep link (`?conversationId=`): state, assignee, binding, linked card. Null when not visible. */
+    async getInboxConversation(workspaceId: string, conversationId: string): Promise<JsynqInboxRow | null> {
+      const page = await inbox(workspaceId, { conversationId, limit: 1 });
+      return page.rows.find((r) => String(r.conversation?._id) === conversationId) ?? null;
+    },
+
+    // --- messaging (worker: automations and handoff assignment) -------------------------------
+
+    /**
+     * `POST /api/{channel}-lite/sessions/:s/conversations/:id/messages` `{text}`: sends as the token's member
+     * (`senderType: 'user'`). Not idempotent in JSYNQ: the caller keeps its own idempotency record.
+     */
+    async sendConversationMessage(channel: Channel, sessionId: string, conversationId: string, text: string): Promise<{ _id: string | null }> {
+      const res = await call<unknown>('POST', `${SESSION_PATH[channel]}/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(conversationId)}/messages`, {
+        body: { text },
+        timeoutMs: 30_000,
+      });
+      const data = unwrap<{ _id?: unknown; id?: unknown } | null>(res.body);
+      const id = data?._id ?? data?.id;
+      return { _id: id ? String(id) : null };
+    },
+    /** `POST /api/{channel}-lite/conversations/:id/state` `{newState, reason}` (JSYNQ checks the transition). */
+    async setConversationState(channel: Channel, conversationId: string, newState: string, reason?: string): Promise<void> {
+      await call('POST', `/api/${channel}-lite/conversations/${encodeURIComponent(conversationId)}/state`, { body: { newState, reason }, idempotent: true });
+    },
+    /** `PATCH /api/{channel}-lite/sessions/:s/conversations/:id/assign` `{userId}`. */
+    async assignConversation(channel: Channel, sessionId: string, conversationId: string, userId: string): Promise<void> {
+      await call('PATCH', `${SESSION_PATH[channel]}/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(conversationId)}/assign`, { body: { userId } });
+    },
+    /** `POST /api/projects/:p/label` `{text, color}`. */
+    async createLabel(projectId: string, input: { text: string; color: string }): Promise<{ _id: string }> {
+      const res = await call<{ label?: { _id?: unknown } }>('POST', `/api/projects/${encodeURIComponent(projectId)}/label`, { body: input });
+      const id = res.body?.label?._id;
+      if (!id) throw new Error('JSYNQ label creation returned no id');
+      return { _id: String(id) };
+    },
+    /** `PUT /api/projects/:p/cards/:id` with a partial body (`addLabelIds`, `customFields` merge with what the card has). */
+    async updateCard(projectId: string, cardId: string, body: Record<string, unknown>): Promise<JsynqCard | null> {
+      const res = await call<{ card?: JsynqCard }>('PUT', `/api/projects/${encodeURIComponent(projectId)}/cards/${encodeURIComponent(cardId)}`, { body, idempotent: true });
+      return res.body?.card ?? null;
     },
     /**
      * One page of a conversation's messages, newest first. WhatsApp and SMS page by `offset`; Instagram by `before`

@@ -130,6 +130,16 @@ export class GatewayEffectExecutor implements AutomationEffectExecutor {
             if (effect.message?.trim() && !(await send({ type: 'send_message', nodeId: effect.nodeId, text: effect.message, replyMode: 'none' }, 'message'))) {
               logFor('handoff_message_failed', { nodeId: effect.nodeId });
             }
+            if (effect.to === 'ai') {
+              if (!effect.agentId || !this.gateway.handoffToAi) {
+                logFor('handoff_state_failed', { nodeId: effect.nodeId, error: 'AI_HANDOFF_UNAVAILABLE' });
+                break;
+              }
+              await this.gateway
+                .handoffToAi(ctx.key, effect.agentId, stepKey(effect.nodeId, 'ai'))
+                .catch((error) => logFor('handoff_state_failed', { nodeId: effect.nodeId, error: (error as Error)?.message }));
+              break;
+            }
             const assign = { ...effect.assign, assignMode: effect.assign?.assignMode ?? DEFAULT_HANDOFF_ASSIGN_MODE };
             await this.gateway
               .handoff(ctx.key, assign, 'Advanced automation handoff', stepKey(effect.nodeId, ''))

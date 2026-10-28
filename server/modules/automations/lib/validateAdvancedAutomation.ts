@@ -224,6 +224,9 @@ function checkNode(
       ) {
         add('message is too long', true);
       }
+      if (node.to !== undefined && node.to !== 'person' && node.to !== 'ai') add('invalid handoff target', true);
+      if (node.to === 'ai' && !hex(node.agentId)) add('needs the AI agent that takes the conversation');
+      if (node.agentId !== undefined && !hex(node.agentId)) add('agentId is not a valid agent id', true);
       const mode = node.assignMode;
       if (
         mode !== undefined &&

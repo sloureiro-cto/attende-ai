@@ -5,6 +5,7 @@ import { sha256Hex } from '../../lib/crypto';
 import { viaJsynq } from '../../lib/jsynq';
 import { errMessage, log } from '../../lib/logger';
 import { forgetPausedBindings, pauseReasonsOf } from '../billing/enforcement';
+import { activeSessions } from '../automations/service';
 import { AGENT_CAPABILITIES, AGENT_RATE_LIMIT, AGENT_TOOL_NAMES, agentModelConfig, buildBindingPolicy } from './lib/agentProfile';
 import { runDryRun, type DryRunResult } from './lib/dryRun';
 import { validateAgentForm, type FromTemplateBody, type PatchSetupBody } from './lib/formSchema';
@@ -260,6 +261,14 @@ export class AgentService {
       throw codedError(403, 'ATTENDE_QUOTA_EXCEEDED', 'Your plan reached its limit of AI replies this month', { resource: 'aiReplies' });
     }
     if (setup.lines.length === 0) throw codedError(409, CODES.NOT_READY, 'Connect at least one line before going live', { reason: 'no_lines' });
+    // Conflict rule, agent side: an agent answering every inbound must not go live where an automation runs.
+    const automated = new Set((await activeSessions(ctx.workspaceId)).map((s) => `${s.channel}:${s.sessionId.toLowerCase()}`));
+    const clashes = setup.lines.filter((l) => automated.has(`${l.channel}:${l.sessionId.toLowerCase()}`));
+    if (clashes.length) {
+      throw codedError(409, CODES.AUTOMATION_ON_LINE, 'An active automation runs on some of these lines. Pause it or remove those lines first.', {
+        lines: clashes.map((l) => ({ channel: l.channel, sessionId: l.sessionId })),
+      });
+    }
     const statuses = await viaJsynq(() => this.ports.lineStatuses(setup.lines));
     const disconnected = statuses.filter((s) => !s.connected);
     if (disconnected.length > 0) {

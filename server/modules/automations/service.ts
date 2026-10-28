@@ -1,6 +1,6 @@
 import 'server-only';
 import mongoose from 'mongoose';
-import { AppError, badRequest } from '../../lib/errors';
+import { AppError, badRequest, codedError } from '../../lib/errors';
 import type { UserClient } from '../../lib/jsynq';
 import { viaJsynq } from '../../lib/jsynq';
 import { conditionShapeIssues } from './lib/conditions';
@@ -18,6 +18,13 @@ export type WorkspaceDirectory = {
   sessionIds(channel: AdvancedAutomationChannel): Promise<Set<string>>;
   memberIds(): Promise<Set<string>>;
   roleIds(): Promise<Set<string>>;
+  /** JSYNQ agents of the workspace (AI handoff targets). Optional: without it the agent ids are not checked. */
+  agentIds?(): Promise<Set<string>>;
+  /**
+   * `channel:sessionId` (lowercase) of every session with an `all_inbound` JSYNQ agent binding that is not completed
+   * (active or paused). Optional: without it the conflict rule is not checked.
+   */
+  agentBoundSessions?(): Promise<Set<string>>;
 };
 
 export function jsynqDirectory(client: UserClient, workspaceId: string): WorkspaceDirectory {
@@ -33,6 +40,17 @@ export function jsynqDirectory(client: UserClient, workspaceId: string): Workspa
     },
     async roleIds() {
       return new Set((await viaJsynq(() => client.listWorkspaceRoles(workspaceId))).map((r) => id(r._id)));
+    },
+    async agentIds() {
+      return new Set((await viaJsynq(() => client.listAgents())).map((a) => String(a.id).toLowerCase()));
+    },
+    async agentBoundSessions() {
+      const rows = await viaJsynq(() => client.listBindings());
+      return new Set(
+        rows
+          .filter((b) => b.agentId && b.targetType === 'all_inbound' && b.status !== 'completed' && b.sessionId)
+          .map((b) => `${String(b.channel).toLowerCase()}:${String(b.sessionId).toLowerCase()}`)
+      );
     },
   };
 }
@@ -57,13 +75,19 @@ function conditionIssues(a: { nodes: AdvancedAutomationNode[]; trigger: ParsedAu
 async function handoffTargetIssues(dir: WorkspaceDirectory, nodes: AdvancedAutomationNode[]): Promise<AdvancedAutomationIssue[]> {
   const userIds = new Set<string>();
   const roleIds = new Set<string>();
+  const agentIds = new Set<string>();
   for (const n of nodes) {
     if (n?.kind !== 'handoff') continue;
     if (n.assignMode === 'specific_user' && n.specificUserId) userIds.add(n.specificUserId.toLowerCase());
     if (n.assignMode === 'member_list') for (const id of n.userIds ?? []) userIds.add(id.toLowerCase());
     if (n.assignMode === 'by_workspace_role' && n.workspaceRoleId) roleIds.add(n.workspaceRoleId.toLowerCase());
+    if (n.to === 'ai' && n.agentId) agentIds.add(n.agentId.toLowerCase());
   }
   const issues: AdvancedAutomationIssue[] = [];
+  if (agentIds.size && dir.agentIds) {
+    const agents = await dir.agentIds();
+    for (const id of agentIds) if (!agents.has(id)) issues.push({ path: 'handoff', message: `agent ${id} does not exist in this workspace` });
+  }
   if (userIds.size) {
     const members = await dir.memberIds();
     for (const id of userIds) if (!members.has(id)) issues.push({ path: 'handoff', message: `user ${id} is not a member of this workspace` });
@@ -177,6 +201,28 @@ export class AutomationService {
       }
     }
     if (issues.length) throw invalid('The automation is incomplete and cannot be activated', issues);
+    await this.assertNoInboundAgent(a.channels);
+  }
+
+  /**
+   * Conflict rule: a session an active automation runs on must not also have an `all_inbound` JSYNQ agent binding
+   * (active or paused), or both would answer every message. Activation is REFUSED (409 `AUTOMATION_SESSION_HAS_AGENT`)
+   * instead of pausing the other binding: pausing would silently stop an agent someone put live, and would not last
+   * (the agent's go-live, a billing reactivation or JSYNQ's own UI resume it, and then both answer). The person moves
+   * the agent off the line (or picks other lines) and activates again. The agent side checks the reverse at go-live
+   * (`ATTENDE_AUTOMATION_ON_LINE`).
+   */
+  private async assertNoInboundAgent(channels: IAdvancedAutomation['channels']) {
+    if (!this.dir.agentBoundSessions) return;
+    const requested = channels.flatMap((c) => c.enabledSessionIds.map((s) => ({ channel: c.channel, sessionId: s })));
+    if (!requested.length) return;
+    const bound = await this.dir.agentBoundSessions();
+    const clashes = requested.filter((r) => bound.has(`${r.channel}:${r.sessionId.toLowerCase()}`));
+    if (clashes.length) {
+      throw codedError(409, 'AUTOMATION_SESSION_HAS_AGENT', 'An AI agent already answers every message on some of these accounts. Remove the agent from them or pick other accounts, then activate.', {
+        sessions: clashes,
+      });
+    }
   }
 
   async create(workspaceId: string, userId: string, input: ParsedAutomationCreate) {
