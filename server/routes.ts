@@ -1,11 +1,13 @@
 import 'server-only';
-import { agentSweeperCron, billingReconcileCron } from './cron';
+import { agentSweeperCron, billingReconcileCron, reportsCron } from './cron';
 import { AppError } from './lib/errors';
 import type { RouteHandler } from './lib/http';
 import * as agents from './modules/agents/handlers';
 import * as automations from './modules/automations/handlers';
 import * as billing from './modules/billing/handlers';
 import * as limits from './modules/billing/limitsHandlers';
+import * as funnel from './modules/funnel/handlers';
+import * as reports from './modules/reports/handlers';
 import * as signup from './modules/signup/handlers';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -43,6 +45,17 @@ export const ATTENDE_ROUTES: AttendeRoute[] = [
   { method: 'POST', path: '/api/attende/agents/:id/knowledge', handler: agents.postKnowledge },
   { method: 'DELETE', path: '/api/attende/agents/:id/knowledge/:documentId', handler: agents.deleteKnowledge },
 
+  { method: 'GET', path: '/api/attende/funnel', handler: funnel.getFunnel },
+  { method: 'GET', path: '/api/attende/funnel/stages', handler: funnel.getFunnelStages },
+  { method: 'GET', path: '/api/attende/funnel/contacts', handler: funnel.getFunnelContacts },
+  { method: 'GET', path: '/api/attende/funnel/export.csv', handler: funnel.getFunnelExport },
+  { method: 'PATCH', path: '/api/attende/funnel/:cardId/stage', handler: funnel.patchFunnelStage },
+  { method: 'GET', path: '/api/attende/funnel/:cardId/conversation', handler: funnel.getFunnelConversation },
+
+  { method: 'GET', path: '/api/attende/reports/overview', handler: reports.getReportsOverview },
+  { method: 'GET', path: '/api/attende/reports/agents', handler: reports.getReportsAgents },
+  { method: 'GET', path: '/api/attende/reports/outcomes', handler: reports.getReportsOutcomes },
+
   { method: 'GET', path: '/api/messaging-automations/advanced', handler: automations.listAutomations },
   { method: 'POST', path: '/api/messaging-automations/advanced', handler: automations.createAutomation },
   { method: 'POST', path: '/api/messaging-automations/advanced/preview', handler: automations.previewAutomationRoute },
@@ -56,6 +69,7 @@ export const ATTENDE_ROUTES: AttendeRoute[] = [
 
   { method: 'GET', path: '/api/cron/billing-reconcile', handler: billingReconcileCron },
   { method: 'GET', path: '/api/cron/agent-sweeper', handler: agentSweeperCron },
+  { method: 'GET', path: '/api/cron/reports', handler: reportsCron },
 ];
 
 function matchPath(pattern: string, pathname: string): Record<string, string> | null {

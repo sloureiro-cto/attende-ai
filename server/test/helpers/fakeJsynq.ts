@@ -3,6 +3,7 @@ import express from 'express';
 import type { Server } from 'http';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
+import { FakeCrm } from './fakeJsynqCrm';
 import { AUTH_SECRET } from './tokens';
 
 const oid = () => randomBytes(12).toString('hex');
@@ -29,12 +30,14 @@ export class FakeJsynq {
   /** Signup OTPs JSYNQ e-mailed, by e-mail (the tests read them as the user would from the inbox). */
   otps = new Map<string, string>();
   workspaces = new Map<string, Workspace>();
-  projects: Array<{ _id: string; workspaceId: string; title: string; projectType: { title: string }; columns: string[] }> = [];
+  projects: Array<{ _id: string; workspaceId: string; title: string; projectType: { title: string }; columns: string[]; tabs?: Array<{ boardId: string; boardType: string; order: number }> }> = [];
   pendingInvites = new Map<string, number>();
   sessions: Array<{ _id: string; workspaceId: string; channel: 'whatsapp' | 'sms' | 'instagram'; status: string; label?: string; deletedAt?: string | null }> = [];
   agents = new Map<string, Agent>();
   bindings = new Map<string, Binding>();
   documents = new Map<string, { workspaceId: string; name: string }>();
+  /** CRM boards, cards, contacts and the inbox (funnel and reports). */
+  crm = new FakeCrm();
   calls: string[] = [];
   /** Make the next matching call fail: `{ 'POST /api/workspaces': 500 }`. */
   failures: Record<string, number> = {};
@@ -45,6 +48,7 @@ export class FakeJsynq {
     for (const m of [this.users, this.otps, this.workspaces, this.pendingInvites, this.agents, this.bindings, this.documents]) m.clear();
     this.projects = [];
     this.sessions = [];
+    this.crm.reset();
     this.calls = [];
     this.failures = {};
   }
@@ -215,7 +219,7 @@ export class FakeJsynq {
 
     // --- projects ---------------------------------------------------------------------------
     r.get('/projects', scoped, (_req, res) =>
-      res.json({ status: true, total: 0, projects: this.projects.filter((p) => p.workspaceId === res.locals.ws).map(({ _id, title, projectType }) => ({ _id, title, projectType })) })
+      res.json({ status: true, total: 0, projects: this.projects.filter((p) => p.workspaceId === res.locals.ws).map(({ _id, title, projectType, tabs }) => ({ _id, title, projectType, tabs: tabs ?? [] })) })
     );
     r.post('/projects', scoped, (req, res) => {
       const b = req.body ?? {};
@@ -322,6 +326,7 @@ export class FakeJsynq {
       this.documents.delete(String(req.params.id));
       return res.json({ message: 'Document deleted successfully' });
     });
+    this.crm.install(r, scoped);
     app.use('/api', r);
   }
 }

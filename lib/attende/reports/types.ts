@@ -1,4 +1,7 @@
-/** Shapes of JSYNQ conversation analytics (`GET /api/conversation-analytics/*`), the same as the old reports API. */
+/**
+ * Shapes of the Attende reports API (`GET /api/attende/reports/overview|agents|outcomes`), the same as the old reports
+ * API. Computed by the Attende reports job from JSYNQ's inbox endpoints (`server/modules/reports`).
+ */
 export type ReportChannel = "whatsapp" | "instagram" | "sms"
 export const REPORT_CHANNELS: readonly ReportChannel[] = ["whatsapp", "instagram", "sms"]
 
@@ -82,6 +85,14 @@ export type OverviewResponse = {
   topHandoffReasons: HandoffReasonCount[]
   /** Stable keys of metrics the data cannot support: `opt_outs`, `customer_satisfaction`, `ai_resolution_confirmed`, `after_hours_share`. */
   notAvailable: string[]
+  /** `preparing` until the first sync of the workspace finished (the numbers are not complete yet). */
+  status?: ReportStatus
+}
+
+export type ReportStatus = {
+  state: "preparing" | "ready"
+  /** End of the last completed sync (ISO); the data is as fresh as this. */
+  lastSyncAt: string | null
 }
 
 /** The filters of the screen. `agentId` may be `none` (not attributable to an AI agent). */

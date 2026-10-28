@@ -7,6 +7,7 @@ import { json, route, type Guard } from './lib/http';
 import { errMessage, log } from './lib/logger';
 import { sweepOrphanAgents } from './modules/agents/sweeper';
 import { BillingService } from './modules/billing/service';
+import { runReportsSync } from './modules/reports/sync';
 
 /** Vercel Cron calls with `Authorization: Bearer <CRON_SECRET>`. Without the secret configured, nothing runs. */
 const requireCron: Guard = (ctx) => {
@@ -34,3 +35,6 @@ export const billingReconcileCron = job('billing-reconcile', (deps) => new Billi
 
 /** Every hour: removes the JSYNQ agents and bindings of creates that died half-way. */
 export const agentSweeperCron = job('orphan-agent-sweeper', (deps) => sweepOrphanAgents(deps));
+
+/** Every 10 min: pulls conversations and messages changed since each workspace's cursor and rebuilds the report days. */
+export const reportsCron = job('reports', (deps) => runReportsSync(deps, { budgetMs: 45_000 }));
