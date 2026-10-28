@@ -1,0 +1,16 @@
+# The Attende worker (worker/index.ts): one small always-on Node process (Render, Railway, Fly).
+#   docker build -f Dockerfile.worker -t attende-worker .
+#   docker run -e ATTENDE_MONGODB_URI=... -e AUTH_SECRET=... -e JSYNQ_API_URL=... -p 8080:8080 attende-worker
+# Health check: GET /healthz on WORKER_HEALTH_PORT (default 8080). Stop with SIGTERM (graceful, < 25 s).
+FROM node:22-slim
+ENV NODE_ENV=production WORKER_HEALTH_PORT=8080
+WORKDIR /app
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile --production --ignore-scripts --network-timeout 600000 && yarn cache clean
+COPY tsconfig.json ./
+COPY lib ./lib
+COPY server ./server
+COPY worker ./worker
+USER node
+EXPOSE 8080
+CMD ["node_modules/.bin/tsx", "--conditions=react-server", "worker/index.ts"]

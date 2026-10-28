@@ -3,13 +3,26 @@ import express from 'express';
 import type { Server } from 'http';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
+import { WebSocket, WebSocketServer } from 'ws';
 import { FakeCrm } from './fakeJsynqCrm';
 import { AUTH_SECRET } from './tokens';
 
 const oid = () => randomBytes(12).toString('hex');
 
 type Agent = { id: string; workspaceId: string; name: string; description: string; systemPrompt: string; isActive: boolean; body: Record<string, unknown> };
-type Binding = { _id: string; workspaceId: string; agentId: string; channel: string; sessionId: string; status: 'active' | 'paused' | 'completed'; policy: Record<string, unknown> };
+type Binding = {
+  _id: string;
+  workspaceId: string;
+  agentId: string;
+  channel: string;
+  sessionId: string;
+  targetType: string;
+  targetId?: string | null;
+  status: 'active' | 'paused' | 'completed';
+  policy: Record<string, unknown>;
+};
+/** A socket of the fake `/ws` endpoint: its room and the user its token (query or handshake) proved. */
+type FakeSocket = { ws: WebSocket; room: string; userId: string | null; handshakes: number };
 type User = { id: string; email: string; name: string; verified: boolean; language?: string };
 type Workspace = { _id: string; name: string; owner: string; members: string[]; createdAt: string; language?: string; businessHours?: unknown };
 
@@ -42,7 +55,42 @@ export class FakeJsynq {
   /** Make the next matching call fail: `{ 'POST /api/workspaces': 500 }`. */
   failures: Record<string, number> = {};
   private server: Server | null = null;
+  private wss: WebSocketServer | null = null;
+  /** Open sockets of the fake websocket (`/ws?room=&token=`). */
+  sockets: FakeSocket[] = [];
+  /** Upgrades refused (bad token). */
+  refusedSockets = 0;
+  /** While true, `broadcast` drops events (as JSYNQ's relay does when no socket is there to get them). */
+  muteSockets = false;
   url = '';
+
+  get wsUrl() {
+    return `${this.url.replace(/^http/, 'ws')}/ws`;
+  }
+
+  /** What JSYNQ's `publishMessagingInboxWsBroadcast` does: every authenticated member socket of the room gets it. */
+  broadcast(workspaceId: string, type: string, payload: Record<string, unknown>) {
+    if (this.muteSockets) return;
+    const room = `messaging-inbox:${workspaceId}`;
+    const ws = this.workspaces.get(workspaceId);
+    for (const s of this.sockets) {
+      if (s.room !== room || !s.userId || !ws?.members.includes(s.userId) || s.ws.readyState !== WebSocket.OPEN) continue;
+      s.ws.send(JSON.stringify({ type, payload }));
+    }
+  }
+
+  /** Kills every socket as a network drop would (clients reconnect). */
+  dropSockets() {
+    for (const s of this.sockets) s.ws.terminate();
+  }
+
+  private verify(token: string | null | undefined): string | null {
+    try {
+      return (jwt.verify(token ?? '', AUTH_SECRET, { algorithms: ['HS256'] }) as { id: string }).id;
+    } catch {
+      return null;
+    }
+  }
 
   reset() {
     for (const m of [this.users, this.otps, this.workspaces, this.pendingInvites, this.agents, this.bindings, this.documents]) m.clear();
@@ -51,6 +99,10 @@ export class FakeJsynq {
     this.crm.reset();
     this.calls = [];
     this.failures = {};
+    this.muteSockets = false;
+    this.refusedSockets = 0;
+    // `crm.reset()` cleared the hook.
+    if (this.wss) this.installBroadcastHook();
   }
 
   addUser(email: string, opts: { verified?: boolean; id?: string } = {}) {
@@ -111,10 +163,85 @@ export class FakeJsynq {
     });
     const addr = this.server!.address() as { port: number };
     this.url = `http://127.0.0.1:${addr.port}`;
+    this.startSockets();
     return this;
   }
 
+  /** JSYNQ's `WebSocketSyncServer` on `/ws`: `room` and `token` query params, then a `handshake` message with the token. */
+  private startSockets() {
+    this.wss = new WebSocketServer({
+      server: this.server!,
+      path: '/ws',
+      verifyClient: (info, cb) => {
+        const url = new URL(info.req.url ?? '/', 'http://fake');
+        const token = url.searchParams.get('token');
+        // JSYNQ refuses an upgrade only for a token that does not verify (an anonymous socket may handshake later).
+        if (token && !this.verify(token)) {
+          this.refusedSockets += 1;
+          return cb(false, 401, 'Unauthorized');
+        }
+        return cb(true);
+      },
+    });
+    this.wss.on('connection', (ws, req) => {
+      const url = new URL(req.url ?? '/', 'http://fake');
+      const room = url.searchParams.get('room') ?? '';
+      if (!room) return ws.close(1008, 'room not provided');
+      const socket: FakeSocket = { ws, room, userId: this.verify(url.searchParams.get('token')), handshakes: 0 };
+      this.sockets.push(socket);
+      ws.on('message', (data) => {
+        try {
+          const m = JSON.parse(String(data)) as { type?: string; payload?: { token?: string } };
+          if (m.type === 'handshake') {
+            socket.handshakes += 1;
+            const id = this.verify(m.payload?.token);
+            if (id) socket.userId = id;
+          }
+        } catch {
+          /* ignore */
+        }
+      });
+      ws.on('close', () => {
+        this.sockets = this.sockets.filter((s) => s !== socket);
+      });
+    });
+    this.installBroadcastHook();
+  }
+
+  /** New messages in the fake inbox reach the room like JSYNQ's notifications do. */
+  private installBroadcastHook() {
+    this.crm.onMessage = (c, m) => {
+      if (m.direction === 'inbound') {
+        this.broadcast(c.workspaceId, 'messaging-inbox:new-inbound-message', {
+          workspaceId: c.workspaceId,
+          channel: c.channel,
+          sessionId: c.sessionId,
+          conversationId: c._id,
+          messageId: m._id,
+          lastInboundAt: m.createdAt,
+          lastMessageAt: m.createdAt,
+          lastMessagePreview: (m.content ?? '').slice(0, 40),
+          lastMessageDirection: 'inbound',
+        });
+      } else {
+        this.broadcast(c.workspaceId, 'messaging-inbox:conversation-last-message-updated', {
+          workspaceId: c.workspaceId,
+          channel: c.channel,
+          sessionId: c.sessionId,
+          conversationId: c._id,
+          messageId: m._id,
+          lastMessageStatus: 'sent',
+          lastMessagePreview: (m.content ?? '').slice(0, 40),
+          lastMessageDirection: 'outbound',
+          lastMessageAt: m.createdAt,
+        });
+      }
+    };
+  }
+
   async stop() {
+    for (const s of this.sockets) s.ws.terminate();
+    await new Promise<void>((resolve) => (this.wss ? this.wss.close(() => resolve()) : resolve()));
     await new Promise<void>((resolve) => this.server?.close(() => resolve()));
   }
 
@@ -269,8 +396,19 @@ export class FakeJsynq {
       const b = req.body as Binding;
       const session = this.sessions.find((s) => s._id === b.sessionId && s.workspaceId === res.locals.ws);
       if (!session) return res.status(400).json({ error: true, code: 400, message: 'Session not found in this workspace' });
+      if (!b.channel || !b.targetType || !(b as { mode?: string }).mode) return res.status(400).json({ error: true, code: 400, message: 'channel, targetType and mode are required' });
       const _id = oid();
-      const row: Binding = { _id, workspaceId: res.locals.ws, agentId: b.agentId, channel: b.channel, sessionId: b.sessionId, status: 'active', policy: b.policy };
+      const row: Binding = {
+        _id,
+        workspaceId: res.locals.ws,
+        agentId: b.agentId,
+        channel: b.channel,
+        sessionId: b.sessionId,
+        targetType: b.targetType,
+        targetId: b.targetId ?? null,
+        status: 'active',
+        policy: b.policy,
+      };
       this.bindings.set(_id, row);
       return res.status(201).json({ success: true, data: row });
     });

@@ -38,10 +38,15 @@ export type FakeConversation = {
   linkedEntityType?: string | null;
   linkedEntityId?: string | null;
   crmProjectId?: string | null;
+  assignedUserId?: string | null;
+  contactName?: string;
+  contactPhone?: string;
 };
 export type FakeMessage = {
   _id: string;
   conversationId: string;
+  content?: string;
+  senderId?: string;
   direction: 'inbound' | 'outbound';
   senderType: 'contact' | 'agent' | 'user';
   agentExecutionId?: string | null;
@@ -70,6 +75,25 @@ export class FakeCrm {
   cardQueries: Array<Record<string, unknown>> = [];
   /** Every card update: `{cardId, body}`. */
   updates: Array<{ cardId: string; body: Record<string, unknown> }> = [];
+  /** Every assign call: `{conversationId, userId}`. */
+  assigns: Array<{ conversationId: string; userId: string | null }> = [];
+  /** Every state transition: `{conversationId, newState}`. */
+  transitions: Array<{ conversationId: string; newState: string }> = [];
+  /** Called after a message is written (the fake websocket broadcasts it). */
+  onMessage: ((conversation: FakeConversation, message: FakeMessage) => void) | null = null;
+  private seq = 0;
+
+  /** A contact message (or any message) in `conversation`, newest; bumps the conversation's `lastMessageAt`. */
+  addMessage(conversation: FakeConversation, over: Partial<FakeMessage> & Pick<FakeMessage, 'direction' | 'senderType'>, opts: { silent?: boolean } = {}): FakeMessage {
+    this.seq += 1;
+    const createdAt = over.createdAt ?? new Date(Date.now() + this.seq).toISOString();
+    const message: FakeMessage = { _id: oid(), conversationId: conversation._id, createdAt, status: 'sent', ...over };
+    this.messages.push(message);
+    if (createdAt > conversation.lastMessageAt) conversation.lastMessageAt = createdAt;
+    conversation.lastMessageDirection = message.direction;
+    if (!opts.silent) this.onMessage?.(conversation, message);
+    return message;
+  }
 
   reset() {
     this.boards = [];
@@ -83,6 +107,9 @@ export class FakeCrm {
     this.messages = [];
     this.cardQueries = [];
     this.updates = [];
+    this.assigns = [];
+    this.transitions = [];
+    this.onMessage = null;
     this.cardsGets = 0;
   }
 
@@ -176,6 +203,14 @@ export class FakeCrm {
       const card = this.cards.find((c) => c._id === req.params.id && c.workspaceId === ws(res));
       if (!card) return res.status(404).json({ error: true, code: 404, message: 'Not found' });
       this.updates.push({ cardId: card._id, body: req.body });
+      if (Array.isArray(req.body.addLabelIds)) for (const id of req.body.addLabelIds as string[]) if (!card.labels.includes(id)) card.labels.push(id);
+      if (Array.isArray(req.body.customFields)) {
+        for (const f of req.body.customFields as Array<{ fieldId: string; value: unknown }>) {
+          const existing = card.customFields.find((c) => c.fieldId === f.fieldId);
+          if (existing) existing.value = f.value;
+          else card.customFields.push({ fieldId: f.fieldId, fieldType: 'text', value: f.value });
+        }
+      }
       if (req.body.column) {
         const column = this.columns.find((c) => c._id === req.body.column);
         if (!column) return res.status(500).json({ error: true, code: 500, message: 'Column not found' });
@@ -188,6 +223,12 @@ export class FakeCrm {
     });
 
     r.get('/projects/:p/labels', scoped, (req, res) => res.json({ status: true, labels: this.labels.filter((l) => l.project === req.params.p) }));
+    r.post('/projects/:p/label', scoped, (req, res) => {
+      if (typeof req.body?.text !== 'string' || typeof req.body?.color !== 'string') return res.status(400).json({ error: true, code: 400, message: '"color" is required' });
+      const label = { _id: oid(), project: req.params.p!, text: req.body.text, color: req.body.color };
+      this.labels.push(label);
+      return res.json({ label, status: true });
+    });
     r.get('/projects/:p/lead-sources', scoped, (req, res) => res.json({ success: true, leadSources: this.leadSources.filter((l) => l.project === req.params.p) }));
     r.get('/users/workspaces/:id', (_req, res) => res.json({ members: this.users }));
 
@@ -213,8 +254,13 @@ export class FakeCrm {
     r.get('/workspaces/:w/messaging/inbox/conversations', (req, res) => {
       const limit = Math.min(50, Number(req.query.limit ?? 30));
       const offset = req.query.cursor ? Number(Buffer.from(String(req.query.cursor), 'base64url').toString()) : 0;
+      const q = req.query as Record<string, string | undefined>;
+      const states = (q.conversationState ?? '').split(',').filter(Boolean);
       const list = this.conversations
         .filter((c) => c.workspaceId === req.params.w)
+        .filter((c) => !q.conversationId || c._id === q.conversationId)
+        .filter((c) => !states.length || states.includes(c.conversationState ?? ''))
+        .filter((c) => q.assignee !== 'unassigned' || !c.assignedUserId)
         .sort((a, b) => (a.lastMessageAt === b.lastMessageAt ? (a._id < b._id ? 1 : -1) : a.lastMessageAt < b.lastMessageAt ? 1 : -1));
       const page = list.slice(offset, offset + limit);
       const hasMore = offset + limit < list.length;
@@ -224,7 +270,34 @@ export class FakeCrm {
         meta: { limit, hasMore, nextCursor: hasMore ? Buffer.from(String(offset + limit)).toString('base64url') : null },
       });
     });
+    const convOf = (res: express.Response, id: string, channel: string) => this.conversations.find((c) => c._id === id && c.workspaceId === ws(res) && c.channel === channel);
     for (const channel of ['whatsapp', 'sms', 'instagram'] as const) {
+      r.post(`/${channel}-lite/sessions/:s/conversations/:id/messages`, scoped, (req, res) => {
+        const conversation = convOf(res, req.params.id!, channel);
+        if (!conversation || conversation.sessionId !== req.params.s) return res.status(404).json({ success: false, message: 'Conversation not found' });
+        const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+        if (!text) return res.status(400).json({ error: true, code: 400, message: 'text or file is required' });
+        const message = this.addMessage(conversation, { direction: 'outbound', senderType: 'user', senderId: res.locals.user.id, content: text });
+        return res.status(201).json({ success: true, data: message });
+      });
+      r.post(`/${channel}-lite/conversations/:id/state`, scoped, (req, res) => {
+        const conversation = convOf(res, req.params.id!, channel);
+        if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
+        const newState = String(req.body?.newState ?? '');
+        if (conversation.conversationState === newState) return res.status(400).json({ error: true, code: 400, message: `Invalid transition from ${newState} to ${newState}` });
+        this.transitions.push({ conversationId: conversation._id, newState });
+        conversation.conversationState = newState;
+        conversation.conversationStateHistory = [...(conversation.conversationStateHistory ?? []), { state: newState, changedAt: new Date().toISOString(), changedBy: 'user', reason: req.body?.reason }];
+        return res.json({ success: true, data: { previousState: null, newState } });
+      });
+      r.patch(`/${channel}-lite/sessions/:s/conversations/:id/assign`, scoped, (req, res) => {
+        const conversation = convOf(res, req.params.id!, channel);
+        if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
+        const userId = req.body?.userId ? String(req.body.userId) : null;
+        this.assigns.push({ conversationId: conversation._id, userId });
+        conversation.assignedUserId = userId;
+        return res.json({ success: true, data: { assignedUserId: userId } });
+      });
       r.get(`/${channel}-lite/sessions/:s/conversations/:id/messages`, scoped, (req, res) => {
         const limit = Math.min(channel === 'instagram' ? 200 : 1000, Number(req.query.limit ?? 50));
         let list = this.messages.filter((m) => m.conversationId === req.params.id).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));

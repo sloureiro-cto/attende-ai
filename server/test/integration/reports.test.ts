@@ -74,7 +74,7 @@ describe('reports computed in Attende from the JSYNQ inbox', () => {
     token = userToken({ id: userId, workspaceId });
     await EntitlementModel.create({ workspaceId, tier: 'attende_growth', status: 'active', limits: { lines: 3, agents: 3, aiRepliesPerMonth: 5000, seats: 5, docs: 100 } });
     jsynq.agents.set(agentX, { id: agentX, workspaceId, name: 'SDR', description: '', systemPrompt: 'x', isActive: true, body: {} });
-    jsynq.bindings.set('bind-x', { _id: 'bind-x', workspaceId, agentId: agentX, channel: 'whatsapp', sessionId: hex('5'), status: 'active', policy: {} });
+    jsynq.bindings.set('bind-x', { _id: 'bind-x', workspaceId, agentId: agentX, channel: 'whatsapp', sessionId: hex('5'), targetType: 'all_inbound', status: 'active', policy: {} });
     jsynq.crm.cards.push({ ...jsynq.crm.addCard({ workspaceId, project: projectId, board: hex('d'), column: hex('e') }), _id: card1, createdAt: at('10:01:00') });
 
     const [c1, c2, c3, c4] = [hex('1'), hex('2'), hex('3'), hex('4')];

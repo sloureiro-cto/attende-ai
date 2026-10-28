@@ -8,6 +8,7 @@ import { errMessage, log } from './lib/logger';
 import { sweepOrphanAgents } from './modules/agents/sweeper';
 import { BillingService } from './modules/billing/service';
 import { runReportsSync } from './modules/reports/sync';
+import { runReportsJob } from './modules/reports/job';
 
 /** Vercel Cron calls with `Authorization: Bearer <CRON_SECRET>`. Without the secret configured, nothing runs. */
 const requireCron: Guard = (ctx) => {
@@ -36,5 +37,9 @@ export const billingReconcileCron = job('billing-reconcile', (deps) => new Billi
 /** Every hour: removes the JSYNQ agents and bindings of creates that died half-way. */
 export const agentSweeperCron = job('orphan-agent-sweeper', (deps) => sweepOrphanAgents(deps));
 
-/** Every 10 min: pulls conversations and messages changed since each workspace's cursor and rebuilds the report days. */
-export const reportsCron = job('reports', (deps) => runReportsSync(deps, { budgetMs: 45_000 }));
+/**
+ * Every 10 min: pulls conversations and messages changed since each workspace's cursor and rebuilds the report days.
+ * The worker runs the same job; both take the `job:reports` lease, so this is a fallback that skips when the worker
+ * ran it less than 9 minutes ago (`skipped: 1`).
+ */
+export const reportsCron = job('reports', (deps) => runReportsJob(deps, 'cron', (d) => runReportsSync(d, { budgetMs: 45_000 })));

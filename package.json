@@ -6,6 +6,7 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
+    "worker": "tsx --conditions=react-server worker/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "cross-env FORCE_COLOR=1 jest --passWithNoTests",
     "prettier": "prettier --check \"**/*.{js,jsx,ts,tsx}\"",
@@ -68,6 +69,8 @@
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
     "tailwindcss-safe-area": "^0.6.0",
+    "tsx": "^4.19.2",
+    "ws": "8.18.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -84,6 +87,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/supertest": "^6.0.2",
+    "@types/ws": "8.5.13",
     "autoprefixer": "^10.4.16",
     "cross-env": "^7.0.3",
     "express": "^4.21.2",
@@ -96,7 +100,6 @@
     "prettier-plugin-tailwindcss": "^0.5.7",
     "supertest": "^7.0.0",
     "tailwindcss": "^3.3.5",
-    "tsx": "^4.19.2",
     "typescript": "5.4.5"
   },
   "resolutions": {

@@ -33,17 +33,30 @@ const schema = z.object({
 
   // Vercel Cron sends it as `Authorization: Bearer <CRON_SECRET>` to /api/cron/*. Without it the cron routes refuse.
   CRON_SECRET: z.string().min(16).optional(),
+  // The advanced automations runtime. Only the worker runs it; unset, the worker treats it as on (worker/index.ts).
   ADVANCED_AUTOMATIONS_RUNTIME_ENABLED: bool(false),
+
+  // Worker only. JSYNQ websocket endpoint; default: JSYNQ_API_URL with ws(s):// and path /ws.
+  JSYNQ_WS_URL: z.string().url().optional(),
+  // Worker only. Port of its health endpoint (GET /healthz).
+  WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(8080),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 
 export type Env = z.infer<typeof schema>;
 
+/** The worker (`ATTENDE_PROCESS=worker`) never calls Stripe nor builds app URLs: those settings may be absent there. */
+const workerSchema = schema.extend({
+  FRONTEND_URL: z.string().url().default('http://worker.invalid'),
+  STRIPE_SECRET_KEY: z.string().min(10).default('unused-in-the-worker'),
+  STRIPE_WEBHOOK_SECRET: z.string().min(10).default('unused-in-the-worker'),
+});
+
 export function parseEnv(source: NodeJS.ProcessEnv = process.env): Env {
   // An empty value (`NAME=` copied from .env.example) means "not set", so optional defaults apply.
   const set = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== undefined && v !== ''));
   const frontend = set.FRONTEND_URL || set.AUTH_URL;
-  const result = schema.safeParse({ ...set, ...(frontend ? { FRONTEND_URL: frontend } : {}) });
+  const result = (set.ATTENDE_PROCESS === 'worker' ? workerSchema : schema).safeParse({ ...set, ...(frontend ? { FRONTEND_URL: frontend } : {}) });
   if (!result.success) {
     const problems = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
     throw new Error(`Invalid environment:\n  ${problems.join('\n  ')}`);
