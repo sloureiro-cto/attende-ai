@@ -10,8 +10,10 @@ Attende-ai talks to two APIs, always with the signed-in user's token (`session.a
   [`attend-ai-backend`](https://github.com/sloureiro-cto/attend-ai-backend)): signup and trial, plan and entitlements,
   Stripe billing, AI agent setup and advanced automations. It has its own MongoDB (`ATTENDE_MONGODB_URI`);
 - the **JSYNQ API**: users and sign-in, workspaces, channels, inbox, contacts and cards, plus the generic CRM board
-  table (the funnel) and conversation analytics (the reports). The Attende API also calls it (user token, and the
-  partner API for signup, limits and usage).
+  table (the funnel) and conversation analytics (the reports). The Attende API also calls it, only through routes
+  that exist on JSYNQ today (no partner API): JSYNQ's public signup routes, and its user routes with the user's token
+  or one the server mints with `AUTH_SECRET`. The full list, per feature, is in
+  [`docs/jsynq-apis-used.md`](docs/jsynq-apis-used.md), with the operator steps JSYNQ needs.
 
 A running JSYNQ API (and access to its MongoDB, for sign-in) and an Attende MongoDB are required.
 
@@ -20,11 +22,11 @@ A running JSYNQ API (and access to its MongoDB, for sign-in) and an Attende Mong
 | Piece | What it is |
 | --- | --- |
 | Attende API | Served here; server actions call its route handlers in process (`callAttende` in `lib/attende/serverApi.ts`), with the user's token, same paths and bodies as over HTTP. Optional `ATTENDE_API_URL` (base including `/api`) sends those calls over HTTP to another deployment instead. |
-| `ATTENDE_MONGODB_URI` | The Attende database (plans, signups, subscriptions, entitlements, agent setups, automations, webhook events). Not the JSYNQ database. |
+| `ATTENDE_MONGODB_URI` | The Attende database (plans, signups, subscriptions, entitlements, usage counters, agent pauses, agent setups, automations). Not the JSYNQ database. |
 | `BACKEND_URL` | JSYNQ API base URL used on the server (server components, server actions, route handlers). The funnel reads `/crm/boards/default` and `/crm/boards/:id/table*` and moves deals with `PATCH /crm/cards/:id/column`; the reports read `/conversation-analytics/*`. |
 | `NEXT_PUBLIC_BACKEND_URL` | Same API as seen from the browser (direct uploads, realtime). Inlined at build time. |
 | `MONGODB_URI` | JSYNQ MongoDB. NextAuth (`@auth/mongodb-adapter`) and a few server actions read it. |
-| `AUTH_SECRET` | Encrypts the session cookie and signs the API token sent to the JSYNQ API. Must match the secret the API verifies. |
+| `AUTH_SECRET` | Encrypts the session cookie and signs the API token sent to the JSYNQ API. Must match the secret the API verifies. The Attende API signs the same token (`lib/auth/apiToken.ts`) to act as a member when nobody is signed in (start-trial, Stripe webhooks, crons). |
 
 Login is NextAuth (Auth.js v5): e-mail and password (with the JSYNQ login code step) and Google. The session
 cookie names are the app's own (`lib/auth/botsAuthCookies.ts`), so it never shares a cookie with JSYNQ.
@@ -63,8 +65,8 @@ Pages also need a valid `STATSIG_SERVER_API_KEY` at runtime (the root layout boo
 ## Attende API (`server/`, `app/api/`)
 
 `server/` is server-only (every file starts with `import 'server-only'`; a client import fails the build). It holds
-the modules (`signup`, `billing`, `agents`, `automations`, `jsynq-webhooks`), the Mongoose models, the JSYNQ client
-(`server/lib/jsynq`), the mailer and the auth (user JWT verified locally with `AUTH_SECRET`, membership checked with
+the modules (`signup`, `billing`, `agents`, `automations`), the Mongoose models, the JSYNQ client
+(`server/lib/jsynq`: public signup routes, user routes, the server-minted token) and the auth (user JWT verified locally with `AUTH_SECRET`, membership checked with
 JSYNQ and cached 60 s). `server/routes.ts` lists every route; `app/api/**/route.ts` exports the same handlers (a test
 keeps them in sync), and `server/lib/http.ts` is the shared wrapper (DB connect, guards, error body).
 
@@ -78,34 +80,36 @@ Errors have one shape: `{error, code, message, reference?, details?}`; agent err
 | POST | `/api/attende/signup/setup-intent`, `/signup/start-trial` | user |
 | GET | `/api/attende/entitlements`, `/api/attende/billing/invoices` | user + workspace |
 | POST | `/api/attende/billing/portal` | user + workspace |
+| POST | `/api/attende/limits/check`, `/api/attende/usage/outbound` | user + workspace (the app's own plan checks before channel, invite and send actions) |
 | GET/POST/PATCH/DELETE | `/api/attende/agents/*` (templates, from-template, `:id`, setup, go-live, pause, test, knowledge) | user + workspace + plan |
 | GET/POST/PATCH/DELETE | `/api/messaging-automations/advanced*` (list, create, preview, `:id`, stats, stats/series) | user + workspace + plan |
 | POST | `/api/stripe/webhook` | Stripe signature (`STRIPE_WEBHOOK_SECRET`) |
-| POST | `/api/jsynq/webhooks`, `/api/jsynq/inbound` | JSYNQ signature (`JSYNQ_WEBHOOK_SECRET`) |
 | GET | `/api/cron/billing-reconcile` (every 15 min), `/api/cron/agent-sweeper` (hourly) | `Authorization: Bearer <CRON_SECRET>` (Vercel Cron, `vercel.json`) |
 
 The middleware lets these paths through without a session cookie: each route authenticates itself.
 
+The plan is enforced here, not in JSYNQ: channels, agents, documents and seats are counted from JSYNQ's own lists
+before each create; AI replies and sent messages are counted locally; a trial that ends, a canceled subscription or
+the AI-reply quota pause the workspace's agent bindings in JSYNQ, and they resume on reactivation or the next month.
+
 The advanced automations runtime (`server/modules/automations/runtime/`: inbound handling, waits and timers) is
-not run by Next.js: `/api/jsynq/inbound` answers `{handled:false}` and nothing is routed to it. A separate worker
-will run it.
+not run by Next.js. The worker (phase 4) will feed it from the JSYNQ websocket and give it a gateway on JSYNQ's
+existing user routes.
 
 Tests: `yarn test:server` (node, dummy env from `server/test/setupEnv.ts`, in-memory MongoDB, fake JSYNQ and Stripe;
 no secrets). The integration tests drive the same route handlers through `server/test/helpers/app.ts`.
 
 Operational scripts (run with `tsx --conditions=react-server`, so `server-only` resolves on plain Node):
-`yarn attende:seed-plans [--apply]`, `yarn attende:register-jsynq-webhook [--apply]`,
-`yarn attende:sync-inbound-routing [--apply]`, `yarn attende:migrate-from-jsynq --source <uri> [--apply]`.
+`yarn attende:seed-plans [--apply]`, `yarn attende:migrate-from-jsynq --source <uri> [--apply]`.
 
 ## Environment variables
 
 Every variable is listed with a one-line description in [`.env.example`](.env.example). Summary:
 
-- **Attende API:** `ATTENDE_MONGODB_URI`, `FRONTEND_URL` (optional, defaults to `AUTH_URL`), `PUBLIC_URL`,
-  `DATA_ENCRYPTION_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `BILLING_GRACE_DAYS`, `JSYNQ_API_URL`,
-  `JSYNQ_PARTNER_API_KEY`, `JSYNQ_WEBHOOK_SECRET`, `JSYNQ_TIMEOUT_MS`, `MAIL_PROVIDER`, `MAIL_FROM`, `SMTP_URL`,
-  `RESEND_API_KEY`, `AGENT_MODEL`, `EXTRA_DISPOSABLE_DOMAINS`, `CRON_SECRET`, `LOG_LEVEL`,
-  `ADVANCED_AUTOMATIONS_RUNTIME_ENABLED` (worker only), `ATTENDE_API_URL` (optional)
+- **Attende API:** `ATTENDE_MONGODB_URI`, `FRONTEND_URL` (optional, defaults to `AUTH_URL`), `STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, `BILLING_GRACE_DAYS`, `JSYNQ_API_URL`, `JSYNQ_TIMEOUT_MS`, `AGENT_MODEL`,
+  `EXTRA_DISPOSABLE_DOMAINS`, `CRON_SECRET`, `LOG_LEVEL`, `ADVANCED_AUTOMATIONS_RUNTIME_ENABLED` (worker only),
+  `ATTENDE_API_URL` (optional); it also uses `AUTH_SECRET`
 - **JSYNQ API:** `BACKEND_URL`, `NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_WEBSOCKET_SERVER` (optional)
 - **Sign-in:** `MONGODB_URI`, `AUTH_SECRET`, `AUTH_URL` (optional), `AUTH_REDIRECT_PROXY_URL` (optional),
   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
@@ -144,8 +148,9 @@ Never commit `.env*` files other than `.env.example`.
    Google OAuth client's redirect URIs, or set `AUTH_REDIRECT_PROXY_URL`.
 5. Attende API: set `CRON_SECRET` (Vercel Cron sends it; the jobs are in `vercel.json`). In Stripe, point a webhook
    endpoint at `https://<domain>/api/stripe/webhook` (events `customer.subscription.*`, `invoice.paid`,
-   `invoice.payment_failed`) and set `STRIPE_WEBHOOK_SECRET`. Register the JSYNQ webhook at
-   `https://<domain>/api/jsynq/webhooks` (`yarn attende:register-jsynq-webhook --apply` with `PUBLIC_URL`) and set
-   `JSYNQ_WEBHOOK_SECRET`. Knowledge uploads go through a route handler; Vercel caps request bodies at 4.5 MB.
-6. The app is never indexed: the middleware and `next.config.js` send `X-Robots-Tag: noindex, nofollow`, and
+   `invoice.payment_failed`) and set `STRIPE_WEBHOOK_SECRET`. Nothing is registered in JSYNQ. Knowledge uploads go
+   through a route handler; Vercel caps request bodies at 4.5 MB.
+7. JSYNQ operator: each Attende workspace needs a JSYNQ plan with channels enabled (see "Operator steps" in
+   [`docs/jsynq-apis-used.md`](docs/jsynq-apis-used.md)).
+8. The app is never indexed: the middleware and `next.config.js` send `X-Robots-Tag: noindex, nofollow`, and
    `/robots.txt` disallows everything.
