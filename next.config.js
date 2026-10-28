@@ -30,7 +30,7 @@ const config = {
   },
   experimental: {
     // The Attende API (server/) runs these on Node as plain packages instead of bundling them.
-    serverComponentsExternalPackages: ["mongoose", "stripe", "nodemailer"],
+    serverComponentsExternalPackages: ["mongoose", "stripe"],
     serverActions: {
       bodySizeLimit: "100mb",
     },
