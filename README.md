@@ -6,8 +6,8 @@ knowledge, guided automations (the flow builder), a shared inbox, a sales funnel
 One repository, two processes:
 
 - **The app** (Next.js 14, App Router): the pages, and the **Attende API** as route handlers (`app/api/`, domain code
-  in `server/`): signup and trial, plans and Stripe billing, AI agent setup, advanced automations, the funnel and the
-  reports. It has its own MongoDB (`ATTENDE_MONGODB_URI`) and three Vercel crons.
+  in `server/`): signup and trial, plans and billing (JSYNQ's own subscriptions, on JSYNQ's Stripe account), AI
+  agent setup, advanced automations, the funnel and the reports. It has its own MongoDB (`ATTENDE_MONGODB_URI`) and three Vercel crons.
 - **The worker** (`worker/`, same `server/` code): one always-on Node process that listens to JSYNQ, runs the
   automations, counts AI replies against the plan and assigns handoffs.
 
@@ -36,8 +36,9 @@ MONGODB_URI=mongodb://localhost:27017/build AUTH_SECRET=build-placeholder-secret
   NODE_OPTIONS=--max-old-space-size=6144 yarn build
 ```
 
-Operational scripts: `yarn attende:seed-plans [--apply]` (plan catalog from Stripe) and
-`yarn attende:migrate-from-jsynq --source <uri> [--apply]` (one-off copy of the old Attende data out of JSYNQ).
+Operational script: `yarn attende:migrate-from-jsynq --source <uri> [--apply]` (one-off copy of the old Attende data
+out of JSYNQ). The plan catalog (JSYNQ plan slugs and Stripe price ids) is configuration:
+`server/modules/billing/catalog.ts`.
 
 ## Environment
 
@@ -48,7 +49,7 @@ other than `.env.example`.
 
 ## Layout
 
-- `app/api/` – the Attende API route handlers (plus NextAuth, the Stripe webhook and the crons); `server/routes.ts`
+- `app/api/` – the Attende API route handlers (plus NextAuth and the crons; no Stripe webhook); `server/routes.ts`
   lists them all, `server/` holds their server-only code (every file starts with `import 'server-only'`) and tests
 - `worker/`, `server/modules/worker/` – the worker; `Dockerfile.worker` builds it
 - `app/(bots)/` – every page (login, signup, pricing, bots, ai-agents, inbox, funnel, reports, team, billing, ...)

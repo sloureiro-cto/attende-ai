@@ -9,7 +9,8 @@ browser ──► Vercel: Next.js app ──► /api/attende/*, /api/messaging-a
                  │      ▲                 │
                  │      └─ Vercel Cron ───┤  /api/cron/* (Bearer CRON_SECRET)
                  │                        ├──► Attende MongoDB (ATTENDE_MONGODB_URI)
-Stripe ──────────┴─► /api/stripe/webhook  └──► JSYNQ API (existing routes only, docs/jsynq-apis-used.md)
+                 │                        ├──► JSYNQ API (existing routes only, docs/jsynq-apis-used.md)
+                 └────────────────────────┴──► Stripe (JSYNQ's account; JSYNQ's own webhook syncs JSYNQ)
 worker (Render/Railway/Fly) ──► JSYNQ websocket + API, Attende MongoDB
 ```
 
@@ -18,7 +19,7 @@ worker (Render/Railway/Fly) ──► JSYNQ websocket + API, Attende MongoDB
 1. Import the repository as a Next.js project. Install `yarn install`, build `yarn build`, Node.js 22.x (from
    `engines`).
 2. **Plan: Vercel Pro.** The crons run every 10-15 minutes; Hobby allows one run per day. Function duration: the
-   crons, the Stripe webhook and the funnel CSV export declare `maxDuration = 60` s.
+   crons and the funnel CSV export declare `maxDuration = 60` s.
 3. Set the variables below per environment (Production / Preview), then deploy. `NEXT_PUBLIC_*` values are inlined
    at build time: redeploy after changing one.
 4. Point the domain at the project. The browser calls the JSYNQ API directly (uploads, realtime), so JSYNQ must accept
@@ -35,7 +36,7 @@ description in [`.env.example`](.env.example).
 | `MONGODB_URI` | build + runtime | yes | JSYNQ MongoDB (NextAuth adapter). Checked at module load. |
 | `AUTH_SECRET` | build + runtime | yes | Same value as JSYNQ and the worker. Server-only. |
 | `NEXT_PUBLIC_BACKEND_URL` | build | yes | JSYNQ API base (with `/api`) as the browser sees it. |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | build | yes | Signup card step; same Stripe account as `STRIPE_SECRET_KEY`. |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | build | yes | Signup card step: **JSYNQ's live** publishable key (the form confirms JSYNQ's SetupIntent). |
 | `NEXT_PUBLIC_STATSIG_CLIENT_KEY` | build | yes | Feature flags in the browser. |
 | `NEXT_PUBLIC_META_APP_ID`, `NEXT_PUBLIC_META_EMBEDDED_SIGNUP_CONFIG_ID` | build | yes, for WhatsApp Cloud API signup | |
 | `NEXT_PUBLIC_WEBSOCKET_SERVER`, `NEXT_PUBLIC_META_SDK_VERSION`, `NEXT_PUBLIC_STATSIG_ENVIRONMENT`, `NEXT_PUBLIC_JSYNQ_URL`, `NEXT_PUBLIC_BOTS_CONTACT_EMAIL`, `NEXT_PUBLIC_BOTS_BOOKING_URL` | build | no | Defaults in `.env.example`. |
@@ -45,7 +46,7 @@ description in [`.env.example`](.env.example).
 | `JSYNQ_API_URL` | runtime | yes | JSYNQ API **origin** (paths start with `/api`). |
 | `BACKEND_URL` | runtime | yes | JSYNQ API base **with** `/api` (server components and actions). |
 | `FRONTEND_URL` | runtime | yes (or `AUTH_URL`) | `https://<host>`: the only billing-portal return origin. The Attende API refuses to start without one of the two. |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | runtime | yes | Section 4. |
+| `STRIPE_SECRET_KEY` | runtime | yes | **JSYNQ's live** Stripe secret key, server only. Section 4. No webhook secret. |
 | `CRON_SECRET` | runtime | yes | At least 16 characters; without it every cron refuses to run. |
 | `STATSIG_SERVER_API_KEY` | runtime | yes | The root layout bootstraps the flags with it; pages fail without a valid key. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | runtime | yes, for Google sign-in | |
@@ -60,19 +61,17 @@ description in [`.env.example`](.env.example).
 
 | Path | Schedule | What it does |
 | --- | --- | --- |
-| `/api/cron/billing-reconcile` | every 15 min | Re-reads subscriptions from Stripe (missed webhooks), pauses or resumes agents (trial over, lapsed plan, AI-reply quota lifted in a new month or after an upgrade). |
+| `/api/cron/billing-reconcile` | every 15 min | Re-reads each workspace's JSYNQ subscription (`GET /api/subscriptions/me`, plus the cancel flag from Stripe), pauses or resumes agents (trial over, canceled, reactivated, AI-reply quota lifted in a new month or after an upgrade). The worker does the same every 5 min without Stripe. |
 | `/api/cron/agent-sweeper` | hourly | Removes JSYNQ agents and bindings left behind by an agent creation that died half way. |
 | `/api/cron/reports` | every 10 min | Fallback for the worker's reports sync (both take the `job:reports` lease; a run within 9 min of the last one is skipped). |
 
 Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`. To run one by hand:
 `curl -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/billing-reconcile`.
 
-### Stripe webhook
+### No Stripe webhook
 
-Endpoint `https://<host>/api/stripe/webhook`, events `customer.subscription.created`, `.updated`, `.deleted`,
-`.paused`, `.resumed`, `.trial_will_end`, `invoice.paid`, `invoice.payment_failed`. Copy its signing secret into
-`STRIPE_WEBHOOK_SECRET`. Only subscriptions with `metadata.app = attende` are applied; others are acknowledged and
-ignored. Nothing is registered in JSYNQ.
+Attende registers no Stripe endpoint. Subscriptions are JSYNQ's; JSYNQ's own webhook keeps its database and channel
+gating in sync, and Attende re-reads `GET /api/subscriptions/me` (section 4).
 
 ### Knowledge uploads: 4.5 MB
 
@@ -181,49 +180,58 @@ idempotency records.
 - **Moving data from the old setup:** `yarn attende:migrate-from-jsynq --source <jsynq uri>` (dry run), then with
   `--apply`. It only reads the JSYNQ database (use a read-only user) and only inserts what is missing.
 
-## 4. Stripe
+## 4. Stripe (JSYNQ's account)
 
-1. **Shared account with JSYNQ?** JSYNQ's own Stripe webhook answers 500 for a subscription it does not know, so
-   every Attende subscription event would fail there and Stripe would retry it and eventually disable JSYNQ's
-   endpoint. **JSYNQ PR #1361 must be merged and deployed before the first Attende subscription** on a shared
-   account. With a separate Stripe account for Attende this does not apply.
-2. Products and prices of the three tiers: product metadata `attende_tier=<slug>`, or price lookup keys starting with
-   `<slug>_`.
-3. Seed the plan catalog from Stripe, dry run first:
+Attende bills through **JSYNQ's own subscriptions**, on JSYNQ's live Stripe account. Nothing is set up in Stripe for
+Attende and nothing changes in JSYNQ.
 
-   ```bash
-   ATTENDE_MONGODB_URI=... STRIPE_SECRET_KEY=... yarn attende:seed-plans          # prints what would change
-   ATTENDE_MONGODB_URI=... STRIPE_SECRET_KEY=... yarn attende:seed-plans --apply  # writes the plans
-   ```
-
-   It never creates anything in Stripe. Re-run it after a price change.
-4. Webhook endpoint and events: section 1.
+1. **Plans already exist in JSYNQ production:** `attende-essencial`, `attende-profissional`, `attende-escala` (hidden
+   from JSYNQ's catalog), each with two live flat prices (USD 39 / 79 / 199, BRL 197 / 397 / 997; tiered volume with
+   one tier, so the member count JSYNQ sets as quantity never changes the price). Their ids are in
+   `server/modules/billing/catalog.ts`. A price change is a new Stripe price plus a change of that file.
+2. **Keys:** `STRIPE_SECRET_KEY` = JSYNQ's live secret key (server only), `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` =
+   JSYNQ's live publishable key. **Recommended next step: replace the secret key with a restricted key** limited to
+   what Attende calls: Subscriptions write, Payment Methods read, Customer portal write (and nothing else). Attende
+   never creates customers, subscriptions, prices or refunds.
+3. **No webhook, and JSYNQ PR #1361 is not needed:** every subscription is created by JSYNQ itself
+   (`POST /api/subscriptions/upgrade-to-trial`), so JSYNQ's webhook knows them all.
+4. **What Attende does in Stripe** (only on a workspace's `attende-*` subscription, owner only): sets the trial to 7
+   days right after JSYNQ creates it with 14 (`trial_end`, `proration_behavior: none`); "subscribe without trial" =
+   `upgrade-to-trial` then `trial_end: now` (charged at once; a declined card changes nothing); cancel / resume
+   (`cancel_at_period_end`); change plan (item price swap to the target tier's price in the same currency, prorated);
+   the customer portal (card update, invoices). A workspace on a paid JSYNQ plan gets Attende included and its billing
+   is never touched.
+5. **Currency: USD for everyone, for now.** JSYNQ's `upgrade-to-trial` always uses the plan's USD price and Stripe
+   cannot change a subscription's currency. The BRL prices are in the catalog marked `inUse: false`. Billing in BRL
+   needs either creating the subscription with the workspace (`POST /api/workspaces` with `plan`, `currency: 'BRL'`,
+   `stripePriceId`, `paymentMethodId`; it has no trial) or a JSYNQ change (a currency on `upgrade-to-trial`).
+6. **Ended subscriptions** cannot be reactivated from Attende (JSYNQ's `upgrade-to-trial` refuses a workspace whose
+   current subscription price is not the free plan's). The billing page sends the customer to support. Before the
+   period ends, "Keep my subscription" undoes a cancellation.
+7. **Trials:** one per mailbox and per card (Attende's `trial_claims`); a second one is refused at signup with the
+   option to subscribe without a trial.
 
 ## 5. JSYNQ operator steps
 
 From [`docs/jsynq-apis-used.md`](docs/jsynq-apis-used.md#operator-steps-jsynq-side):
 
-> 1. **Give every Attende workspace a JSYNQ plan with channels enabled.** Messaging gating in JSYNQ is fail-closed
->    without a JSYNQ subscription whose plan enables WhatsApp / Instagram / SMS (`rules.socialMedia`). There is no
->    existing admin route or tool that assigns a plan to one workspace: the admin console (`/api/admin/*`) is
->    read-only, and `POST /api/subscriptions/upgrade-to-trial` starts JSYNQ's own trial. A JSYNQ operator does it in
->    the JSYNQ database: point `workspaces.subscription` of the workspace at an active `subscriptions` document of a
->    plan whose `rules.socialMedia` enables the channels (plan documents missing those rules can be filled with
->    `yarn script run configure-plan-social-media-rules`, dry run first). The list of Attende workspaces is in the
->    Attende `entitlements` collection (and `yarn attende:migrate-from-jsynq` prints the migrated ones).
+> 1. **Channels come with the Attende plan.** A new signup's workspace is on a JSYNQ `attende-*` subscription, which
+>    unlocks messaging while `trialing`/`active`. Only workspaces migrated from the old setup
+>    (`yarn attende:migrate-from-jsynq` prints them) may still need a JSYNQ operator to point
+>    `workspaces.subscription` at an active subscription of a plan whose `rules.socialMedia` enables the channels.
 > 2. **`AUTH_SECRET` must be the same** in JSYNQ, in this app and in the worker: JSYNQ verifies the tokens the Attende
 >    server mints with it.
 
-Step 1 is needed for **every new signup** too, until JSYNQ has a way to do it: until then a new workspace cannot
-connect a channel. Agree who does it and how fast before opening signups.
+New signups need no operator step: their channels unlock with the trial.
 
 ## 6. Smoke checklist after a deploy
 
-Use a test e-mail and Stripe test mode on staging; on production, a real card refunded afterwards.
+Use a test e-mail on staging (JSYNQ staging and its Stripe test account, with test keys); on production, a real card
+refunded afterwards.
 
 1. **Signup:** `/signup` → code e-mail (sent by JSYNQ) → verify → workspace created.
 2. **Trial:** card step → trial starts; `/billing` shows the trial and its end date; `entitlements` has the workspace.
-3. **JSYNQ operator step** (section 5) for that workspace.
+3. **JSYNQ subscription:** in JSYNQ, the workspace is on `attende-<tier>`, `trialing`, trial end 7 days ahead.
 4. **Connect a channel:** `/lines` → WhatsApp QR or Cloud API → "Connected".
 5. **Create an agent:** `/ai-agents/new` → template → test chat answers.
 6. **Go live:** the agent on that channel → "Live". With an active automation on the same channel it must be refused
@@ -237,8 +245,9 @@ Use a test e-mail and Stripe test mode on staging; on production, a real card re
 10. **Funnel:** `/funnel` lists the deal of that contact; move it to another stage; export the CSV.
 11. **Reports after ~10 min:** `/reports` leaves "Preparing", shows the conversations, and the page bar says
     "Updated about every 10 min" with the last update time.
-12. **Cancel in Stripe:** cancel the subscription (immediately) in the dashboard → webhook 200 in Stripe's log →
-    `/billing` shows it canceled → the agent is paused in JSYNQ (no reply to a new message).
+12. **Cancel:** `/billing` → Cancel subscription → "Cancels on <date>" → Keep my subscription undoes it. On a test
+    workspace, cancel it immediately in the Stripe dashboard → JSYNQ moves it to free → within 15 min `/billing` shows
+    it ended (contact support) and the agent is paused in JSYNQ (no reply to a new message).
 
 Also check: worker `/healthz` says `leader: true` and `socketsConnected` equals the number of active workspaces; Vercel
 shows the three crons succeeding.
@@ -248,7 +257,7 @@ shows the three crons succeeding.
 From `docs/jsynq-apis-used.md` ("Known limits" of the worker and "Gaps that need JSYNQ changes"); none is fixed by
 this deploy:
 
-- **Channels need a JSYNQ plan** assigned by hand (section 5).
+- **Billing in USD only** for now, and **no reactivation of an ended subscription** from the app (section 4).
 - **Latency:** 1-2 s with the websocket up; up to 60 s when it drops, for SMS/Instagram outbound, and for state
   changes (handoff assignment).
 - **History is not replayed:** messages older than 24 h, or than when the worker first watched the workspace.

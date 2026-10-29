@@ -1,9 +1,11 @@
 # JSYNQ APIs used by the Attende API
 
 Option A (decided 2026-10-27): Attende uses only routes that already exist on JSYNQ `origin/staging`. Nothing in
-JSYNQ changes. There is no partner API, partner key, JSYNQ webhook or inbound routing any more.
+JSYNQ changes. There is no partner API, partner key, JSYNQ webhook or inbound routing any more. Billing (2026-10-29)
+uses JSYNQ's own subscriptions plus direct Stripe calls on JSYNQ's Stripe account, the way JSYNQ's web app does.
 
-Checked against JSYNQ `origin/staging` at `1d36a563` (2026-10-28), funnel and reports included.
+Checked against JSYNQ `origin/staging` at `1d36a563` (2026-10-28), funnel and reports included; billing against
+`c21f3dab` (2026-10-29).
 
 ## Credentials
 
@@ -11,7 +13,8 @@ Checked against JSYNQ `origin/staging` at `1d36a563` (2026-10-28), funnel and re
 | --- | --- | --- |
 | none | JSYNQ's public signup routes | — |
 | user JWT | The signed-in user's API token (`session.apiToken`), passed through as `Authorization: Bearer` | NextAuth mints it (`lib/auth/apiToken.ts`, HS256, `AUTH_SECRET`) |
-| server-minted JWT | The same token, minted by the Attende server for a member when nobody is signed in: the signing-up user at start-trial, the workspace owner (`subscriptions.userId`) for Stripe webhooks and crons, the agent creator for the orphan sweeper | `server/lib/jsynq/serviceToken.ts` (`generateApiToken`, `AUTH_SECRET`, 10 min). Never logged, never returned to a client. JSYNQ applies its normal membership and permission checks to that user. |
+| Stripe secret key | JSYNQ's live Stripe account (`STRIPE_SECRET_KEY`, server only), for what the JSYNQ API lacks on an `attende-*` subscription: see "Billing" | `.env`; replace with a restricted key later (RUNBOOK.md) |
+| server-minted JWT | The same token, minted by the Attende server for a member when nobody is signed in: the signing-up user at start-trial, the workspace owner (`subscriptions.userId`) for the billing crons and the worker, the agent creator for the orphan sweeper | `server/lib/jsynq/serviceToken.ts` (`generateApiToken`, `AUTH_SECRET`, 10 min). Never logged, never returned to a client. JSYNQ applies its normal membership and permission checks to that user. |
 
 JSYNQ's agent, binding, session, project and knowledge routes act on the token's `workspaceId` claim, so the
 server-minted token always carries the workspace it acts on.
@@ -28,6 +31,9 @@ server-minted token always carries the workspace it acts on.
 | Workspace (caller becomes owner) | `POST /api/workspaces` `{name, language}` | server-minted JWT, no workspace claim |
 | Adopt a workspace a crashed attempt created | `GET /api/workspaces/check-owner` | server-minted JWT |
 | Default CRM (board + default CRM columns, made by JSYNQ for a `crm` project) | `GET /api/projects`, `POST /api/projects` `{title, private: false, projectType: {title: 'crm'}}` | server-minted JWT, new workspace |
+| Card form: SetupIntent on the user's JSYNQ Stripe customer (JSYNQ creates the customer when missing) | `GET /api/subscriptions/setup-intent` → `{clientSecret}`; the browser confirms it with JSYNQ's publishable key | server-minted JWT, no workspace claim |
+| Is the workspace already on an Attende plan (retry after a crash)? | `GET /api/subscriptions/me` | server-minted JWT, new workspace |
+| The subscription (owner only, workspace on `free`) | `POST /api/subscriptions/upgrade-to-trial` `{planSlug: 'attende-<tier>', paymentMethodId}` | server-minted JWT, new workspace |
 | Compensation of a failed trial start | `DELETE /api/workspaces/:workspaceId` (soft delete; any member may) | server-minted JWT |
 
 Decisions:
@@ -47,6 +53,47 @@ Decisions:
   the newest workspace the user owns with the business name created since then (and not already an Attende workspace).
 - **Compensation.** The workspace is deleted through `DELETE /api/workspaces/:id`. If that fails, the workspace stays
   on the signup (the retry reuses it), is recorded in `orphan_workspaces` and logged (`signup.orphan_workspace`).
+- **The subscription is JSYNQ's own** (details under "Billing" below): `upgrade-to-trial` creates it on JSYNQ's Stripe
+  account (USD flat price of the plan, quantity = members, 14-day trial), then Attende sets the trial to 7 days in
+  Stripe. A retry first reads `GET /api/subscriptions/me` and reuses an Attende subscription it finds there (JSYNQ
+  refuses `upgrade-to-trial` for a workspace that is not on `free`). A failure after it cancels it in Stripe (JSYNQ's
+  webhook moves the workspace back to `free`) before deleting the workspace.
+- **One trial per mailbox and per card** (local `trial_claims`, the card fingerprint read from Stripe). A claim taken
+  by another account refuses the trial (409 `SIGNUP_TRIAL_ALREADY_USED`, `details.canSubscribeWithoutTrial`); the same
+  call with `withoutTrial: true` subscribes without one: `upgrade-to-trial`, then Stripe `trial_end: 'now'`
+  (`proration_behavior: 'none'`, `payment_behavior: 'error_if_incomplete'`, so a declined card changes nothing and the
+  attempt is undone).
+
+### Billing (`server/modules/billing`): JSYNQ's subscriptions, on JSYNQ's Stripe account
+
+The Attende tiers are JSYNQ plans, hidden from JSYNQ's own catalog: `attende-essencial`, `attende-profissional`,
+`attende-escala`. Each has two live flat prices (tiered volume, one tier with `flat_amount`, `unit_amount 0`): USD
+39 / 79 / 199 and BRL 197 / 397 / 997. The ids are in `server/modules/billing/catalog.ts` (not secret). **Everyone is
+billed in USD for now**: `upgrade-to-trial` always picks the USD price (`PlanPricingResolver`, currency `usd`) and
+Stripe cannot change a subscription's currency; the BRL ids are kept, marked not in use (RUNBOOK.md, "Currency").
+
+| What | How | Credential |
+| --- | --- | --- |
+| Entitlements (tier, status, trial end, period end) | `GET /api/subscriptions/me`: plan slug → tier, or the price id once JSYNQ moved a canceled / past-due Attende subscription to `free`; status, `trialEndDate`, `currentPeriodEnd`, `canceledAt` | user JWT (entitlements page, gate), server-minted JWT (cron, worker) |
+| Cancel-at-period-end flag and exact dates | Stripe `subscriptions.retrieve` (the JSYNQ API lacks the flag; its `canceledAt` mirrors Stripe's `cancel_at`) | `STRIPE_SECRET_KEY` |
+| 7-day trial / subscribe without trial | Stripe `subscriptions.update {trial_end: now + 7 days \| 'now', proration_behavior: 'none', default_payment_method}` | `STRIPE_SECRET_KEY` |
+| Cancel / resume | Stripe `subscriptions.update {cancel_at_period_end: true \| false}` | `STRIPE_SECRET_KEY` |
+| Change plan | Stripe `subscriptions.update {items: [{id, price: <target tier flat price, same currency>, quantity: <kept>}], proration_behavior: 'create_prorations'}` | `STRIPE_SECRET_KEY` |
+| Customer portal (card, invoices) | Stripe `billingPortal.sessions.create {customer: <JSYNQ customer>, flow_data?: payment_method_update}` | `STRIPE_SECRET_KEY` |
+| Invoices | `GET /api/workspaces/:workspaceId/billing/invoices` | user JWT |
+
+JSYNQ's own Stripe webhook (`customer.subscription.updated` / `.deleted`) syncs every change into its database and
+its channel gating: `trialing`/`active` unlock the channels, `canceled`/`past_due` move the workspace to `free` and
+suspend them. Attende has no Stripe webhook; it re-reads `/subscriptions/me` when a page loads (at most once a minute),
+right after each of its own actions, every 15 minutes (cron) and every 5 minutes (worker).
+
+Stripe calls are made only on an `attende-*` subscription, by the workspace owner (403 `BILLING_OWNER_ONLY`
+otherwise). A workspace whose **JSYNQ plan is paid** (any plan other than `free` and `attende-*`, active or trialing)
+gets Attende **included** with the Profissional limits (`source: 'jsynq_plan'`): no signup, no trial, and every billing
+action answers 409 `BILLING_MANAGED_IN_JSYNQ`; its JSYNQ plan's own channel limits still apply in JSYNQ. Losing that
+plan takes Attende with it. A subscription that **ended** cannot be reactivated from Attende (JSYNQ's
+`upgrade-to-trial` checks the plan of the current subscription's price, which stays the Attende one): `resume` answers
+409 `BILLING_SUBSCRIPTION_ENDED` and the billing page sends the customer to support. Before the end, `resume` works.
 
 ### Plan limits, usage and features (`server/modules/billing`)
 
@@ -72,8 +119,9 @@ Pausing and resuming agents:
 | Trial ended, subscription canceled, paid period over by more than `BILLING_GRACE_DAYS`, AI-reply quota used up | `GET /api/automation-bindings`, then `POST /api/automation-bindings/:id/pause` for each active binding of an Attende agent | server-minted JWT (owner) |
 | Reactivation, next month, plan upgrade | `POST /api/automation-bindings/:id/resume`, only for the bindings this service paused | server-minted JWT (owner) |
 
-The Stripe webhook applies it at once; the 15-minute reconcile cron catches trials that ended without a webhook,
-retries failed pauses and lifts AI-quota pauses. A person pausing an agent meanwhile keeps it paused.
+Billing actions apply it at once; the 15-minute reconcile cron and the worker (every 5 minutes) re-read
+`/subscriptions/me` (a trial that ended, a cancellation that took effect, a reactivation), retry failed pauses and lift
+AI-quota pauses. A person pausing an agent meanwhile keeps it paused.
 
 The usage block of `GET /api/attende/entitlements` keeps its shape: AI replies and the trial outbound counter come
 from the local counters, lines/agents/docs from the lists above (`null` when JSYNQ could not answer).
@@ -300,10 +348,12 @@ Known limits:
 
 ## Gaps that need JSYNQ changes (not made)
 
-- **Channels need a JSYNQ subscription.** JSYNQ gates messaging fail-closed on the workspace's JSYNQ plan
-  (`resolveWorkspaceMessagingChannelAccess`: no subscription, a plan without `rules.socialMedia`, or a channel the plan
-  disables all refuse when `SOCIAL_MEDIA_GATING_ENABLED` is on; an explicit rule is honoured even when it is off). A
-  workspace made by `POST /api/workspaces` gets JSYNQ's free plan. See the operator steps.
+- **Billing currency.** `upgrade-to-trial` creates every subscription in USD and Stripe cannot change it afterwards,
+  so BRL needs either a JSYNQ change (a currency on `upgrade-to-trial`) or creating the subscription with the workspace
+  (`POST /api/workspaces {plan, currency, stripePriceId, paymentMethodId}`, no trial there).
+- **No reactivation of an ended subscription.** `upgrade-to-trial` only accepts a workspace whose current subscription
+  price is the free plan's; JSYNQ leaves the canceled Attende price in place. Support handles it.
+- **Trial length** is hard-coded to 14 days in JSYNQ; Attende shortens it to 7 in Stripe right after.
 - **No metering in JSYNQ for Attende.** AI replies are counted by the worker from the websocket and the safety poll
   (approximate: a reply sent while the worker is down more than 24 h is missed). JSYNQ itself never refuses an AI
   reply over the Attende quota; the agents are paused instead, so a few replies can pass the limit.
@@ -331,13 +381,10 @@ Known limits:
 
 ## Operator steps (JSYNQ side)
 
-1. **Give every Attende workspace a JSYNQ plan with channels enabled.** Messaging gating in JSYNQ is fail-closed
-   without a JSYNQ subscription whose plan enables WhatsApp / Instagram / SMS (`rules.socialMedia`). There is no
-   existing admin route or tool that assigns a plan to one workspace: the admin console (`/api/admin/*`) is read-only,
-   and `POST /api/subscriptions/upgrade-to-trial` starts JSYNQ's own trial. A JSYNQ operator does it in the JSYNQ
-   database: point `workspaces.subscription` of the workspace at an active `subscriptions` document of a plan whose
-   `rules.socialMedia` enables the channels (plan documents missing those rules can be filled with
-   `yarn script run configure-plan-social-media-rules`, dry run first). The list of Attende workspaces is in the
-   Attende `entitlements` collection (and `yarn attende:migrate-from-jsynq` prints the migrated ones).
+1. **Channels come with the Attende plan.** A new signup's workspace is on a JSYNQ `attende-*` subscription, which
+   unlocks messaging while `trialing`/`active` (the three plans exist in JSYNQ production with their channel rules).
+   Only workspaces migrated from the old setup (`yarn attende:migrate-from-jsynq` prints them) may still need a JSYNQ
+   operator to point `workspaces.subscription` at an active subscription of a plan whose `rules.socialMedia` enables
+   the channels.
 2. **`AUTH_SECRET` must be the same** in JSYNQ, in this app and in the worker: JSYNQ verifies the tokens the Attende
    server mints with it.
