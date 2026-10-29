@@ -1,13 +1,13 @@
 import 'server-only';
 import type { Deps } from '../../deps';
 import { AppError } from '../../lib/errors';
-import { JSYNQ_LANGUAGE, JsynqError, mapJsynqError, serviceToken, type JsynqLoginSummary, type UserClient } from '../../lib/jsynq';
+import { JSYNQ_LANGUAGE, JsynqError, mapJsynqError, serviceToken, viaJsynq, type JsynqLoginSummary, type UserClient } from '../../lib/jsynq';
 import { errMessage, log } from '../../lib/logger';
-import { findSellablePlan, pickMonthlyPrice } from '../billing/catalog';
+import { priceFor, tierOfPrice } from '../billing/catalog';
+import { readJsynqSubscription } from '../billing/deriveEntitlements';
 import { EntitlementModel, SubscriptionModel } from '../billing/models';
 import { BillingService, getEntitlements } from '../billing/service';
-import { SUBSCRIPTION_APP_TAG } from '../billing/stripeGateway';
-import { DEFAULT_TIER, TRIAL_DAYS } from '../billing/tiers';
+import { DEFAULT_TIER, TIER_TITLES, TRIAL_DAYS, normalizeTierSlug } from '../billing/tiers';
 import { canonicalEmail } from './canonicalEmail';
 import { isDisposableEmail } from './disposable';
 import { signupError } from './errors';
@@ -20,6 +20,7 @@ const OTP_MAX_ATTEMPTS = 5;
 export const TRIAL_LOCK_STALE_MS = 5 * 60_000;
 /** Clock skew allowed when matching a workspace JSYNQ created during a crashed attempt. */
 const ADOPT_SKEW_MS = 60_000;
+const DAY_MS = 86_400_000;
 
 function passwordContainsName(name: string, password: string): boolean {
   const lowered = password.toLowerCase();
@@ -47,8 +48,9 @@ export type StartTrialResult = {
  * Self-serve onboarding on JSYNQ's existing public routes (no partner API):
  *   register -> `POST /api/users` (JSYNQ creates the user and e-mails its signup code)
  *   verify   -> `PATCH /api/users/verify-otp` (JSYNQ verifies the user and answers the login summary)
- *   SetupIntent -> start trial: claims -> `POST /api/workspaces` (as the user) -> CRM project ->
- *   Stripe trial -> entitlements. Every external step is idempotent or recorded, and compensated on failure.
+ *   SetupIntent (JSYNQ's) -> start trial: claims -> `POST /api/workspaces` (as the user) -> CRM project ->
+ *   `POST /api/subscriptions/upgrade-to-trial` -> 7-day trial in Stripe -> entitlements. Every external step is
+ *   idempotent or recorded, and compensated on failure.
  *
  * The e-mail code is JSYNQ's (delegated), not ours: JSYNQ only marks a user verified through its
  * own OTP, and a user it does not consider verified cannot sign in. The JSYNQ e-mail is therefore
@@ -171,85 +173,116 @@ export class SignupService {
     throw signupError('NO_SIGNUP', 'signup not found');
   }
 
-  async createSetupIntent(user: SessionUser): Promise<{ clientSecret: string }> {
-    const signup = await this.signupOf(user);
-    const customerId = await this.ensureCustomer(signup);
-    return this.deps.stripe.createSetupIntent(customerId);
-  }
-
-  private async ensureCustomer(signup: ISignup): Promise<string> {
-    if (signup.stripeCustomerId) return signup.stripeCustomerId;
-    const customer = await this.deps.stripe.createCustomer({
-      email: signup.email,
-      name: signup.name,
-      metadata: { app: SUBSCRIPTION_APP_TAG, signupId: String(signup._id), userId: signup.userId ?? '' },
-    });
-    // Only one customer per signup even under a double click: the first write wins.
-    const won = await SignupModel.findOneAndUpdate({ _id: signup._id, stripeCustomerId: { $exists: false } }, { $set: { stripeCustomerId: customer.id } }, { new: true }).lean<ISignup>();
-    return won?.stripeCustomerId ?? (await SignupModel.findById(signup._id).lean<ISignup>())!.stripeCustomerId!;
-  }
-
   /** JSYNQ as the signing-up user, optionally scoped to a workspace (server-minted token, never returned). */
   private as(user: SessionUser, workspaceId: string | null): UserClient {
     return this.deps.user(serviceToken({ userId: user.userId, email: user.email }, workspaceId));
   }
 
-  async startTrial(user: SessionUser, input: StartTrialInput, ctx: { country?: string } = {}): Promise<StartTrialResult> {
+  /**
+   * The card form's SetupIntent: JSYNQ's own (`GET /api/subscriptions/setup-intent`), on the user's JSYNQ Stripe customer
+   * (JSYNQ creates it when missing). The browser confirms it with JSYNQ's publishable key; the card is then attached
+   * to that customer, which `upgrade-to-trial` requires.
+   */
+  async createSetupIntent(user: SessionUser): Promise<{ clientSecret: string }> {
+    await this.signupOf(user);
+    return this.as(user, null)
+      .createSubscriptionSetupIntent()
+      .catch((error) => {
+        throw mapJsynqError(error);
+      });
+  }
+
+  /**
+   * Starts the 7-day trial (or, with `withoutTrial`, a paid subscription at once):
+   *   claims (one trial per mailbox and per card) -> JSYNQ workspace -> CRM project ->
+   *   `POST /api/subscriptions/upgrade-to-trial` as the owner (JSYNQ: USD flat price, 14-day trial) ->
+   *   Stripe `trial_end` = now + 7 days (or `now`), `proration_behavior: none` -> entitlements.
+   * Idempotent: a retry reuses the workspace, the JSYNQ subscription and the trial end already chosen. Any failure
+   * undoes what this attempt did (Stripe subscription, workspace, claims).
+   */
+  async startTrial(user: SessionUser, input: StartTrialInput): Promise<StartTrialResult> {
     const found = await this.signupOf(user);
     if (found.state === 'trial_started' && found.workspaceId) return this.existingResult(found);
 
     const signup = await this.takeLock(found);
     if (!signup) throw signupError('TRIAL_IN_PROGRESS', 'Your trial is already being set up. Please wait a moment.');
     const userId = user.userId;
+    const withoutTrial = input.withoutTrial === true;
 
     const claims: Array<{ kind: 'card' | 'email'; key: string }> = [];
     const done: { workspaceId?: string; subscriptionId?: string } = {};
     try {
-      const slug = input.planSlug ?? signup.planSlug ?? DEFAULT_TIER;
-      const plan = await findSellablePlan(slug);
-      const price = plan ? pickMonthlyPrice(plan, ctx.country || 'BR') : null;
-      if (!plan || !price) throw signupError('PLAN_NOT_AVAILABLE', 'This plan is not available.');
+      const slug = normalizeTierSlug(input.planSlug ?? signup.planSlug) ?? DEFAULT_TIER;
+      if (!priceFor(slug)) throw signupError('PLAN_NOT_AVAILABLE', 'This plan is not available.');
+      const pm = await this.paymentMethod(input.paymentMethodId);
 
-      const customerId = await this.ensureCustomer(signup);
-      const fingerprint = await this.cardFingerprint(input.paymentMethodId, customerId);
-
-      for (const [kind, key] of [['email', signup.canonicalEmail], ['card', fingerprint]] as const) {
-        const outcome = await reserveTrialClaim(kind, key, userId);
-        if (outcome === 'reserved') claims.push({ kind, key });
-        if (outcome === 'taken') throw signupError('TRIAL_ALREADY_USED', 'A free trial was already used with this card or e-mail.');
+      if (!withoutTrial) {
+        for (const [kind, key] of [['email', signup.canonicalEmail], ['card', pm.fingerprint]] as const) {
+          const outcome = await reserveTrialClaim(kind, key, userId);
+          if (outcome === 'reserved') claims.push({ kind, key });
+          if (outcome === 'taken') {
+            throw signupError('TRIAL_ALREADY_USED', 'A free trial was already used with this card or e-mail. You can subscribe without a trial.', { canSubscribeWithoutTrial: true });
+          }
+        }
       }
 
       const workspaceId = await this.ensureWorkspace(signup, user);
       done.workspaceId = workspaceId;
       await this.ensureCrmProject(signup, user, workspaceId);
 
-      // A crashed attempt may have created the subscription already: reuse it rather than double-bill.
-      const previous = signup.subscriptionId ? await this.deps.stripe.retrieveSubscription(signup.subscriptionId).catch(() => null) : null;
-      const sub = previous && previous.status !== 'canceled' && previous.status !== 'incomplete_expired' ? previous : await this.deps.stripe.createSubscription({
-        customerId,
-        priceId: price.id,
-        trialDays: TRIAL_DAYS,
-        paymentMethodId: input.paymentMethodId,
-        metadata: { app: SUBSCRIPTION_APP_TAG, workspaceId, userId, signupId: String(signup._id) },
-        idempotencyKey: `trial:${String(signup._id)}:${signup.startAttempts}`,
-      });
-      done.subscriptionId = sub.id;
-      await SignupModel.updateOne({ _id: signup._id }, { $set: { subscriptionId: sub.id } });
+      // The JSYNQ subscription. A crashed attempt may have created it already: reuse it rather than double-bill
+      // (upgrade-to-trial also refuses a workspace that is not on the free plan any more).
+      const client = this.as(user, workspaceId);
+      const current = readJsynqSubscription(await viaJsynq(() => client.getMySubscription()));
+      let subscriptionId: string;
+      if (current.kind === 'attende' && current.status !== 'canceled' && current.status !== 'incomplete_expired') {
+        subscriptionId = current.stripeSubscriptionId;
+      } else {
+        subscriptionId = (await client.upgradeToTrial({ planSlug: slug, paymentMethodId: pm.id })).stripeSubscriptionId!;
+      }
+      done.subscriptionId = subscriptionId;
+      await SignupModel.updateOne({ _id: signup._id }, { $set: { subscriptionId, stripeCustomerId: pm.customerId } });
 
-      // Entitlements: the plan Attende enforces itself from now on (no limits are pushed to JSYNQ).
-      const entitlements = await this.billing.applySubscription(sub, { workspaceId, userId });
+      let sub = await this.deps.stripe.retrieveSubscription(subscriptionId);
+      // JSYNQ only uses a card of the owner's own customer; anything else would leave the trial without a card.
+      if (sub.customerId !== pm.customerId) throw signupError('PAYMENT_METHOD_INVALID', 'The payment method is invalid.');
+      if (!tierOfPrice(sub.priceId)) throw signupError('PLAN_NOT_AVAILABLE', 'This plan is not available.');
+
+      // JSYNQ hard-codes a 14-day trial; Attende's is 7 days. The end is chosen once, so a retry sends the same one.
+      let trialEnd: Date | 'now' = 'now';
+      if (!withoutTrial) {
+        trialEnd = signup.trialEndTarget ? new Date(signup.trialEndTarget) : new Date(this.deps.now().getTime() + TRIAL_DAYS * DAY_MS);
+        await SignupModel.updateOne({ _id: signup._id }, { $set: { trialEndTarget: trialEnd } });
+      }
+      const settled = withoutTrial ? sub.status !== 'trialing' : !!sub.trialEnd && Math.floor(sub.trialEnd.getTime() / 1000) === Math.floor((trialEnd as Date).getTime() / 1000);
+      if (!settled) {
+        sub = await this.deps.stripe.updateSubscription(subscriptionId, {
+          trialEnd,
+          prorationBehavior: 'none',
+          defaultPaymentMethodId: pm.id,
+          // Without a trial the first invoice is charged now: a declined card rejects the change (nothing half-done).
+          ...(withoutTrial ? { paymentBehavior: 'error_if_incomplete' as const } : {}),
+          idempotencyKey: `attende-start:${String(signup._id)}:${signup.startAttempts}:${withoutTrial ? 'now' : 'trial'}`,
+        });
+      }
+
+      // Entitlements: the plan Attende enforces itself from now on. JSYNQ's webhook syncs its own copy.
+      const entitlements = await this.billing.applyStripeSubscription(workspaceId, userId, sub);
 
       for (const c of claims) await consumeTrialClaim(c.kind, c.key, userId, workspaceId);
       await SignupModel.updateOne(
         { _id: signup._id },
-        { $set: { state: 'trial_started', ...(sub.trialEnd ? { trialEndsAt: sub.trialEnd } : {}) }, $unset: { lockedAt: 1, lastErrorRef: 1, workspaceCreateStartedAt: 1 } }
+        {
+          $set: { state: 'trial_started', planSlug: slug, ...(sub.status === 'trialing' && sub.trialEnd ? { trialEndsAt: sub.trialEnd } : {}) },
+          $unset: { lockedAt: 1, lastErrorRef: 1, workspaceCreateStartedAt: 1, ...(sub.status === 'trialing' ? {} : { trialEndsAt: 1 }) },
+        }
       );
-      log.info('signup.trial_started', { signupId: String(signup._id), userId, workspaceId, subscriptionId: sub.id });
+      log.info('signup.subscription_started', { signupId: String(signup._id), userId, workspaceId, subscriptionId, trial: !withoutTrial });
       return {
         workspaceId,
         subscriptionStatus: sub.status,
-        trialEndsAt: sub.trialEnd ? sub.trialEnd.toISOString() : null,
-        plan: { slug: plan.slug, name: plan.title },
+        trialEndsAt: sub.status === 'trialing' && sub.trialEnd ? sub.trialEnd.toISOString() : null,
+        plan: { slug, name: TIER_TITLES[slug] },
         alreadyStarted: false,
         entitlements,
       };
@@ -260,12 +293,6 @@ export class SignupService {
     }
   }
 
-  /**
-   * The signup's JSYNQ workspace, created at most once. `POST /api/workspaces` has no idempotency
-   * key, so the attempt is recorded first (`workspaceCreateStartedAt`) and the id saved right after;
-   * a retry after a crash in between adopts the workspace this user created with the business name
-   * since that moment (`GET /api/workspaces/check-owner`).
-   */
   private async ensureWorkspace(signup: ISignup, user: SessionUser): Promise<string> {
     const client = this.as(user, null);
     if (signup.workspaceId) return signup.workspaceId;
@@ -312,7 +339,8 @@ export class SignupService {
     }
   }
 
-  /** Undo, newest first: Stripe subscription, local billing rows, the JSYNQ workspace, the claims. */
+
+  /** Undo, newest first: the Stripe subscription JSYNQ created, local billing rows, the JSYNQ workspace, the claims. */
   private async compensate(signup: ISignup, user: SessionUser, claims: Array<{ kind: 'card' | 'email'; key: string }>, done: { workspaceId?: string; subscriptionId?: string }, error: unknown) {
     const step = async (name: string, fn: () => Promise<unknown>) => {
       try {
@@ -323,7 +351,8 @@ export class SignupService {
         return false;
       }
     };
-    if (done.subscriptionId) await step('cancel_subscription', () => this.deps.stripe.cancelSubscription(done.subscriptionId!));
+    // Ending it in Stripe is enough for JSYNQ: its webhook moves the workspace back to the free plan.
+    if (done.subscriptionId) await step('cancel_subscription', () => this.deps.stripe.cancelSubscriptionNow(done.subscriptionId!));
     let keepWorkspace = false;
     if (done.workspaceId) {
       const workspaceId = done.workspaceId;
@@ -352,7 +381,7 @@ export class SignupService {
       { _id: signup._id },
       {
         $set: { state: 'failed', lastErrorRef: error instanceof AppError && error.reference ? error.reference : 'SIGNUP_FAILED' },
-        $unset: { lockedAt: 1, subscriptionId: 1, ...(keepWorkspace ? {} : { workspaceId: 1, crmProjectId: 1, workspaceCreateStartedAt: 1 }) },
+        $unset: { lockedAt: 1, subscriptionId: 1, trialEndTarget: 1, ...(keepWorkspace ? {} : { workspaceId: 1, crmProjectId: 1, workspaceCreateStartedAt: 1 }) },
       }
     );
     log.warn('signup.trial_failed', { signupId: String(signup._id), reference: error instanceof AppError ? error.reference : undefined });
@@ -367,32 +396,30 @@ export class SignupService {
     ).lean<ISignup>();
   }
 
-  private async cardFingerprint(paymentMethodId: string, customerId: string): Promise<string> {
+
+  /** The confirmed card: on a JSYNQ Stripe customer (the SetupIntent attached it), with a fingerprint for the claims. */
+  private async paymentMethod(paymentMethodId: string): Promise<{ id: string; customerId: string; fingerprint: string }> {
     let pm;
     try {
       pm = await this.deps.stripe.retrievePaymentMethod(paymentMethodId);
     } catch {
       throw signupError('PAYMENT_METHOD_INVALID', 'The payment method is invalid.');
     }
-    if (pm.type !== 'card' || !pm.fingerprint || (pm.customerId && pm.customerId !== customerId)) {
-      throw signupError('PAYMENT_METHOD_INVALID', 'The payment method is invalid.');
-    }
-    if (!pm.customerId) await this.deps.stripe.attachPaymentMethod(pm.id, customerId);
-    return pm.fingerprint;
+    if (pm.type !== 'card' || !pm.fingerprint || !pm.customerId) throw signupError('PAYMENT_METHOD_INVALID', 'The payment method is invalid.');
+    return { id: pm.id, customerId: pm.customerId, fingerprint: pm.fingerprint };
   }
 
   private async existingResult(signup: ISignup): Promise<StartTrialResult> {
     const workspaceId = signup.workspaceId!;
     const entitlements = await getEntitlements(workspaceId);
     const sub = await SubscriptionModel.findOne({ workspaceId }).lean();
-    const slug = entitlements?.tier ?? signup.planSlug ?? DEFAULT_TIER;
-    const plan = await findSellablePlan(slug);
+    const slug = normalizeTierSlug(entitlements?.tier ?? signup.planSlug) ?? DEFAULT_TIER;
     const trialEndsAt = signup.trialEndsAt ?? entitlements?.trialEndsAt ?? null;
     return {
       workspaceId,
-      subscriptionStatus: sub?.status ?? 'trialing',
+      subscriptionStatus: sub?.status ?? entitlements?.status ?? 'trialing',
       trialEndsAt: trialEndsAt ? new Date(trialEndsAt).toISOString() : null,
-      plan: { slug, name: plan?.title ?? slug },
+      plan: { slug, name: TIER_TITLES[slug] },
       alreadyStarted: true,
       entitlements,
     };
@@ -402,6 +429,8 @@ export class SignupService {
     if (error instanceof AppError) return error;
     const type = (error as { type?: string })?.type;
     if (type === 'StripeCardError') return signupError('PAYMENT_FAILED', (error as Error).message);
+    // JSYNQ answers 400 `[ERROR][STRIPE] ...` when Stripe refused the subscription (card declined, ...).
+    if (error instanceof JsynqError && error.status === 400 && /stripe/i.test(error.message)) return signupError('PAYMENT_FAILED', 'The card was declined.');
     return mapJsynqError(error);
   }
 }

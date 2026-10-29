@@ -37,12 +37,13 @@ const service = (ctx: HttpContext) => new SignupService(ctx.deps);
 
 /**
  * `/api/attende/signup`
- *   PUBLIC   GET  /plans         tier catalog (limits + Stripe prices)
+ *   PUBLIC   GET  /plans         tier catalog (limits + prices, `catalog.ts`)
  *   PUBLIC   POST /              pending signup + JSYNQ user (`POST /api/users`; JSYNQ e-mails the code)
  *   PUBLIC   POST /verify        code -> JSYNQ (`PATCH /api/users/verify-otp`) -> login summary (no token)
  *   PUBLIC   POST /resend        new JSYNQ code (always 202)
- *   SESSION  POST /setup-intent  Stripe SetupIntent for the card form
- *   SESSION  POST /start-trial   JSYNQ workspace + CRM project + 7-day Stripe trial + entitlements
+ *   SESSION  POST /setup-intent  JSYNQ's SetupIntent (`GET /api/subscriptions/setup-intent`) for the card form
+ *   SESSION  POST /start-trial   JSYNQ workspace + CRM project + JSYNQ subscription (upgrade-to-trial, 7-day trial
+ *                                 set in Stripe) + entitlements; `withoutTrial: true` subscribes and charges now
  */
 export const getPlans = route([limiter(60_000, 60)], async () =>
   json(await listCatalog(), 200, { 'Cache-Control': 'public, max-age=60' })
@@ -67,7 +68,6 @@ export const postSetupIntent = route([requireUser, limiter(HOUR, 10, userKey)], 
 );
 
 export const postStartTrial = route([requireUser, limiter(HOUR, 6, userKey)], async (ctx) => {
-  const country = ctx.header('cf-ipcountry') || ctx.header('x-vercel-ip-country') || ctx.header('x-render-country') || 'BR';
-  const out = await service(ctx).startTrial({ userId: ctx.auth!.userId, email: ctx.auth!.email }, parse(startTrialSchema, await ctx.body()), { country });
+  const out = await service(ctx).startTrial({ userId: ctx.auth!.userId, email: ctx.auth!.email }, parse(startTrialSchema, await ctx.body()));
   return json(out, out.alreadyStarted ? 200 : 201);
 });

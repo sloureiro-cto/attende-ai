@@ -21,6 +21,7 @@ export interface ISignup {
   userId?: string;
   /** The e-mail already had a JSYNQ account this signup did not create: the user signs in with it. */
   existingAccount?: boolean;
+  /** The user's JSYNQ Stripe customer (JSYNQ's account), as the confirmed card showed it. */
   stripeCustomerId?: string;
   /**
    * Idempotency of `POST /api/workspaces` (not idempotent in JSYNQ): set before the call. A retry
@@ -31,11 +32,14 @@ export interface ISignup {
   workspaceId?: string;
   /** The CRM project seeded in the workspace (`POST /api/projects`, type `crm`). */
   crmProjectId?: string;
+  /** The Stripe subscription JSYNQ created for the workspace (`upgrade-to-trial`). */
   subscriptionId?: string;
   lockedAt?: Date;
   startAttempts: number;
   lastErrorRef?: string;
   trialEndsAt?: Date;
+  /** The trial end this signup set in Stripe (chosen once, so a retry sends the same one). */
+  trialEndTarget?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,6 +66,7 @@ const SignupSchema = new Schema<ISignup>(
     startAttempts: { type: Number, default: 0 },
     lastErrorRef: String,
     trialEndsAt: Date,
+    trialEndTarget: Date,
   },
   { timestamps: true, collection: 'signups' }
 );

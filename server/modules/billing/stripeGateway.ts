@@ -1,60 +1,57 @@
 import 'server-only';
 import Stripe from 'stripe';
 
+/**
+ * Attende calls Stripe only for what JSYNQ's API lacks, on JSYNQ's own Stripe account (`STRIPE_SECRET_KEY` is JSYNQ's
+ * live key) and only on a workspace's JSYNQ subscription of an `attende-*` plan: trial length, cancel at period end,
+ * resume, plan change and the customer portal. JSYNQ's own Stripe webhook syncs its database and channel gating from
+ * every change. Nothing here creates customers or subscriptions: JSYNQ does (`POST /api/subscriptions/upgrade-to-trial`).
+ */
+
 /** The subset of a Stripe subscription this service reads. */
 export type BillingSubscription = {
   id: string;
   status: string;
   customerId: string;
+  /** The (single) subscription item: JSYNQ creates one, quantity = member count. */
+  itemId: string | null;
+  quantity: number;
   priceId: string | null;
+  currency: string | null;
   trialEnd: Date | null;
   currentPeriodEnd: Date | null;
-  /** Set to end at the period end (the customer canceled in the portal and can still undo it). */
+  /** Set to end at the period end (can still be undone). */
   cancelAtPeriodEnd: boolean;
   /** When the cancellation was requested, or when the subscription ended. */
   canceledAt: Date | null;
-  metadata: Record<string, string>;
+  defaultPaymentMethodId: string | null;
 };
 
-/** One Stripe invoice, as the billing page lists it. `created` is in Unix seconds, `amountPaid` in minor units. */
-export type BillingInvoice = {
-  id: string;
-  number: string | null;
-  created: number;
-  amountPaid: number;
-  currency: string;
-  status: string | null;
-  hostedInvoiceUrl: string | null;
-  invoicePdf: string | null;
+export type SubscriptionUpdate = {
+  /** End of the free trial: a date, or `now` to start billing at once. */
+  trialEnd?: Date | 'now';
+  cancelAtPeriodEnd?: boolean;
+  /** Swap the item's price (plan change). `quantity` is kept as JSYNQ set it. */
+  item?: { id: string; priceId: string; quantity: number };
+  defaultPaymentMethodId?: string;
+  prorationBehavior?: 'none' | 'create_prorations';
+  /** `error_if_incomplete`: a declined payment rejects the update and nothing changes. */
+  paymentBehavior?: 'allow_incomplete' | 'error_if_incomplete';
+  idempotencyKey?: string;
 };
-
-export type BillingEvent = { id: string; type: string; subscriptionId: string | null; metadata: Record<string, string> };
 
 /** Everything this service does with Stripe, behind a port so tests never call Stripe. */
 export interface StripeGateway {
-  createCustomer(input: { email: string; name?: string; metadata: Record<string, string> }): Promise<{ id: string }>;
-  createSetupIntent(customerId: string): Promise<{ clientSecret: string }>;
   retrievePaymentMethod(id: string): Promise<{ id: string; type: string; customerId: string | null; fingerprint: string | null }>;
-  attachPaymentMethod(paymentMethodId: string, customerId: string): Promise<void>;
-  createSubscription(input: {
-    customerId: string;
-    priceId: string;
-    trialDays: number;
-    paymentMethodId: string;
-    metadata: Record<string, string>;
-    idempotencyKey: string;
-  }): Promise<BillingSubscription>;
   retrieveSubscription(id: string): Promise<BillingSubscription>;
-  cancelSubscription(id: string): Promise<void>;
-  /** The customer's most recent invoices, newest first. */
-  listInvoices(customerId: string, limit: number): Promise<BillingInvoice[]>;
-  createPortalSession(input: { customerId: string; returnUrl: string; flow?: { type: 'payment_method_update' } | { type: 'subscription_update'; subscriptionId: string } }): Promise<{ url: string }>;
-  /** Verifies the `Stripe-Signature` header against the raw body. Throws on a bad signature. */
-  constructEvent(rawBody: Buffer, signature: string): BillingEvent;
-  listPrices(): Promise<Array<{ id: string; active: boolean; currency: string; unitAmount: number | null; interval: string | null; intervalCount: number; lookupKey: string | null; productId: string; productMetadata: Record<string, string> }>>;
+  updateSubscription(id: string, update: SubscriptionUpdate): Promise<BillingSubscription>;
+  /** Compensation only: ends a subscription this service just made JSYNQ create. */
+  cancelSubscriptionNow(id: string): Promise<void>;
+  createPortalSession(input: { customerId: string; returnUrl: string; flow?: { type: 'payment_method_update' } }): Promise<{ url: string }>;
 }
 
 const toDate = (s: number | null | undefined) => (typeof s === 'number' ? new Date(s * 1000) : null);
+const idOf = (v: string | { id: string } | null | undefined) => (typeof v === 'string' ? v : (v?.id ?? null));
 
 export function mapSubscription(sub: Stripe.Subscription): BillingSubscription {
   const item = sub.items?.data?.[0] as (Stripe.SubscriptionItem & { current_period_end?: number }) | undefined;
@@ -63,123 +60,52 @@ export function mapSubscription(sub: Stripe.Subscription): BillingSubscription {
   return {
     id: sub.id,
     status: sub.status,
-    customerId: typeof sub.customer === 'string' ? sub.customer : sub.customer.id,
+    customerId: idOf(sub.customer as string | { id: string }) ?? '',
+    itemId: item?.id ?? null,
+    quantity: item?.quantity ?? 1,
     priceId: item?.price?.id ?? null,
+    currency: sub.currency ?? item?.price?.currency ?? null,
     trialEnd: toDate(sub.trial_end),
     currentPeriodEnd: toDate(periodEnd),
     // The portal may schedule the end with `cancel_at` instead of the flag; both mean "ends, can be undone".
     cancelAtPeriodEnd: sub.status !== 'canceled' && (sub.cancel_at_period_end === true || typeof sub.cancel_at === 'number'),
     canceledAt: toDate(sub.canceled_at),
-    metadata: (sub.metadata ?? {}) as Record<string, string>,
+    defaultPaymentMethodId: idOf(sub.default_payment_method as string | { id: string } | null),
   };
 }
 
-export function mapInvoice(inv: Stripe.Invoice): BillingInvoice {
-  return {
-    id: inv.id ?? '',
-    number: inv.number ?? null,
-    created: inv.created,
-    amountPaid: inv.amount_paid,
-    currency: inv.currency,
-    status: inv.status ?? null,
-    hostedInvoiceUrl: inv.hosted_invoice_url ?? null,
-    invoicePdf: inv.invoice_pdf ?? null,
-  };
-}
-
-/** Subscription id carried by an event: the subscription itself, or the invoice's subscription. */
-function subscriptionIdOf(object: unknown): string | null {
-  const o = object as { object?: string; id?: string; subscription?: unknown; parent?: { subscription_details?: { subscription?: unknown } } };
-  if (o?.object === 'subscription') return o.id ?? null;
-  const sub = o?.subscription ?? o?.parent?.subscription_details?.subscription;
-  if (typeof sub === 'string') return sub;
-  if (sub && typeof sub === 'object' && 'id' in sub) return String((sub as { id: string }).id);
-  return null;
-}
-
-export function stripeGateway(secretKey: string, webhookSecret: string): StripeGateway {
+export function stripeGateway(secretKey: string): StripeGateway {
   const stripe = new Stripe(secretKey);
   return {
-    async createCustomer(input) {
-      const c = await stripe.customers.create({ email: input.email, name: input.name, metadata: input.metadata });
-      return { id: c.id };
-    },
-    async createSetupIntent(customerId) {
-      const si = await stripe.setupIntents.create({ customer: customerId, payment_method_types: ['card'], usage: 'off_session' });
-      return { clientSecret: si.client_secret ?? '' };
-    },
     async retrievePaymentMethod(id) {
       const pm = await stripe.paymentMethods.retrieve(id);
-      return {
-        id: pm.id,
-        type: pm.type,
-        customerId: typeof pm.customer === 'string' ? pm.customer : (pm.customer?.id ?? null),
-        fingerprint: pm.card?.fingerprint ?? null,
-      };
-    },
-    async attachPaymentMethod(paymentMethodId, customerId) {
-      await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId });
-      await stripe.customers.update(customerId, { invoice_settings: { default_payment_method: paymentMethodId } });
-    },
-    async createSubscription(input) {
-      const sub = await stripe.subscriptions.create(
-        {
-          customer: input.customerId,
-          items: [{ price: input.priceId }],
-          trial_period_days: input.trialDays,
-          default_payment_method: input.paymentMethodId,
-          metadata: input.metadata,
-          trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
-        },
-        { idempotencyKey: input.idempotencyKey }
-      );
-      return mapSubscription(sub);
+      return { id: pm.id, type: pm.type, customerId: idOf(pm.customer as string | { id: string } | null), fingerprint: pm.card?.fingerprint ?? null };
     },
     async retrieveSubscription(id) {
       return mapSubscription(await stripe.subscriptions.retrieve(id));
     },
-    async cancelSubscription(id) {
+    async updateSubscription(id, u) {
+      const params: Stripe.SubscriptionUpdateParams = {
+        ...(u.trialEnd !== undefined ? { trial_end: u.trialEnd === 'now' ? 'now' : Math.floor(u.trialEnd.getTime() / 1000) } : {}),
+        ...(u.cancelAtPeriodEnd !== undefined ? { cancel_at_period_end: u.cancelAtPeriodEnd } : {}),
+        ...(u.item ? { items: [{ id: u.item.id, price: u.item.priceId, quantity: u.item.quantity }] } : {}),
+        ...(u.defaultPaymentMethodId ? { default_payment_method: u.defaultPaymentMethodId } : {}),
+        ...(u.prorationBehavior ? { proration_behavior: u.prorationBehavior } : {}),
+        ...(u.paymentBehavior ? { payment_behavior: u.paymentBehavior } : {}),
+      };
+      const sub = await stripe.subscriptions.update(id, params, u.idempotencyKey ? { idempotencyKey: u.idempotencyKey } : undefined);
+      return mapSubscription(sub);
+    },
+    async cancelSubscriptionNow(id) {
       await stripe.subscriptions.cancel(id);
     },
-    async listInvoices(customerId, limit) {
-      const page = await stripe.invoices.list({ customer: customerId, limit });
-      return page.data.map(mapInvoice);
-    },
     async createPortalSession(input) {
-      const flow: Stripe.BillingPortal.SessionCreateParams.FlowData | undefined =
-        input.flow?.type === 'payment_method_update'
-          ? { type: 'payment_method_update' }
-          : input.flow?.type === 'subscription_update'
-            ? { type: 'subscription_update', subscription_update: { subscription: input.flow.subscriptionId } }
-            : undefined;
-      const s = await stripe.billingPortal.sessions.create({ customer: input.customerId, return_url: input.returnUrl, ...(flow ? { flow_data: flow } : {}) });
+      const s = await stripe.billingPortal.sessions.create({
+        customer: input.customerId,
+        return_url: input.returnUrl,
+        ...(input.flow?.type === 'payment_method_update' ? { flow_data: { type: 'payment_method_update' } } : {}),
+      });
       return { url: s.url };
-    },
-    constructEvent(rawBody, signature) {
-      const event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
-      const object = event.data.object as { metadata?: Record<string, string> };
-      return { id: event.id, type: event.type, subscriptionId: subscriptionIdOf(event.data.object), metadata: object?.metadata ?? {} };
-    },
-    async listPrices() {
-      const out = [];
-      for await (const p of stripe.prices.list({ active: true, expand: ['data.product'], limit: 100 })) {
-        const product = p.product as Stripe.Product;
-        out.push({
-          id: p.id,
-          active: p.active,
-          currency: p.currency,
-          unitAmount: p.unit_amount,
-          interval: p.recurring?.interval ?? null,
-          intervalCount: p.recurring?.interval_count ?? 1,
-          lookupKey: p.lookup_key,
-          productId: typeof p.product === 'string' ? p.product : product.id,
-          productMetadata: (typeof p.product === 'string' ? {} : product.metadata) as Record<string, string>,
-        });
-      }
-      return out;
     },
   };
 }
-
-/** Marker on every subscription this service creates; events of other products are ignored. */
-export const SUBSCRIPTION_APP_TAG = 'attende';

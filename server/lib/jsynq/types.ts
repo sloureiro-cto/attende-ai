@@ -154,3 +154,30 @@ export type JsynqMessage = {
 };
 
 export type JsynqTool = { toolId: string; toolName: string; provider?: string };
+
+/** `GET /api/subscriptions/me` (and the `subscription` of upgrade-to-trial). Only the fields read here. */
+export type JsynqSubscription = {
+  _id?: string;
+  plan?: { _id?: string; slug?: string; title?: string; name?: string } | string | null;
+  status?: string;
+  stripeSubscriptionId?: string;
+  stripePriceId?: string;
+  currency?: string;
+  trialEndDate?: string | null;
+  currentPeriodEnd?: string | null;
+  /** JSYNQ copies Stripe's `cancel_at` here while a cancellation is scheduled, and the end date once canceled. */
+  canceledAt?: string | null;
+  trialDaysRemaining?: number;
+};
+
+/** `GET /api/workspaces/:id/billing/invoices` rows. `created` in Unix seconds, `amountPaid` in minor units. */
+export type JsynqInvoice = {
+  id: string;
+  number: string | null;
+  created: number;
+  amountPaid: number;
+  currency: string;
+  status: string | null;
+  hostedInvoiceUrl: string | null;
+  invoicePdf: string | null;
+};

@@ -23,4 +23,5 @@ export const SIGNUP_ERRORS = {
 
 export type SignupErrorKey = keyof typeof SIGNUP_ERRORS;
 
-export const signupError = (key: SignupErrorKey, message: string) => new AppError(SIGNUP_ERRORS[key][0], message, SIGNUP_ERRORS[key][1]);
+export const signupError = (key: SignupErrorKey, message: string, details?: Record<string, unknown>) =>
+  new AppError(SIGNUP_ERRORS[key][0], message, SIGNUP_ERRORS[key][1], details);

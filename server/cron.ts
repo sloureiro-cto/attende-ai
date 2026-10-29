@@ -31,7 +31,7 @@ const job = (name: string, run: (deps: Deps) => Promise<Record<string, number>>)
     }
   });
 
-/** Every 15 min: Stripe -> entitlements -> JSYNQ limits, and retries of limits JSYNQ has not acknowledged. */
+/** Every 15 min: JSYNQ `GET /api/subscriptions/me` (+ Stripe flags) -> entitlements -> agents paused or resumed. */
 export const billingReconcileCron = job('billing-reconcile', (deps) => new BillingService(deps).reconcile());
 
 /** Every hour: removes the JSYNQ agents and bindings of creates that died half-way. */

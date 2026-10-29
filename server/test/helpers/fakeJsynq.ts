@@ -4,7 +4,10 @@ import type { Server } from 'http';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import { WebSocket, WebSocketServer } from 'ws';
+import { ATTENDE_PLANS } from '../../modules/billing/catalog';
+import type { BillingSubscription } from '../../modules/billing/stripeGateway';
 import { FakeCrm } from './fakeJsynqCrm';
+import type { FakeStripe } from './fakeStripe';
 import { AUTH_SECRET } from './tokens';
 
 const oid = () => randomBytes(12).toString('hex');
@@ -23,8 +26,28 @@ type Binding = {
 };
 /** A socket of the fake `/ws` endpoint: its room and the user its token (query or handshake) proved. */
 type FakeSocket = { ws: WebSocket; room: string; userId: string | null; handshakes: number };
-type User = { id: string; email: string; name: string; verified: boolean; language?: string };
-type Workspace = { _id: string; name: string; owner: string; members: string[]; createdAt: string; language?: string; businessHours?: unknown };
+type User = { id: string; email: string; name: string; verified: boolean; language?: string; stripeCustomerId?: string };
+type Workspace = { _id: string; name: string; owner: string; members: string[]; createdAt: string; language?: string; businessHours?: unknown; subscription?: string };
+/** A JSYNQ `subscriptions` document (plan by slug; `plan` is populated in answers). */
+type JSub = {
+  _id: string;
+  workspaceId: string;
+  planSlug: string;
+  stripeSubscriptionId?: string;
+  stripePriceId: string;
+  status: string;
+  trialEndDate?: Date | null;
+  currentPeriodEnd?: Date | null;
+  canceledAt?: Date | null;
+};
+
+/** JSYNQ's plans as far as these tests go: free, one paid JSYNQ plan and the three hidden Attende plans (USD + BRL). */
+const PLANS: Array<{ slug: string; prices: Array<{ id: string; currency: string }> }> = [
+  { slug: 'free', prices: [{ id: 'price_jsynq_free', currency: 'usd' }] },
+  { slug: 'pro', prices: [{ id: 'price_jsynq_pro_usd', currency: 'usd' }] },
+  ...Object.values(ATTENDE_PLANS).map((p) => ({ slug: p.slug, prices: p.prices.map((x) => ({ id: x.id, currency: x.currency })) })),
+];
+const planOfPrice = (priceId: string) => PLANS.find((p) => p.prices.some((x) => x.id === priceId)) ?? null;
 
 /** The platform tools JSYNQ seeds in every workspace's registry (`provider: 'jsynq'`). Only the ones the tests use. */
 const PLATFORM_TOOLS = [
@@ -49,6 +72,12 @@ export class FakeJsynq {
   agents = new Map<string, Agent>();
   bindings = new Map<string, Binding>();
   documents = new Map<string, { workspaceId: string; name: string }>();
+  /** JSYNQ `subscriptions` documents by id. */
+  subscriptions = new Map<string, JSub>();
+  /** JSYNQ's Stripe account (shared with the service under test, as both use JSYNQ's key). */
+  stripe: FakeStripe | null = null;
+  /** Next upgrade-to-trial fails the way JSYNQ reports a Stripe refusal (400 `[ERROR][STRIPE] ...`). */
+  failUpgradeWithStripe: string | null = null;
   /** CRM boards, cards, contacts and the inbox (funnel and reports). */
   crm = new FakeCrm();
   calls: string[] = [];
@@ -93,7 +122,9 @@ export class FakeJsynq {
   }
 
   reset() {
-    for (const m of [this.users, this.otps, this.workspaces, this.pendingInvites, this.agents, this.bindings, this.documents]) m.clear();
+    for (const m of [this.users, this.otps, this.workspaces, this.pendingInvites, this.agents, this.bindings, this.documents, this.subscriptions]) m.clear();
+    this.stripe = null;
+    this.failUpgradeWithStripe = null;
     this.projects = [];
     this.sessions = [];
     this.crm.reset();
@@ -115,6 +146,58 @@ export class FakeJsynq {
     const _id = oid();
     this.workspaces.set(_id, { _id, name: 'ws', owner, members: [owner, ...members], createdAt: new Date().toISOString() });
     return _id;
+  }
+
+  /** Connects JSYNQ to the Stripe account and syncs its subscriptions from every change, as its webhook does. */
+  useStripe(stripe: FakeStripe) {
+    this.stripe = stripe;
+    stripe.onChange((sub, event) => this.syncFromStripe(sub, event));
+  }
+
+  /** `StripeSubscriptionUpdateService` / `StripeSubscriptionDeletedService`: status, dates, price -> plan; not paying -> free. */
+  private syncFromStripe(sub: BillingSubscription, event: 'updated' | 'deleted') {
+    const doc = [...this.subscriptions.values()].find((d) => d.stripeSubscriptionId === sub.id);
+    if (!doc) return;
+    doc.status = event === 'deleted' ? 'canceled' : sub.status;
+    if (sub.trialEnd) doc.trialEndDate = sub.trialEnd;
+    doc.currentPeriodEnd = sub.currentPeriodEnd;
+    if (sub.priceId && sub.priceId !== doc.stripePriceId) doc.stripePriceId = sub.priceId;
+    doc.canceledAt = event === 'deleted' ? (sub.canceledAt ?? new Date()) : sub.cancelAtPeriodEnd ? sub.currentPeriodEnd : null;
+    doc.planSlug = doc.status === 'active' || doc.status === 'trialing' ? (planOfPrice(doc.stripePriceId)?.slug ?? doc.planSlug) : 'free';
+  }
+
+  private newSubscription(workspaceId: string, fields: Omit<JSub, '_id' | 'workspaceId'>): JSub {
+    const doc: JSub = { _id: oid(), workspaceId, ...fields };
+    this.subscriptions.set(doc._id, doc);
+    this.workspaces.get(workspaceId)!.subscription = doc._id;
+    return doc;
+  }
+
+  /** The workspace's JSYNQ subscription document, if any. */
+  subscriptionOf(workspaceId: string): JSub | null {
+    const id = this.workspaces.get(workspaceId)?.subscription;
+    return id ? (this.subscriptions.get(id) ?? null) : null;
+  }
+
+  /** Puts a workspace on a JSYNQ plan directly (a customer of JSYNQ itself, billed by JSYNQ). */
+  setPlan(workspaceId: string, planSlug: string, status = 'active') {
+    const plan = PLANS.find((p) => p.slug === planSlug)!;
+    return this.newSubscription(workspaceId, { planSlug, stripePriceId: plan.prices[0]!.id, status, stripeSubscriptionId: `sub_jsynq_${oid().slice(0, 8)}` });
+  }
+
+  private populated(doc: JSub) {
+    return {
+      _id: doc._id,
+      plan: { _id: `plan_${doc.planSlug}`, slug: doc.planSlug, title: doc.planSlug },
+      workspace: { _id: doc.workspaceId },
+      status: doc.status,
+      stripeSubscriptionId: doc.stripeSubscriptionId,
+      stripePriceId: doc.stripePriceId,
+      trialEndDate: doc.trialEndDate ?? null,
+      currentPeriodEnd: doc.currentPeriodEnd ?? null,
+      ...(doc.canceledAt ? { canceledAt: doc.canceledAt } : {}),
+      trialDaysRemaining: doc.status === 'trialing' && doc.trialEndDate ? Math.max(0, Math.ceil((new Date(doc.trialEndDate).getTime() - Date.now()) / 86_400_000)) : 0,
+    };
   }
 
   addSession(workspaceId: string, channel: 'whatsapp' | 'sms' | 'instagram' = 'whatsapp', status = 'connected') {
@@ -314,6 +397,8 @@ export class FakeJsynq {
       const _id = oid();
       const ws: Workspace = { _id, name: req.body.name, owner, members: [owner], createdAt: new Date().toISOString(), language: req.body.language };
       this.workspaces.set(_id, ws);
+      // `CreateStripeSubscriptionService` with the default plan: every new workspace is on `free`.
+      this.newSubscription(_id, { planSlug: 'free', stripePriceId: 'price_jsynq_free', status: 'active' });
       // JSYNQ seeds its own default agent in every new workspace: it must not count as an Attende agent.
       const seeded = oid();
       this.agents.set(seeded, { id: seeded, workspaceId: _id, name: 'JSYNQ', description: '', systemPrompt: 'default', isActive: true, body: {} });
@@ -342,6 +427,66 @@ export class FakeJsynq {
     r.get('/invites/workspaces', scoped, (req, res) => {
       const total = req.query.status === 'pending' ? (this.pendingInvites.get(res.locals.ws) ?? 0) : 0;
       return res.json({ invites: [], pagination: { total, page: 1, limit: 1, totalPages: total } });
+    });
+
+    // --- subscriptions (JSYNQ's billing on its Stripe account) -------------------------------
+    const userOf = (id: string) => {
+      let u = this.users.get(id);
+      if (!u) {
+        u = { id, email: `${id}@jsynq.test`, name: 'Member', verified: true };
+        this.users.set(id, u);
+      }
+      return u;
+    };
+    const customerOf = (u: User) => (u.stripeCustomerId ??= this.stripe!.createCustomer(u.email));
+    r.get('/subscriptions/setup-intent', (_req, res) => {
+      const customer = customerOf(userOf(res.locals.user.id));
+      return res.json({ clientSecret: `seti_${customer}_secret_x` });
+    });
+    r.get('/subscriptions/me', (_req, res) => {
+      const doc = this.subscriptionOf(res.locals.user.workspaceId);
+      if (!doc) return res.status(404).json({ error: true, code: 404, message: 'Not found' });
+      return res.json({ subscription: this.populated(doc) });
+    });
+    r.post('/subscriptions/upgrade-to-trial', scoped, (req, res) => {
+      const ws = this.workspaces.get(res.locals.ws)!;
+      if (ws.owner !== res.locals.user.id) return res.status(403).json({ error: true, code: 403, message: 'Only the workspace owner can do this' });
+      const { planSlug, paymentMethodId } = req.body ?? {};
+      if (typeof planSlug !== 'string' || !planSlug) return res.status(400).json({ error: true, code: 400, message: "'planSlug' is required" });
+      const current = this.subscriptionOf(ws._id);
+      if (!current) return res.status(400).json({ error: true, code: 400, message: 'Workspace does not have a current subscription' });
+      // JSYNQ checks the plan of the current subscription's PRICE (a canceled Attende one keeps its price).
+      if (planOfPrice(current.stripePriceId)?.slug !== 'free') return res.status(400).json({ error: true, code: 400, message: 'Only workspaces with free plan can upgrade to trial' });
+      const plan = PLANS.find((p) => p.slug === planSlug);
+      if (!plan || plan.slug === 'free') return res.status(404).json({ error: true, code: 404, message: 'Not found' });
+      if (this.failUpgradeWithStripe) {
+        const message = this.failUpgradeWithStripe;
+        this.failUpgradeWithStripe = null;
+        return res.status(400).json({ error: true, code: 400, message: `[ERROR][STRIPE] Upgrade to trial failed: ${message}` });
+      }
+      const owner = userOf(ws.owner);
+      const customer = customerOf(owner);
+      // `PlanPricingResolver.resolve(plan, {currency: 'usd', interval: 'monthly'})`.
+      const price = plan.prices.find((p) => p.currency === 'usd') ?? plan.prices[0]!;
+      const pm = paymentMethodId ? this.stripe!.paymentMethods.get(paymentMethodId) : undefined;
+      const verified = pm && pm.customerId === customer ? paymentMethodId : null;
+      if (current.stripeSubscriptionId) void this.stripe!.cancelSubscriptionNow(current.stripeSubscriptionId).catch(() => undefined);
+      const sub = this.stripe!.createSubscription({ customerId: customer, priceId: price.id, quantity: ws.members.length, trialDays: 14, defaultPaymentMethodId: verified });
+      const doc = this.newSubscription(ws._id, {
+        planSlug: plan.slug,
+        stripeSubscriptionId: sub.id,
+        stripePriceId: price.id,
+        status: sub.status,
+        trialEndDate: sub.trialEnd,
+        currentPeriodEnd: sub.currentPeriodEnd,
+      });
+      return res.json({ subscription: this.populated(doc) });
+    });
+    r.get('/workspaces/:id/billing/invoices', (req, res) => {
+      const ws = member(req.params.id, res.locals.user.id);
+      if (!ws) return res.status(403).json({ error: true, code: 403, message: 'Insufficient permissions' });
+      const doc = this.subscriptionOf(ws._id);
+      return res.json({ invoices: doc?.stripeSubscriptionId ? (this.stripe?.invoices.get(doc.stripeSubscriptionId) ?? []) : [] });
     });
 
     // --- projects ---------------------------------------------------------------------------

@@ -1,49 +1,29 @@
 import 'server-only';
 import mongoose, { Schema, type Model } from 'mongoose';
 import type { Entitlements } from './deriveEntitlements';
-import type { TierLimits } from './tiers';
 
 const model = <T>(name: string, schema: Schema<T>): Model<T> =>
   (mongoose.models[name] as Model<T>) || mongoose.model<T>(name, schema);
 
-// ---- plans: the catalog (tiers + Stripe prices), seeded by scripts/seed-plans.ts ---------------
+// ---- subscriptions: Attende's record of the workspace's JSYNQ subscription ---------------------
 
-export type PlanPrice = { id: string; currency: string; interval: 'month' | 'year'; intervalCount: number; amount: number; active: boolean };
-export interface IPlan {
-  slug: string;
-  title: string;
-  limits?: Partial<TierLimits>;
-  stripeProductId?: string;
-  prices: PlanPrice[];
-  active: boolean;
-}
-const PlanSchema = new Schema<IPlan>(
-  {
-    slug: { type: String, required: true, unique: true },
-    title: { type: String, required: true },
-    limits: { type: Schema.Types.Mixed },
-    stripeProductId: String,
-    prices: {
-      type: [new Schema<PlanPrice>({ id: String, currency: String, interval: String, intervalCount: Number, amount: Number, active: Boolean }, { _id: false })],
-      default: [],
-    },
-    active: { type: Boolean, default: true },
-  },
-  { timestamps: true, collection: 'plans' }
-);
-PlanSchema.index({ 'prices.id': 1 });
-export const PlanModel = model('Plan', PlanSchema);
-
-// ---- subscriptions: our view of the Stripe subscription of a workspace ------------------------
-
+/**
+ * `source: 'attende'`: an `attende-*` subscription JSYNQ created for this workspace (`upgrade-to-trial`); the Stripe
+ * subscription id stays here after it ends, so a canceled customer is told apart from one who never subscribed (JSYNQ's
+ * `/subscriptions/me` then shows the free plan). `source: 'jsynq_plan'`: the workspace pays a JSYNQ plan and gets
+ * Attende included; nothing here ever acts on that subscription. `userId` is the member this service acts as in JSYNQ.
+ */
+export type SubscriptionSource = 'attende' | 'jsynq_plan';
 export interface ISubscription {
   workspaceId: string;
   userId: string;
-  stripeCustomerId: string;
+  source: SubscriptionSource;
+  stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   status: string;
   planSlug?: string;
   priceId?: string;
+  currency?: string;
   trialEnd?: Date | null;
   currentPeriodEnd?: Date | null;
   cancelAtPeriodEnd?: boolean;
@@ -54,11 +34,13 @@ const SubscriptionSchema = new Schema<ISubscription>(
   {
     workspaceId: { type: String, required: true, unique: true },
     userId: { type: String, required: true },
-    stripeCustomerId: { type: String, required: true },
+    source: { type: String, enum: ['attende', 'jsynq_plan'], default: 'attende' },
+    stripeCustomerId: String,
     stripeSubscriptionId: { type: String },
     status: { type: String, required: true },
     planSlug: String,
     priceId: String,
+    currency: String,
     trialEnd: Date,
     currentPeriodEnd: Date,
     cancelAtPeriodEnd: { type: Boolean, default: false },
@@ -86,25 +68,11 @@ const EntitlementSchema = new Schema<IEntitlement>(
     trialEndsAt: Date,
     currentPeriodEnd: Date,
     trialOutboundCap: Number,
+    source: { type: String, enum: ['attende', 'jsynq_plan'], default: 'attende' },
   },
   { timestamps: true, collection: 'entitlements' }
 );
 export const EntitlementModel = model('Entitlement', EntitlementSchema);
-
-// ---- processed_events: webhook idempotency (Stripe and JSYNQ) ---------------------------------
-
-export interface IProcessedEvent {
-  _id: string;
-  source: 'stripe' | 'jsynq';
-  type: string;
-  processedAt: Date;
-}
-const ProcessedEventSchema = new Schema<IProcessedEvent>(
-  { _id: { type: String }, source: { type: String, required: true }, type: String, processedAt: { type: Date, default: () => new Date() } },
-  { collection: 'processed_events', versionKey: false }
-);
-ProcessedEventSchema.index({ processedAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 45 });
-export const ProcessedEventModel = model('ProcessedEvent', ProcessedEventSchema);
 
 // ---- usage_counters: what Attende meters itself (JSYNQ has no per-workspace meter for us) -----
 

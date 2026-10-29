@@ -7,7 +7,6 @@ Object.assign(process.env, {
   JSYNQ_API_URL: 'http://127.0.0.1:1',
   JSYNQ_TIMEOUT_MS: '3000',
   STRIPE_SECRET_KEY: 'sk_test_dummy',
-  STRIPE_WEBHOOK_SECRET: 'stripe-test-signing-secret',
   LOG_LEVEL: 'error',
   CRON_SECRET: 'test-cron-secret-0123456789',
 });

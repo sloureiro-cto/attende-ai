@@ -1,9 +1,13 @@
 import 'server-only';
 import { z } from 'zod';
-import { isTierSlug } from '../billing/tiers';
+import { normalizeTierSlug, type TierSlug } from '../billing/tiers';
 
 const emailSchema = z.string({ required_error: 'email is required' }).trim().toLowerCase().email('email is invalid').max(254);
-const planSlugSchema = z.string().refine((slug) => isTierSlug(slug), { message: 'unknown plan' });
+/** A tier slug (`attende-profissional`), its bare name or a legacy slug; always answers the current slug. */
+const planSlugSchema = z
+  .string()
+  .refine((slug) => normalizeTierSlug(slug) !== null, { message: 'unknown plan' })
+  .transform((slug) => normalizeTierSlug(slug) as TierSlug);
 
 /**
  * JSYNQ's own signup (`POST /api/users`) needs a digit and one of `!@#$%^&*(),.?":{}|<>`; the
@@ -33,6 +37,8 @@ export const startTrialSchema = z.object({
   /** Stripe PaymentMethod id (`pm_...`) from confirming the SetupIntent in Stripe.js. */
   paymentMethodId: z.string().trim().regex(/^pm_[A-Za-z0-9_]+$/, 'invalid payment method'),
   planSlug: planSlugSchema.optional(),
+  /** Subscribe and pay now, without the free trial (offered when the card or e-mail already had one). */
+  withoutTrial: z.boolean().default(false),
 });
 
 export type SignupInput = z.infer<typeof signupSchema>;

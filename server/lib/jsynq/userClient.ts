@@ -1,6 +1,6 @@
 import 'server-only';
-import { jsynqRequest, unwrap } from './http';
-import type { Channel, JsynqAgent, JsynqBinding, JsynqCard, JsynqContactDeal, JsynqConversation, JsynqDirectoryEntry, JsynqInboxRow, JsynqKanbanColumns, JsynqKnowledgeSource, JsynqLanguage, JsynqMessage, JsynqOwnedWorkspace, JsynqProject, JsynqSession, JsynqTool, JsynqWorkspace } from './types';
+import { JsynqError, jsynqRequest, unwrap } from './http';
+import type { Channel, JsynqAgent, JsynqBinding, JsynqCard, JsynqContactDeal, JsynqConversation, JsynqDirectoryEntry, JsynqInboxRow, JsynqInvoice, JsynqKanbanColumns, JsynqKnowledgeSource, JsynqLanguage, JsynqMessage, JsynqOwnedWorkspace, JsynqProject, JsynqSession, JsynqSubscription, JsynqTool, JsynqWorkspace } from './types';
 
 const SESSION_PATH: Record<Channel, string> = {
   whatsapp: '/api/whatsapp-lite/sessions',
@@ -295,6 +295,39 @@ export function userClient(token: string) {
     async listWorkspaceRoles(workspaceId: string): Promise<Array<{ _id: string; name?: string }>> {
       const res = await call<{ roles?: Array<{ _id: string; name?: string }> }>('GET', `/api/roles/workspaces/${encodeURIComponent(workspaceId)}`);
       return res.body?.roles ?? [];
+    },
+
+    // --- subscriptions (JSYNQ's own billing, on JSYNQ's Stripe account) ---------------------------------------
+
+    /** `GET /api/subscriptions/setup-intent`: a SetupIntent on the caller's JSYNQ Stripe customer (created if missing). */
+    async createSubscriptionSetupIntent(): Promise<{ clientSecret: string }> {
+      const res = await call<{ clientSecret?: string }>('GET', '/api/subscriptions/setup-intent', { idempotent: false });
+      if (!res.body?.clientSecret) throw new Error('JSYNQ setup intent returned no client secret');
+      return { clientSecret: res.body.clientSecret };
+    },
+    /**
+     * `POST /api/subscriptions/upgrade-to-trial` (owner only; the workspace of the JWT claim must be on `free`). JSYNQ
+     * cancels the free subscription and creates a trialing one on the plan's USD price, quantity = members.
+     */
+    async upgradeToTrial(input: { planSlug: string; paymentMethodId: string }): Promise<JsynqSubscription> {
+      const res = await call<{ subscription?: JsynqSubscription }>('POST', '/api/subscriptions/upgrade-to-trial', { body: input, timeoutMs: 45_000 });
+      if (!res.body?.subscription?.stripeSubscriptionId) throw new Error('JSYNQ upgrade-to-trial returned no subscription');
+      return res.body.subscription;
+    },
+    /** `GET /api/subscriptions/me`: the subscription of the JWT's workspace (plan populated). Null when it has none. */
+    async getMySubscription(): Promise<JsynqSubscription | null> {
+      try {
+        const res = await call<{ subscription?: JsynqSubscription | null }>('GET', '/api/subscriptions/me');
+        return res.body?.subscription ?? null;
+      } catch (error) {
+        if (error instanceof JsynqError && error.status === 404) return null;
+        throw error;
+      }
+    },
+    /** `GET /api/workspaces/:id/billing/invoices`: the workspace subscription's Stripe invoices (members who may read billing). */
+    async listWorkspaceInvoices(workspaceId: string): Promise<JsynqInvoice[]> {
+      const res = await call<{ invoices?: JsynqInvoice[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/billing/invoices`, { timeoutMs: 30_000 });
+      return res.body?.invoices ?? [];
     },
   };
 }

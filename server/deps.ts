@@ -17,7 +17,7 @@ export type Deps = {
 export function defaultDeps(): Deps {
   const e = env();
   return {
-    stripe: stripeGateway(e.STRIPE_SECRET_KEY, e.STRIPE_WEBHOOK_SECRET),
+    stripe: stripeGateway(e.STRIPE_SECRET_KEY),
     accounts: accountsClient(),
     user: userClient,
     now: () => new Date(),

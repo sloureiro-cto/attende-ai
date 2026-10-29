@@ -7,6 +7,7 @@ import { errMessage, log } from '../../lib/logger';
 import { createAutomationsRuntime, type AutomationsRuntime } from '../automations/runtime/factory';
 import { decideAccess } from '../billing/deriveEntitlements';
 import { EntitlementModel } from '../billing/models';
+import { BillingService } from '../billing/service';
 import { recordAiReply } from '../billing/usage';
 import { runReportsJob } from '../reports/job';
 import { runReportsSync } from '../reports/sync';
@@ -40,6 +41,7 @@ export type WorkerOptions = {
     pollMs: number;
     timersMs: number;
     reportsMs: number;
+    billingMs: number;
     socketRefreshMs: number;
     socketMinBackoffMs: number;
     socketMaxBackoffMs: number;
@@ -55,6 +57,7 @@ const DEFAULTS = {
   pollMs: 60_000,
   timersMs: 15_000,
   reportsMs: 10 * 60_000,
+  billingMs: 5 * 60_000,
   socketRefreshMs: 45 * 60_000,
   socketMinBackoffMs: 1000,
   socketMaxBackoffMs: 30_000,
@@ -72,7 +75,8 @@ type Watched = { socket: InboxSocket; polling: Promise<void> | null };
  *   since the last poll, plus the unassigned `human_handoff` conversations;
  * - turns both into one event stream (`WorkerEvent`), deduplicated per message id, and feeds it to the automations
  *   runtime (inbound messages), the AI-reply quota (`recordAiReply`) and the handoff assignee ("quem assume");
- * - ticks the automation timers every 15 s and the reports sync every 10 min.
+ * - ticks the automation timers every 15 s and the reports sync every 10 min;
+ * - re-reads the JSYNQ subscriptions every 5 min (`GET /api/subscriptions/me`): trial over, canceled, back.
  */
 export class Worker {
   readonly holder: string;
@@ -159,6 +163,8 @@ export class Worker {
     const jobs: Job[] = [
       { name: 'worker-workspaces', everyMs: this.iv.workspacesMs, run: () => this.refreshWorkspaces() },
       { name: 'worker-poll', everyMs: this.iv.pollMs, run: () => this.pollAll() },
+      // Re-reads each workspace's JSYNQ subscription (`GET /api/subscriptions/me`) and pauses or resumes the agents.
+      { name: 'worker-billing', everyMs: this.iv.billingMs, run: () => new BillingService(this.opts.deps).reconcile({ staleMs: this.iv.billingMs }).then(() => undefined) },
     ];
     if (this.automations) jobs.push(...this.automations.jobs.map((j) => ({ ...j, everyMs: this.iv.timersMs })));
     if (this.opts.reportsEnabled !== false) {

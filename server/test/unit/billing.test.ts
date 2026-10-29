@@ -1,12 +1,20 @@
-import { agentsMustPause, decideAccess, deriveEntitlements, mapStripeStatus, type Entitlements } from '../../modules/billing/deriveEntitlements';
+import { ATTENDE_PLANS, listCatalog, priceFor, tierOfPrice } from '../../modules/billing/catalog';
+import {
+  agentsMustPause,
+  decideAccess,
+  deriveEntitlements,
+  entitlementsWithoutAttendePlan,
+  mapStripeStatus,
+  readJsynqSubscription,
+  type Entitlements,
+} from '../../modules/billing/deriveEntitlements';
 import type Stripe from 'stripe';
-import { mapInvoice, mapSubscription } from '../../modules/billing/stripeGateway';
-import { planCatalogFromStripe, tierOfPrice, type StripePriceRow } from '../../modules/billing/planSeed';
-import { TIERS, TRIAL_OUTBOUND_CAP, resolveLimits } from '../../modules/billing/tiers';
+import { mapSubscription } from '../../modules/billing/stripeGateway';
+import { TIERS, TRIAL_OUTBOUND_CAP, normalizeTierSlug, resolveLimits } from '../../modules/billing/tiers';
 
 const trialEnd = new Date('2026-11-01T00:00:00Z');
 const periodEnd = new Date('2026-12-01T00:00:00Z');
-const starter = { slug: 'attende_starter' };
+const starter = { slug: 'attende-essencial' };
 
 describe('mapStripeStatus', () => {
   it.each([
@@ -31,30 +39,32 @@ describe('deriveEntitlements', () => {
 
   it('derives a trial with the outbound cap and the trial end', () => {
     expect(deriveEntitlements({ plan: starter, stripeStatus: 'trialing', trialEndDate: trialEnd, currentPeriodEnd: trialEnd })).toEqual({
-      tier: 'attende_starter',
-      limits: TIERS.attende_starter,
+      tier: 'attende-essencial',
+      limits: TIERS['attende-essencial'],
       status: 'trialing',
       trialEndsAt: trialEnd,
       currentPeriodEnd: trialEnd,
       trialOutboundCap: TRIAL_OUTBOUND_CAP,
+      source: 'attende',
     });
   });
 
   it('an active plan has no trial fields', () => {
-    expect(deriveEntitlements({ plan: { slug: 'attende_growth' }, stripeStatus: 'active', trialEndDate: trialEnd, currentPeriodEnd: periodEnd })).toEqual({
-      tier: 'attende_growth',
-      limits: TIERS.attende_growth,
+    expect(deriveEntitlements({ plan: { slug: 'attende-profissional' }, stripeStatus: 'active', trialEndDate: trialEnd, currentPeriodEnd: periodEnd })).toEqual({
+      tier: 'attende-profissional',
+      limits: TIERS['attende-profissional'],
       status: 'active',
       currentPeriodEnd: periodEnd,
+      source: 'attende',
     });
   });
 
   it('plan limit overrides win over the tier defaults', () => {
-    expect(deriveEntitlements({ plan: { slug: 'attende_starter', limits: { agents: 2 } }, stripeStatus: 'active' })?.limits).toEqual({ ...TIERS.attende_starter, agents: 2 });
+    expect(deriveEntitlements({ plan: { slug: 'attende-essencial', limits: { agents: 2 } }, stripeStatus: 'active' })?.limits).toEqual({ ...TIERS['attende-essencial'], agents: 2 });
   });
 
   it('moving to a foreign price means the customer left the product', () => {
-    const previous: Entitlements = { tier: 'attende_starter', limits: TIERS.attende_starter, status: 'active' };
+    const previous: Entitlements = { tier: 'attende-essencial', limits: TIERS['attende-essencial'], status: 'active' };
     expect(deriveEntitlements({ plan: null, stripeStatus: 'active', previous })?.status).toBe('canceled');
     expect(deriveEntitlements({ plan: null, stripeStatus: 'past_due', previous })?.status).toBe('past_due');
   });
@@ -65,8 +75,8 @@ describe('deriveEntitlements', () => {
 });
 
 describe('resolveLimits', () => {
-  it('falls back to starter for an unknown slug and ignores bad overrides', () => {
-    expect(resolveLimits('nope', { docs: Number.NaN })).toEqual(TIERS.attende_starter);
+  it('falls back to Essencial for an unknown slug and ignores bad overrides', () => {
+    expect(resolveLimits('nope', { docs: Number.NaN })).toEqual(TIERS['attende-essencial']);
   });
 });
 
@@ -74,10 +84,10 @@ describe('decideAccess', () => {
   const now = new Date('2026-10-20T00:00:00Z');
   it('no plan -> 403 ATTENDE_NOT_ENTITLED', () => expect(decideAccess(null, now)).toMatchObject({ allowed: false, status: 403, reference: 'ATTENDE_NOT_ENTITLED' }));
   it('canceled -> 402 ATTENDE_SUBSCRIPTION_INACTIVE', () =>
-    expect(decideAccess({ tier: 't', limits: TIERS.attende_starter, status: 'canceled' }, now)).toMatchObject({ status: 402, reference: 'ATTENDE_SUBSCRIPTION_INACTIVE' }));
+    expect(decideAccess({ tier: 't', limits: TIERS['attende-essencial'], status: 'canceled' }, now)).toMatchObject({ status: 402, reference: 'ATTENDE_SUBSCRIPTION_INACTIVE' }));
   it('trial past its end -> 402 ATTENDE_TRIAL_EXPIRED even before the webhook', () =>
-    expect(decideAccess({ tier: 't', limits: TIERS.attende_starter, status: 'trialing', trialEndsAt: new Date('2026-10-19T00:00:00Z') }, now)).toMatchObject({ reference: 'ATTENDE_TRIAL_EXPIRED' }));
-  it('past_due keeps access', () => expect(decideAccess({ tier: 't', limits: TIERS.attende_starter, status: 'past_due' }, now)).toEqual({ allowed: true }));
+    expect(decideAccess({ tier: 't', limits: TIERS['attende-essencial'], status: 'trialing', trialEndsAt: new Date('2026-10-19T00:00:00Z') }, now)).toMatchObject({ reference: 'ATTENDE_TRIAL_EXPIRED' }));
+  it('past_due keeps access', () => expect(decideAccess({ tier: 't', limits: TIERS['attende-essencial'], status: 'past_due' }, now)).toEqual({ allowed: true }));
 });
 
 describe('agentsMustPause (replaces the JSYNQ limits validUntil / suspended)', () => {
@@ -95,40 +105,80 @@ describe('agentsMustPause (replaces the JSYNQ limits validUntil / suspended)', (
   });
 
   it('canceled pauses; no entitlements is not ours to pause', () => {
-    expect(agentsMustPause({ tier: 't', limits: TIERS.attende_starter, status: 'canceled' }, 3, now)).toBe(true);
+    expect(agentsMustPause({ tier: 't', limits: TIERS['attende-essencial'], status: 'canceled' }, 3, now)).toBe(true);
     expect(agentsMustPause(null, 3, now)).toBe(false);
   });
 });
 
-describe('plan seed', () => {
-  const price = (over: Partial<StripePriceRow>): StripePriceRow => ({
-    id: 'price_1',
-    active: true,
-    currency: 'BRL',
-    unitAmount: 19700,
-    interval: 'month',
-    intervalCount: 1,
-    lookupKey: null,
-    productId: 'prod_1',
-    productMetadata: {},
-    ...over,
+describe('catalog', () => {
+  const USD = { 'attende-essencial': 3900, 'attende-profissional': 7900, 'attende-escala': 19900 };
+  const BRL = { 'attende-essencial': 19700, 'attende-profissional': 39700, 'attende-escala': 99700 };
+
+  it('bills in USD: the public catalog shows only the USD flat prices, in tier order', async () => {
+    const catalog = await listCatalog();
+    expect(catalog.currency).toBe('usd');
+    expect(catalog.plans.map((p) => [p.slug, p.prices])).toEqual(
+      Object.entries(USD).map(([slug, amount]) => [slug, [{ currency: 'usd', interval: 'month', amount }]])
+    );
+    expect(catalog.trial).toEqual({ days: 7, requiresCard: true, outboundCap: TRIAL_OUTBOUND_CAP });
   });
 
-  it('finds the tier by product metadata or lookup key, never by guessing', () => {
-    expect(tierOfPrice(price({ productMetadata: { attende_tier: 'attende_growth' } }))).toBe('attende_growth');
-    expect(tierOfPrice(price({ lookupKey: 'attende_scale_usd_month' }))).toBe('attende_scale');
-    expect(tierOfPrice(price({ lookupKey: 'pro_month' }))).toBeNull();
+  it('keeps the BRL prices, not in use yet', () => {
+    for (const [slug, amount] of Object.entries(BRL)) {
+      const brl = ATTENDE_PLANS[slug as keyof typeof BRL].prices.find((p) => p.currency === 'brl')!;
+      expect(brl).toMatchObject({ amount, inUse: false });
+      expect(tierOfPrice(brl.id)?.slug).toBe(slug);
+    }
   });
 
-  it('plans create / update / noop', () => {
-    const prices = [price({ id: 'price_a', lookupKey: 'attende_starter_brl_month' })];
-    const first = planCatalogFromStripe(prices, []);
-    expect(first.find((c) => c.slug === 'attende_starter')).toMatchObject({ action: 'create', doc: { active: true, prices: [{ id: 'price_a', currency: 'brl', amount: 19700 }] } });
-    expect(first.find((c) => c.slug === 'attende_growth')).toMatchObject({ action: 'create', doc: { active: false, prices: [] } });
-    const again = planCatalogFromStripe(prices, first.map((c) => c.doc));
-    expect(again.every((c) => c.action === 'noop')).toBe(true);
-    const changed = planCatalogFromStripe([price({ id: 'price_a', lookupKey: 'attende_starter_brl_month', unitAmount: 24700 })], first.map((c) => c.doc));
-    expect(changed.find((c) => c.slug === 'attende_starter')?.action).toBe('update');
+  it('price ids map back to their tier; other prices are not Attende', () => {
+    expect(priceFor('profissional')?.id).toBe('price_1UVkc5DZMOxX7DKDF18TucA3');
+    expect(tierOfPrice('price_1UVkc6DZMOxX7DKDZZfY4XJ7')).toMatchObject({ slug: 'attende-escala', price: { currency: 'usd', amount: 19900 } });
+    expect(tierOfPrice('price_jsynq_pro')).toBeNull();
+    expect(tierOfPrice(null)).toBeNull();
+  });
+
+  it('normalizes tier names, legacy slugs included', () => {
+    expect(normalizeTierSlug('attende-escala')).toBe('attende-escala');
+    expect(normalizeTierSlug('Profissional')).toBe('attende-profissional');
+    expect(normalizeTierSlug('attende_starter')).toBe('attende-essencial');
+    expect(normalizeTierSlug('pro')).toBeNull();
+  });
+});
+
+describe('reading the JSYNQ subscription', () => {
+  const plan = (slug: string) => ({ slug });
+  const usdProfissional = 'price_1UVkc5DZMOxX7DKDF18TucA3';
+
+  it('an attende-* plan is an Attende subscription', () => {
+    expect(readJsynqSubscription({ plan: plan('attende-profissional'), status: 'trialing', stripeSubscriptionId: 'sub_1', stripePriceId: usdProfissional, trialEndDate: '2026-11-05T00:00:00.000Z' })).toMatchObject({
+      kind: 'attende',
+      tier: 'attende-profissional',
+      status: 'trialing',
+      trialEnd: new Date('2026-11-05T00:00:00.000Z'),
+    });
+  });
+
+  it('once JSYNQ moved it to free (canceled, past due), the Attende price still tells it apart', () => {
+    expect(readJsynqSubscription({ plan: plan('free'), status: 'canceled', stripeSubscriptionId: 'sub_1', stripePriceId: usdProfissional })).toMatchObject({ kind: 'attende', status: 'canceled' });
+  });
+
+  it('a paid JSYNQ plan includes Attende with the Profissional limits; free does not', () => {
+    const paid = readJsynqSubscription({ plan: plan('pro'), status: 'active', stripeSubscriptionId: 'sub_9', stripePriceId: 'price_pro' });
+    expect(paid).toEqual({ kind: 'jsynq_plan', planSlug: 'pro', status: 'active', paid: true });
+    expect(entitlementsWithoutAttendePlan(paid as never, null)).toEqual({ tier: 'attende-profissional', limits: TIERS['attende-profissional'], status: 'active', source: 'jsynq_plan' });
+    const free = readJsynqSubscription({ plan: plan('free'), status: 'active', stripePriceId: 'price_free' });
+    expect(free).toEqual({ kind: 'none', status: 'active' });
+    expect(entitlementsWithoutAttendePlan(free as never, null)).toBeNull();
+    expect(readJsynqSubscription(null)).toEqual({ kind: 'none', status: null });
+  });
+
+  it('losing the JSYNQ plan takes Attende with it (past due keeps it while Stripe retries)', () => {
+    const included: Entitlements = { tier: 'attende-profissional', limits: TIERS['attende-profissional'], status: 'active', source: 'jsynq_plan' };
+    expect(entitlementsWithoutAttendePlan({ kind: 'none', status: 'canceled' }, included)?.status).toBe('canceled');
+    expect(entitlementsWithoutAttendePlan({ kind: 'none', status: 'past_due' }, included)?.status).toBe('past_due');
+    // An Attende customer is never touched by this path.
+    expect(entitlementsWithoutAttendePlan({ kind: 'none', status: 'active' }, { ...included, source: 'attende' })).toBeNull();
   });
 });
 
@@ -138,7 +188,8 @@ describe('Stripe mapping', () => {
       id: 'sub_1',
       status: 'active',
       customer: 'cus_1',
-      items: { data: [{ price: { id: 'price_1' }, current_period_end: 1795000000 }] },
+      currency: 'usd',
+      items: { data: [{ id: 'si_1', quantity: 3, price: { id: 'price_1', currency: 'usd' }, current_period_end: 1795000000 }] },
       trial_end: null,
       cancel_at_period_end: false,
       cancel_at: null,
@@ -148,7 +199,7 @@ describe('Stripe mapping', () => {
     }) as unknown as Stripe.Subscription;
 
   it('a live subscription is not canceling', () => {
-    expect(mapSubscription(stripeSub({}))).toMatchObject({ cancelAtPeriodEnd: false, canceledAt: null, currentPeriodEnd: new Date(1795000000 * 1000) });
+    expect(mapSubscription(stripeSub({}))).toMatchObject({ itemId: 'si_1', quantity: 3, priceId: 'price_1', currency: 'usd', cancelAtPeriodEnd: false, canceledAt: null, currentPeriodEnd: new Date(1795000000 * 1000) });
   });
 
   it('cancel at period end, by the flag or by cancel_at, keeps when it was requested', () => {
@@ -158,10 +209,5 @@ describe('Stripe mapping', () => {
 
   it('an ended subscription is canceled, not pending cancellation', () => {
     expect(mapSubscription(stripeSub({ status: 'canceled', cancel_at_period_end: true, canceled_at: 1792000000 }))).toMatchObject({ status: 'canceled', cancelAtPeriodEnd: false, canceledAt: new Date(1792000000 * 1000) });
-  });
-
-  it('maps an invoice to the fields the billing page renders', () => {
-    const inv = { id: 'in_1', number: null, created: 1792700000, amount_paid: 49700, currency: 'brl', status: 'open', hosted_invoice_url: 'https://x/1', invoice_pdf: null, lines: {} } as unknown as Stripe.Invoice;
-    expect(mapInvoice(inv)).toEqual({ id: 'in_1', number: null, created: 1792700000, amountPaid: 49700, currency: 'brl', status: 'open', hostedInvoiceUrl: 'https://x/1', invoicePdf: null });
   });
 });

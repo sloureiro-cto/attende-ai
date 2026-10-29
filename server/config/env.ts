@@ -24,8 +24,9 @@ const schema = z.object({
   JSYNQ_API_URL: z.string().url(),
   JSYNQ_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
 
+  // JSYNQ's own Stripe account (server only): Attende acts on the workspace's JSYNQ subscription for what JSYNQ's API
+  // lacks (trial length, cancel/resume, plan change, portal). No webhook secret: JSYNQ's webhook syncs every change.
   STRIPE_SECRET_KEY: z.string().min(10),
-  STRIPE_WEBHOOK_SECRET: z.string().min(10),
   BILLING_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(3),
 
   AGENT_MODEL: z.string().default('gpt-4o-mini'),
@@ -49,7 +50,6 @@ export type Env = z.infer<typeof schema>;
 const workerSchema = schema.extend({
   FRONTEND_URL: z.string().url().default('http://worker.invalid'),
   STRIPE_SECRET_KEY: z.string().min(10).default('unused-in-the-worker'),
-  STRIPE_WEBHOOK_SECRET: z.string().min(10).default('unused-in-the-worker'),
 });
 
 export function parseEnv(source: NodeJS.ProcessEnv = process.env): Env {

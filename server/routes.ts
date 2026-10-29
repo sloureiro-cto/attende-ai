@@ -14,7 +14,7 @@ export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 export type AttendeRoute = { method: HttpMethod; path: string; handler: RouteHandler };
 
 /**
- * Every Attende route, with the path the Express service had (webhooks and crons moved under `/api`).
+ * Every Attende route, with the path the Express service had (crons under `/api/cron`).
  * `app/api/**\/route.ts` exports these same handlers (a test checks both agree); this table also
  * serves in-process calls from server actions (`dispatchAttende`) and the integration tests.
  * Static segments come before `:params` of the same prefix.
@@ -30,6 +30,9 @@ export const ATTENDE_ROUTES: AttendeRoute[] = [
   { method: 'GET', path: '/api/attende/entitlements', handler: billing.getEntitlementsRoute },
   { method: 'GET', path: '/api/attende/billing/invoices', handler: billing.getInvoices },
   { method: 'POST', path: '/api/attende/billing/portal', handler: billing.postPortal },
+  { method: 'POST', path: '/api/attende/billing/cancel', handler: billing.postCancel },
+  { method: 'POST', path: '/api/attende/billing/resume', handler: billing.postResume },
+  { method: 'POST', path: '/api/attende/billing/change-plan', handler: billing.postChangePlan },
   { method: 'POST', path: '/api/attende/limits/check', handler: limits.postLimitsCheck },
   { method: 'POST', path: '/api/attende/usage/outbound', handler: limits.postOutboundUsage },
 
@@ -64,8 +67,6 @@ export const ATTENDE_ROUTES: AttendeRoute[] = [
   { method: 'GET', path: '/api/messaging-automations/advanced/:id', handler: automations.getAutomation },
   { method: 'PATCH', path: '/api/messaging-automations/advanced/:id', handler: automations.patchAutomation },
   { method: 'DELETE', path: '/api/messaging-automations/advanced/:id', handler: automations.deleteAutomation },
-
-  { method: 'POST', path: '/api/stripe/webhook', handler: billing.postStripeWebhook },
 
   { method: 'GET', path: '/api/cron/billing-reconcile', handler: billingReconcileCron },
   { method: 'GET', path: '/api/cron/agent-sweeper', handler: agentSweeperCron },

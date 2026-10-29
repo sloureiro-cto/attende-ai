@@ -9,7 +9,6 @@
  *   attendee_signups                                -> signups (verified / started / failed only)
  *   attendee_trial_claims (or trial_claims)         -> trial_claims
  *   workspaces.entitlements.attende                 -> entitlements
- *   plans with rules.bots.enabled                   -> plans (only slugs we do not have yet)
  *
  * Every write here is an insert-if-missing (`$setOnInsert`), so re-running is safe and never
  * overwrites newer data. Nothing is written to JSYNQ: the plan is enforced by this service (no
@@ -19,7 +18,8 @@
  */
 import mongoose, { type Connection } from 'mongoose';
 import { AgentSetupModel } from '../modules/agents/models';
-import { EntitlementModel, PlanModel } from '../modules/billing/models';
+import { EntitlementModel } from '../modules/billing/models';
+import { normalizeTierSlug } from '../modules/billing/tiers';
 import { SignupModel, TrialClaimModel } from '../modules/signup/models';
 
 type Doc = Record<string, any>;
@@ -27,7 +27,7 @@ type Source = Connection['db'] & {};
 
 export type MigrationReport = {
   apply: boolean;
-  counts: Record<'agentSetups' | 'signups' | 'trialClaims' | 'entitlements' | 'plans', { found: number; inserted: number }>;
+  counts: Record<'agentSetups' | 'signups' | 'trialClaims' | 'entitlements', { found: number; inserted: number }>;
   /** Workspaces with Attende entitlements: each needs a JSYNQ plan with channels (operator step). */
   workspaces: string[];
 };
@@ -61,7 +61,6 @@ export async function migrateFromJsynq(params: { source: Source; apply: boolean 
       signups: { found: 0, inserted: 0 },
       trialClaims: { found: 0, inserted: 0 },
       entitlements: { found: 0, inserted: 0 },
-      plans: { found: 0, inserted: 0 },
     },
     workspaces: [],
   };
@@ -70,34 +69,13 @@ export async function migrateFromJsynq(params: { source: Source; apply: boolean 
     if (inserted) report.counts[k].inserted += 1;
   };
 
-  // Plans first: the entitlements below may name their tiers.
-  for (const p of await readAll(source, ['plans'], { 'rules.bots.enabled': true })) {
-    const bots = p.rules?.bots ?? {};
-    const prices = (p.stripe?.prices ?? []).map((x: Doc) => ({
-      id: x.id,
-      currency: x.currency,
-      interval: x.interval ?? x.recurring?.interval,
-      intervalCount: x.intervalCount ?? x.interval_count ?? x.recurring?.interval_count ?? 1,
-      amount: x.amount ?? x.unit_amount,
-      active: x.active !== false,
-    }));
-    const doc = {
-      slug: p.slug,
-      title: p.title ?? p.name ?? p.slug,
-      limits: { lines: bots.lines, agents: bots.agents, aiRepliesPerMonth: bots.aiRepliesPerMonth, seats: bots.seats, docs: bots.docs },
-      stripeProductId: p.stripe?.products?.[0]?.id,
-      prices: prices.filter((x: Doc) => x.id),
-      active: p.active !== false,
-    };
-    bump('plans', await insertMissing(PlanModel, { slug: p.slug }, doc, apply));
-  }
-
+  // Plans are not copied: the catalog is configuration (`modules/billing/catalog.ts`), the plans live in JSYNQ.
   const workspaces = await readAll(source, ['workspaces'], { 'entitlements.attende': { $exists: true, $ne: null } });
   for (const w of workspaces) {
     const e = w.entitlements.attende;
     const doc = {
       workspaceId: String(w._id),
-      tier: e.tier,
+      tier: normalizeTierSlug(e.tier) ?? e.tier,
       limits: e.limits,
       status: e.status,
       ...(e.trialEndsAt ? { trialEndsAt: e.trialEndsAt } : {}),

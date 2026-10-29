@@ -1,7 +1,7 @@
 import mongoose, { Types } from 'mongoose';
 import { resetEnvCache } from '../../config/env';
 import { AgentSetupModel } from '../../modules/agents/models';
-import { EntitlementModel, PlanModel } from '../../modules/billing/models';
+import { EntitlementModel } from '../../modules/billing/models';
 import { SignupModel, TrialClaimModel } from '../../modules/signup/models';
 import { migrateFromJsynq } from '../../scripts/migrate-from-jsynq';
 import { FakeJsynq } from '../helpers/fakeJsynq';
@@ -76,7 +76,6 @@ describe('scripts/migrate-from-jsynq', () => {
       signups: { found: 2, inserted: 1 },
       trialClaims: { found: 1, inserted: 1 },
       entitlements: { found: 2, inserted: 2 },
-      plans: { found: 1, inserted: 1 },
     });
     expect(report.workspaces).toEqual([jsynqWs, String(legacyWs)]);
     expect(await EntitlementModel.countDocuments()).toBe(0);
@@ -91,7 +90,7 @@ describe('scripts/migrate-from-jsynq', () => {
     expect(report.workspaces).toEqual([jsynqWs, String(legacyWs)]);
     expect(jsynq.calls).toEqual([]);
 
-    expect(await EntitlementModel.findOne({ workspaceId: jsynqWs }).lean()).toMatchObject({ tier: 'attende_starter', status: 'trialing', trialOutboundCap: 50, limits: { lines: 1, docs: 20 } });
+    expect(await EntitlementModel.findOne({ workspaceId: jsynqWs }).lean()).toMatchObject({ tier: 'attende-essencial', status: 'trialing', trialOutboundCap: 50, limits: { lines: 1, docs: 20 } });
 
     const signup = await SignupModel.findOne({ email: 'maria@clinica.com.br' }).lean();
     expect(signup).toMatchObject({ name: 'Maria Souza', state: 'trial_started', userId: String(userId), workspaceId: jsynqWs });
@@ -101,8 +100,6 @@ describe('scripts/migrate-from-jsynq', () => {
     expect(setup).toMatchObject({ state: 'ready', templateKey: 'sdr', clientRequestId: 'req-0001-abcd', createdBy: String(userId) });
     expect(typeof setup!.lines[0]!.sessionId).toBe('string');
     expect(typeof setup!.documents[0]!.documentId).toBe('string');
-    expect(await PlanModel.findOne({ slug: 'attende_starter' }).lean()).toMatchObject({ title: 'Starter', limits: { agents: 1 }, prices: [{ id: 'price_1', amount: 19700 }] });
-    expect(await PlanModel.countDocuments({ slug: 'pro' })).toBe(0);
 
     // The JSYNQ database is untouched.
     expect(await snapshot()).toEqual(before);

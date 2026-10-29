@@ -18,10 +18,10 @@ const PUBLIC_EXACT = new Set(["/", "/login", "/robots.txt", "/healthz", "/health
 const PUBLIC_PREFIXES = ["/api/auth", "/_next", "/bots-assets", "/favicon", "/whatsapp-connect", "/signup", "/pricing"]
 /**
  * The Attende API (route handlers in app/api, code in server/). No session cookie check here: each route
- * authenticates itself (user JWT as Bearer, Stripe signature, or CRON_SECRET) and answers JSON errors.
+ * authenticates itself (user JWT as Bearer, or CRON_SECRET) and answers JSON errors. There is no Stripe webhook: JSYNQ's
+ * own webhook syncs subscription changes.
  */
 const API_PREFIXES = ["/api/attende", "/api/messaging-automations/advanced", "/api/cron"]
-const API_EXACT = new Set(["/api/stripe/webhook"])
 /** The product. A session is required. */
 const PROTECTED_PREFIXES = [
   "/workspaces",
@@ -50,7 +50,7 @@ const matchesPrefix = (pathname: string, prefix: string) =>
 export type BotsRouteKind = "public" | "protected" | "api" | "blocked"
 
 export function classifyBotsAppPath(pathname: string): BotsRouteKind {
-  if (API_EXACT.has(pathname) || API_PREFIXES.some((p) => matchesPrefix(pathname, p))) return "api"
+  if (API_PREFIXES.some((p) => matchesPrefix(pathname, p))) return "api"
   if (PUBLIC_EXACT.has(pathname)) return "public"
   if (PUBLIC_PREFIXES.some((p) => matchesPrefix(pathname, p))) return "public"
   if (PROTECTED_PREFIXES.some((p) => matchesPrefix(pathname, p))) return "protected"
