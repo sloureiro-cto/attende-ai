@@ -3,16 +3,16 @@ import { ATTENDE_TIERS, formatPrice } from "../plans"
 describe("ATTENDE_TIERS", () => {
   it("mirrors the reference limits of the three tiers", () => {
     expect(ATTENDE_TIERS.map((t) => [t.id, t.limits.lines, t.limits.agents, t.limits.aiRepliesPerMonth, t.limits.seats, t.limits.docs])).toEqual([
-      ["starter", 1, 1, 1000, 2, 20],
-      ["growth", 3, 3, 5000, 5, 100],
-      ["scale", 10, 10, 20000, 15, 500],
+      ["essencial", 1, 1, 1000, 2, 20],
+      ["profissional", 3, 3, 5000, 5, 100],
+      ["escala", 10, 10, 20000, 15, 500],
     ])
   })
   it("carries no price", () => {
     expect(JSON.stringify(ATTENDE_TIERS)).not.toMatch(/price|amount|currency/i)
   })
   it("marks exactly one tier as popular", () => {
-    expect(ATTENDE_TIERS.filter((t) => t.popular).map((t) => t.id)).toEqual(["growth"])
+    expect(ATTENDE_TIERS.filter((t) => t.popular).map((t) => t.id)).toEqual(["profissional"])
   })
 })
 

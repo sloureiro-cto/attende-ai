@@ -7,7 +7,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { createSignupSetupIntentAction, startAttendeTrialAction } from "actions/attende/signup"
 import Button from "components/Button/Button"
 import { signupErrorKey } from "lib/attende/signup/errors"
-import type { AttendePlanSlug, SignupPlan, SignupTrial } from "lib/attende/signup/plans"
+import { formatSignupPrice, pickMonthlyPrice, preferredCurrency, type AttendePlanSlug, type SignupPlan, type SignupTrial } from "lib/attende/signup/plans"
 import type { StartTrialData } from "lib/attende/signup/types"
 import { TrialSummary } from "./TrialSummary"
 import { useAcquisitionT } from "../acquisition/useAcquisitionT"
@@ -24,6 +24,7 @@ const ELEMENTS_LOCALE = { english: "en", portuguese: "pt", spanish: "es" } as co
 
 /** After these the card itself is the problem: a new SetupIntent and card form are needed, not a plain retry. */
 const CARD_ERRORS = new Set(["SIGNUP_PAYMENT_FAILED", "SIGNUP_PAYMENT_METHOD_INVALID"])
+const LOCALE = { english: "en-US", portuguese: "pt-BR", spanish: "es-ES" } as const
 
 type Props = {
   planSlug: AttendePlanSlug
@@ -36,11 +37,14 @@ type Props = {
 type FormProps = Props & { onCardProblem: () => void }
 
 function CardForm({ planSlug, planName, plan, trial, onStarted, onCardProblem }: FormProps) {
-  const { t } = useAcquisitionT()
+  const { t, language } = useAcquisitionT()
   const stripe = useStripe()
   const elements = useElements()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The card or e-mail already had a trial: the same (confirmed) card can subscribe without one.
+  const [withoutTrial, setWithoutTrial] = useState(false)
+  const price = pickMonthlyPrice(plan, preferredCurrency(language))
   // A SetupIntent confirms once. If the trial call fails for a reason unrelated to the card, retry with the same payment method.
   const confirmedMethod = useRef<string | null>(null)
 
@@ -69,9 +73,10 @@ function CardForm({ planSlug, planName, plan, trial, onStarted, onCardProblem }:
         return
       }
 
-      const started = await startAttendeTrialAction({ paymentMethodId: confirmedMethod.current, planSlug })
+      const started = await startAttendeTrialAction({ paymentMethodId: confirmedMethod.current, planSlug, ...(withoutTrial ? { withoutTrial: true } : {}) })
       if (!started.success) {
         setError(t(signupErrorKey(started.reference, started.status)))
+        if (started.reference === "SIGNUP_TRIAL_ALREADY_USED") setWithoutTrial(true)
         if (started.reference && CARD_ERRORS.has(started.reference)) {
           confirmedMethod.current = null
           onCardProblem()
@@ -88,21 +93,30 @@ function CardForm({ planSlug, planName, plan, trial, onStarted, onCardProblem }:
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
-      <TrialSummary plan={plan} planName={planName} trial={trial} />
+      {withoutTrial ? (
+        <div data-testid="no-trial-offer" className="flex flex-col gap-1 rounded-[10px] border border-neutral-50 bg-neutral-10 px-3.5 py-3">
+          <span className="text-body-14 font-semibold text-neutral-900">{`${t("cardNoTrialTitle")} · ${planName}`}</span>
+          <span className="text-body-13 text-neutral-700">
+            {price ? t("cardNoTrialBody", { price: formatSignupPrice(price, LOCALE[language]) }) : t("cardNoTrialBodyPending")}
+          </span>
+        </div>
+      ) : (
+        <TrialSummary plan={plan} planName={planName} trial={trial} />
+      )}
       {error && (
         <div role="alert" className="flex flex-col gap-1 rounded-[10px] border border-error-lighter bg-error-clean px-3.5 py-3 text-body-13 text-error-darkest">
           <span className="flex items-start gap-2.5">
             <Warning2 size={16} className="mt-0.5 shrink-0" aria-hidden />
             {error}
           </span>
-          <span className="pl-[26px] text-body-12 text-error-dark">{t("cardRetryHint")}</span>
+          {!withoutTrial && <span className="pl-[26px] text-body-12 text-error-dark">{t("cardRetryHint")}</span>}
         </div>
       )}
       <div className="rounded-[10px] border border-neutral-50 p-4">
         <PaymentElement options={{ layout: "tabs" }} />
       </div>
       <Button type="submit" size="large" loading={busy} disabled={!stripe || !elements} className="h-11 w-full">
-        {busy ? t("cardFinishing") : t("cardSubmit")}
+        {busy ? t("cardFinishing") : withoutTrial ? t("cardNoTrialSubmit") : t("cardSubmit")}
       </Button>
       <p className="text-center text-body-12 text-neutral-500">{t("cardSecure")}</p>
     </form>

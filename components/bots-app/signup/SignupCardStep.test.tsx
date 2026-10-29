@@ -19,7 +19,7 @@ jest.mock("@stripe/react-stripe-js", () => ({
   useElements: () => ({ submit: (...args: unknown[]) => mockSubmit(...args) }),
 }))
 
-const plan = { slug: "attende_starter" as const, tier: "starter" as const, name: "Starter", limits: {}, prices: [{ currency: "usd", interval: "month" as const, amount: 9900 }] }
+const plan = { slug: "attende-essencial" as const, tier: "essencial" as const, name: "Starter", limits: {}, prices: [{ currency: "usd", interval: "month" as const, amount: 9900 }] }
 const trial = { days: 7, requiresCard: true, outboundCap: 50 }
 
 const withKey = (key: string | undefined) => {
@@ -39,7 +39,7 @@ beforeEach(() => {
 describe("SignupCardStep", () => {
   it("shows the trial promise with the synced price, then starts the trial with the confirmed card", async () => {
     const onStarted = jest.fn()
-    render(<SignupCardStep planSlug="attende_starter" planName="Starter" plan={plan} trial={trial} onStarted={onStarted} />)
+    render(<SignupCardStep planSlug="attende-essencial" planName="Starter" plan={plan} trial={trial} onStarted={onStarted} />)
 
     expect(await screen.findByText("card fields")).toBeInTheDocument()
     expect(screen.getByText("7 days free")).toBeInTheDocument()
@@ -48,17 +48,17 @@ describe("SignupCardStep", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Start free trial" }))
     await waitFor(() => expect(onStarted).toHaveBeenCalledWith({ workspaceId: "w1", subscriptionStatus: "trialing" }))
-    expect(mockStartTrial).toHaveBeenCalledWith({ paymentMethodId: "pm_1", planSlug: "attende_starter" })
+    expect(mockStartTrial).toHaveBeenCalledWith({ paymentMethodId: "pm_1", planSlug: "attende-essencial" })
   })
 
   it("says the price comes later when the plan is not synced", async () => {
-    render(<SignupCardStep planSlug="attende_starter" planName="Starter" plan={undefined} trial={trial} onStarted={jest.fn()} />)
+    render(<SignupCardStep planSlug="attende-essencial" planName="Starter" plan={undefined} trial={trial} onStarted={jest.fn()} />)
     expect(await screen.findByText(/Then the price of your plan/)).toBeInTheDocument()
   })
 
   it("shows a friendly message when Stripe rejects the card and does not call the backend", async () => {
     mockConfirmSetup.mockResolvedValue({ error: { message: "Your card number is incomplete." } })
-    render(<SignupCardStep planSlug="attende_starter" planName="Starter" plan={plan} trial={trial} onStarted={jest.fn()} />)
+    render(<SignupCardStep planSlug="attende-essencial" planName="Starter" plan={plan} trial={trial} onStarted={jest.fn()} />)
     await screen.findByText("card fields")
     fireEvent.click(screen.getByRole("button", { name: "Start free trial" }))
     expect(await screen.findByRole("alert")).toHaveTextContent("Your card number is incomplete.")
@@ -69,7 +69,7 @@ describe("SignupCardStep", () => {
     mockStartTrial.mockResolvedValueOnce({ success: false, status: 402, reference: "SIGNUP_PAYMENT_FAILED" })
     mockSetupIntent.mockResolvedValueOnce({ success: true, data: { clientSecret: "seti_1_secret_a" } }).mockResolvedValueOnce({ success: true, data: { clientSecret: "seti_2_secret_b" } })
     const onStarted = jest.fn()
-    const { container } = render(<SignupCardStep planSlug="attende_starter" planName="Starter" plan={plan} trial={trial} onStarted={onStarted} />)
+    const { container } = render(<SignupCardStep planSlug="attende-essencial" planName="Starter" plan={plan} trial={trial} onStarted={onStarted} />)
     await screen.findByText("card fields")
     fireEvent.click(screen.getByRole("button", { name: "Start free trial" }))
 
@@ -81,7 +81,7 @@ describe("SignupCardStep", () => {
   it("retries with the same card, without confirming the SetupIntent twice, after an error unrelated to the card", async () => {
     mockStartTrial.mockResolvedValueOnce({ success: false, status: 409, reference: "SIGNUP_TRIAL_IN_PROGRESS" })
     const onStarted = jest.fn()
-    render(<SignupCardStep planSlug="attende_starter" planName="Starter" plan={plan} trial={trial} onStarted={onStarted} />)
+    render(<SignupCardStep planSlug="attende-essencial" planName="Starter" plan={plan} trial={trial} onStarted={onStarted} />)
     await screen.findByText("card fields")
 
     fireEvent.click(screen.getByRole("button", { name: "Start free trial" }))
@@ -94,9 +94,27 @@ describe("SignupCardStep", () => {
     expect(mockSetupIntent).toHaveBeenCalledTimes(1)
   })
 
+  it("a card or e-mail that already had a trial: offers to subscribe without it, with the same confirmed card", async () => {
+    mockStartTrial.mockResolvedValueOnce({ success: false, status: 409, reference: "SIGNUP_TRIAL_ALREADY_USED" })
+    mockStartTrial.mockResolvedValueOnce({ success: true, data: { workspaceId: "w1", subscriptionStatus: "active" } })
+    const onStarted = jest.fn()
+    render(<SignupCardStep planSlug="attende-essencial" planName="Essencial" plan={plan} trial={trial} onStarted={onStarted} />)
+    await screen.findByText("card fields")
+    fireEvent.click(screen.getByRole("button", { name: "Start free trial" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("You can subscribe without the trial.")
+    expect(screen.getByTestId("no-trial-offer")).toHaveTextContent("$99 is charged now to this card")
+    expect(screen.queryByText("7 days free")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Subscribe and pay now" }))
+
+    await waitFor(() => expect(onStarted).toHaveBeenCalledWith({ workspaceId: "w1", subscriptionStatus: "active" }))
+    expect(mockStartTrial).toHaveBeenLastCalledWith({ paymentMethodId: "pm_1", planSlug: "attende-essencial", withoutTrial: true })
+    expect(mockConfirmSetup).toHaveBeenCalledTimes(1)
+  })
+
   it("offers a retry when the SetupIntent cannot be created", async () => {
     mockSetupIntent.mockResolvedValueOnce({ success: false, status: 429, reference: "SIGNUP_RATE_LIMITED" })
-    render(<SignupCardStep planSlug="attende_starter" planName="Starter" plan={plan} trial={trial} onStarted={jest.fn()} />)
+    render(<SignupCardStep planSlug="attende-essencial" planName="Starter" plan={plan} trial={trial} onStarted={jest.fn()} />)
     expect(await screen.findByRole("alert")).toHaveTextContent("Too many attempts")
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
     expect(await screen.findByText("card fields")).toBeInTheDocument()
@@ -104,7 +122,7 @@ describe("SignupCardStep", () => {
 
   it("explains that payments are not configured when the publishable key is missing", () => {
     withKey(undefined)
-    render(<SignupCardStep planSlug="attende_starter" planName="Starter" plan={plan} trial={trial} onStarted={jest.fn()} />)
+    render(<SignupCardStep planSlug="attende-essencial" planName="Starter" plan={plan} trial={trial} onStarted={jest.fn()} />)
     expect(screen.getByRole("alert")).toHaveTextContent("Payments are not configured")
     expect(mockSetupIntent).not.toHaveBeenCalled()
   })

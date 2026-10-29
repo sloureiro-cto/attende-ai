@@ -23,9 +23,9 @@ export const signupEntries = {
   },
   signupBusiness: { en: "Business name", pt: "Nome da empresa", es: "Nombre de la empresa" },
   signupPlan: { en: "Plan", pt: "Plano", es: "Plan" },
-  signupPlanStarter: { en: "Starter", pt: "Starter", es: "Starter" },
-  signupPlanGrowth: { en: "Growth", pt: "Growth", es: "Growth" },
-  signupPlanScale: { en: "Scale", pt: "Scale", es: "Scale" },
+  signupPlanEssencial: { en: "Essencial", pt: "Essencial", es: "Essencial" },
+  signupPlanProfissional: { en: "Profissional", pt: "Profissional", es: "Profissional" },
+  signupPlanEscala: { en: "Escala", pt: "Escala", es: "Escala" },
   signupPlanPrice: { en: "{price} / {interval}", pt: "{price} / {interval}", es: "{price} / {interval}" },
   signupIntervalMonth: { en: "month", pt: "mês", es: "mes" },
   signupTerms: {
@@ -178,10 +178,26 @@ export const signupEntries = {
     es: "No pudimos usar esa tarjeta. Prueba con otra.",
   },
   errSIGNUP_TRIAL_ALREADY_USED: {
-    en: "A free trial was already used with this card or e-mail. Choose a plan to continue.",
-    pt: "Um teste grátis já foi usado com este cartão ou e-mail. Escolha um plano para continuar.",
-    es: "Ya se usó una prueba gratis con esta tarjeta o e-mail. Elige un plan para continuar.",
+    en: "A free trial was already used with this card or e-mail. You can subscribe without the trial.",
+    pt: "Um teste grátis já foi usado com este cartão ou e-mail. Você pode assinar sem o teste.",
+    es: "Ya se usó una prueba gratis con esta tarjeta o e-mail. Puedes suscribirte sin la prueba.",
   },
+  cardNoTrialTitle: {
+    en: "Subscribe without the free trial",
+    pt: "Assinar sem o teste grátis",
+    es: "Suscribirse sin la prueba gratis",
+  },
+  cardNoTrialBody: {
+    en: "{price} is charged now to this card, then every month. Cancel anytime.",
+    pt: "{price} é cobrado agora neste cartão e depois todo mês. Cancele quando quiser.",
+    es: "Se cobra {price} ahora en esta tarjeta y luego cada mes. Cancela cuando quieras.",
+  },
+  cardNoTrialBodyPending: {
+    en: "The price of your plan is charged now to this card, then every month. Cancel anytime.",
+    pt: "O valor do seu plano é cobrado agora neste cartão e depois todo mês. Cancele quando quiser.",
+    es: "El precio de tu plan se cobra ahora en esta tarjeta y luego cada mes. Cancela cuando quieras.",
+  },
+  cardNoTrialSubmit: { en: "Subscribe and pay now", pt: "Assinar e pagar agora", es: "Suscribirse y pagar ahora" },
   errSIGNUP_TRIAL_IN_PROGRESS: {
     en: "Your trial is already being created. Wait a moment.",
     pt: "O seu teste já está sendo criado. Aguarde um instante.",

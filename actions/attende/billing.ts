@@ -46,7 +46,7 @@ export async function getAttendeBillingAction(): Promise<BillingLoad> {
   }
 }
 
-export type PortalKind = "manage" | "payment_method" | "change_plan"
+export type PortalKind = "manage" | "payment_method"
 export type PortalResult = { success: true; url: string } | { success: false; error: string }
 
 async function returnUrl(): Promise<string | undefined> {
@@ -59,8 +59,8 @@ async function returnUrl(): Promise<string | undefined> {
 }
 
 /**
- * Opens the Stripe customer portal through the Attende backend (`POST /attende/billing/portal`): card update, plan change
- * or the portal home (invoices, cancel).
+ * Opens the Stripe customer portal of the company's JSYNQ customer through the Attende backend
+ * (`POST /attende/billing/portal`): card update, or the portal home (invoices).
  */
 export async function openBillingPortalAction(kind: PortalKind): Promise<PortalResult> {
   const callback = await returnUrl()
@@ -84,4 +84,26 @@ export async function getAttendeInvoicesAction(limit = 24): Promise<InvoicesLoad
   const result = await attendeGet<unknown>("/attende/billing/invoices", { limit })
   if (!result.success) return { success: false, error: result.reference ?? (result.status === 0 ? "network" : "load") }
   return { success: true, data: parseAttendeInvoices(result.data) }
+}
+
+export type BillingActionResult = { success: true } | { success: false; error: string }
+
+const billingAction = async (path: string, body: Record<string, unknown> = {}): Promise<BillingActionResult> => {
+  const result = await attendePost<unknown>(path, body)
+  return result.success ? { success: true } : { success: false, error: result.reference ?? "action" }
+}
+
+/** Ends the Attende subscription at the end of the current period (owner only). */
+export async function cancelSubscriptionAction(): Promise<BillingActionResult> {
+  return billingAction("/attende/billing/cancel")
+}
+
+/** Undoes a scheduled cancellation before the period ends (owner only). */
+export async function resumeSubscriptionAction(): Promise<BillingActionResult> {
+  return billingAction("/attende/billing/resume")
+}
+
+/** Moves the subscription to another tier, prorated (owner only). */
+export async function changePlanAction(planSlug: string): Promise<BillingActionResult> {
+  return billingAction("/attende/billing/change-plan", { planSlug })
 }

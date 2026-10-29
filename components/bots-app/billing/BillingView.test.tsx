@@ -12,6 +12,9 @@ class ResizeObserverStub {
 
 const mockPortal = jest.fn()
 const mockReload = jest.fn()
+const mockCancel = jest.fn()
+const mockResume = jest.fn()
+const mockChange = jest.fn()
 const mockToast = jest.fn()
 const assign = jest.fn()
 
@@ -19,6 +22,9 @@ jest.mock("context/UserLanguageContext", () => ({ useUserLanguage: () => ({ user
 jest.mock("actions/attende/billing", () => ({
   openBillingPortalAction: (...args: unknown[]) => mockPortal(...args),
   getAttendeBillingAction: (...args: unknown[]) => mockReload(...args),
+  cancelSubscriptionAction: (...args: unknown[]) => mockCancel(...args),
+  resumeSubscriptionAction: (...args: unknown[]) => mockResume(...args),
+  changePlanAction: (...args: unknown[]) => mockChange(...args),
 }))
 jest.mock("app/utils/showToast", () => ({ showToast: (...args: unknown[]) => mockToast(...args) }))
 jest.mock("./BillingInvoices", () => ({
@@ -28,7 +34,9 @@ jest.mock("./BillingInvoices", () => ({
 type Data = Extract<BillingLoad, { success: true }>["data"]
 const iso = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString()
 const sub = (over: Partial<AttendeSubscription> = {}): AttendeSubscription => ({
-  planSlug: "attende_growth",
+  source: "attende",
+  ended: false,
+  planSlug: "attende-profissional",
   status: "active",
   price: { amount: 99, currency: "USD", interval: "month", intervalCount: 1 },
   trialEndsAt: null,
@@ -42,7 +50,7 @@ const load = (billing: Partial<Data["billing"]>, extra: Partial<Omit<Data, "bill
   success: true,
   data: {
     workspaceId: "w1",
-    billing: { tier: "attende_growth", status: "active", limits: { lines: 3, agents: 3, aiRepliesPerMonth: 5000, seats: 5, docs: 100 }, trialEndsAt: null, trialOutboundCap: 0, trialOutboundUsed: 0, ...billing },
+    billing: { tier: "attende-profissional", status: "active", limits: { lines: 3, agents: 3, aiRepliesPerMonth: 5000, seats: 5, docs: 100 }, trialEndsAt: null, trialOutboundCap: 0, trialOutboundUsed: 0, source: "attende", ...billing },
     subscription: sub(),
     usage,
     ...extra,
@@ -53,12 +61,13 @@ beforeEach(() => {
   jest.clearAllMocks()
   Object.defineProperty(window, "location", { value: { assign }, writable: true })
   mockPortal.mockResolvedValue({ success: true, url: "https://billing.stripe.test/session" })
+  for (const m of [mockCancel, mockResume, mockChange]) m.mockResolvedValue({ success: true })
 })
 
 describe("BillingView: plan summary", () => {
   it("answers plan, price with currency and period, and the next charge of an active subscription", () => {
     render(<BillingView initial={load({})} />)
-    expect(screen.getByText("Growth")).toBeInTheDocument()
+    expect(screen.getByText("Profissional")).toBeInTheDocument()
     expect(screen.getByText("Active")).toBeInTheDocument()
     expect(screen.getByText("$99.00 per month")).toBeInTheDocument()
     expect(screen.getByText(/Next charge on .*2026: \$99\.00 per month/)).toBeInTheDocument()
@@ -102,16 +111,18 @@ describe("BillingView: plan summary", () => {
 })
 
 describe("BillingView: cancellation", () => {
-  it("a cancellation at the period end replaces the next charge, and Manage opens the portal to undo it", async () => {
+  it("a cancellation at the period end replaces the next charge, and can be undone before the end", async () => {
     render(<BillingView initial={load({}, { subscription: sub({ cancelAtPeriodEnd: true, canceledAt: "2026-10-20T12:00:00.000Z" }) })} />)
     expect(screen.getByText("Cancels on Nov 22, 2026")).toBeInTheDocument()
     expect(screen.getByText(/stays active until then/)).toBeInTheDocument()
     expect(screen.queryByText(/Next charge on/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Canceled on/)).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Cancel subscription" })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Manage" }))
-    await waitFor(() => expect(mockPortal).toHaveBeenCalledWith("manage"))
-    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://billing.stripe.test/session"))
+    mockReload.mockResolvedValue(load({}))
+    fireEvent.click(screen.getAllByRole("button", { name: "Keep my subscription" })[0]!)
+    await waitFor(() => expect(mockResume).toHaveBeenCalled())
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith("success", "Your subscription will continue."))
+    expect(mockPortal).not.toHaveBeenCalled()
   })
 
   it("a trial set to end says so instead of announcing the charge after it", () => {
@@ -126,15 +137,17 @@ describe("BillingView: cancellation", () => {
     )
     expect(screen.getByText(/^Cancels on /)).toBeInTheDocument()
     expect(screen.queryByText(/is charged automatically/)).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Keep my subscription" }).length).toBeGreaterThan(0)
   })
 
-  it("a canceled subscription keeps the canceled state, with no Manage to undo", () => {
-    render(<BillingView initial={load({ status: "canceled" }, { subscription: sub({ status: "canceled", canceledAt: "2026-10-20T12:00:00.000Z" }) })} />)
+  it("an ended subscription keeps the canceled state, explains that support reactivates it, and offers no action", () => {
+    render(<BillingView initial={load({ status: "canceled" }, { subscription: sub({ status: "canceled", ended: true, canceledAt: "2026-10-20T12:00:00.000Z" }) })} />)
     expect(screen.getByText("Canceled on Oct 20, 2026.")).toBeInTheDocument()
     expect(screen.queryByText(/^Cancels on/)).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Manage" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Cancel subscription" })).not.toBeInTheDocument()
+    expect(screen.getByText("This subscription has ended")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Contact support" })).toHaveAttribute("href", "mailto:support@jsynq.com")
+    for (const name of ["Keep my subscription", "Cancel subscription", "Change plan", "Update card"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "Subscribe to a plan" })).not.toBeInTheDocument()
   })
 })
 
@@ -198,16 +211,54 @@ describe("BillingView: managing", () => {
     expect(mockPortal).toHaveBeenCalledWith("payment_method")
   })
 
-  it("asks for confirmation before sending the person to cancel, and lets them keep the plan", async () => {
+  it("asks for confirmation before canceling at the period end, and lets them keep the plan", async () => {
+    mockReload.mockResolvedValue(load({}, { subscription: sub({ cancelAtPeriodEnd: true }) }))
     render(<BillingView initial={load({})} />)
     fireEvent.click(screen.getByRole("button", { name: "Cancel subscription" }))
     expect(await screen.findByText("Cancel your subscription?")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Keep my plan" }))
     await waitFor(() => expect(screen.queryByText("Cancel your subscription?")).not.toBeInTheDocument())
-    expect(mockPortal).not.toHaveBeenCalled()
+    expect(mockCancel).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole("button", { name: "Cancel subscription" }))
-    fireEvent.click(await screen.findByRole("button", { name: "Continue to cancel" }))
-    await waitFor(() => expect(mockPortal).toHaveBeenCalledWith("manage"))
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel at period end" }))
+    await waitFor(() => expect(mockCancel).toHaveBeenCalled())
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith("success", "Your subscription will end at the end of the period."))
+    expect(await screen.findByText(/^Cancels on/)).toBeInTheDocument()
+    expect(mockPortal).not.toHaveBeenCalled()
+  })
+
+  it("changes plan in the app, never through the portal", async () => {
+    render(<BillingView initial={load({})} />)
+    fireEvent.click(screen.getByRole("button", { name: "Change plan" }))
+    expect(await screen.findByRole("button", { name: "Profissional · Current plan" })).toBeDisabled()
+    fireEvent.click(screen.getByRole("button", { name: "Switch to Escala" }))
+    await waitFor(() => expect(mockChange).toHaveBeenCalledWith("attende-escala"))
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith("success", "Your plan was changed to Escala."))
+    expect(mockPortal).not.toHaveBeenCalled()
+  })
+
+  it("only the owner can change the subscription", async () => {
+    mockCancel.mockResolvedValue({ success: false, error: "BILLING_OWNER_ONLY" })
+    render(<BillingView initial={load({})} />)
+    fireEvent.click(screen.getByRole("button", { name: "Cancel subscription" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel at period end" }))
+    await waitFor(() => expect(mockToast).toHaveBeenCalledWith("error", "Only the owner of this company can change its subscription."))
+  })
+
+  it("a workspace on a paid JSYNQ plan: included, managed in JSYNQ, no Attende billing actions or invoices", () => {
+    render(
+      <BillingView
+        initial={load(
+          { source: "jsynq_plan" },
+          { subscription: sub({ source: "jsynq_plan", planSlug: "pro", price: null, currentPeriodEnd: null }) }
+        )}
+      />
+    )
+    expect(screen.getAllByText("Included in your JSYNQ plan").length).toBeGreaterThan(0)
+    expect(screen.getByRole("link", { name: "Manage billing in JSYNQ" })).toHaveAttribute("href", "https://app.jsynq.com")
+    for (const name of ["Cancel subscription", "Change plan", "Update card", "Keep my subscription"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "Subscribe to a plan" })).not.toBeInTheDocument()
+    expect(screen.queryByText("invoices of w1")).not.toBeInTheDocument()
   })
 
   it("tells the user when the portal cannot be opened", async () => {
@@ -238,6 +289,6 @@ describe("BillingView: managing", () => {
     render(<BillingView initial={{ success: false, error: "boom" }} />)
     expect(screen.getByText("We could not load your plan.")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
-    expect(await screen.findByText("Growth")).toBeInTheDocument()
+    expect(await screen.findByText("Profissional")).toBeInTheDocument()
   })
 })

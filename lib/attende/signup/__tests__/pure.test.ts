@@ -37,40 +37,41 @@ describe("signupErrorKey", () => {
 
 describe("plans", () => {
   it("normalizes the ?plan= param", () => {
-    expect(normalizePlanSlug("growth")).toBe("attende_growth")
-    expect(normalizePlanSlug("ATTENDE_SCALE")).toBe("attende_scale")
-    expect(normalizePlanSlug("nope")).toBe("attende_starter")
-    expect(normalizePlanSlug(undefined)).toBe("attende_starter")
+    expect(normalizePlanSlug("profissional")).toBe("attende-profissional")
+    expect(normalizePlanSlug("ATTENDE_SCALE")).toBe("attende-escala")
+    expect(normalizePlanSlug("nope")).toBe("attende-essencial")
+    expect(normalizePlanSlug(undefined)).toBe("attende-essencial")
   })
 
   it("parses the contract and drops malformed rows", () => {
     const parsed = parseSignupPlans({
       trial: { days: 7, requiresCard: true, outboundCap: 50 },
       plans: [
-        { slug: "attende_starter", name: "Starter", limits: { lines: 1 }, prices: [{ currency: "BRL", interval: "month", amount: 19700 }, { currency: "brl", interval: "year", amount: 190000 }, { currency: 1 }] },
+        { slug: "attende-essencial", name: "Starter", limits: { lines: 1 }, prices: [{ currency: "BRL", interval: "month", amount: 19700 }, { currency: "brl", interval: "year", amount: 190000 }, { currency: 1 }] },
         { slug: "other", name: "x" },
         null,
       ],
     })
     expect(parsed.plans).toHaveLength(1)
-    expect(parsed.plans[0]).toMatchObject({ slug: "attende_starter", tier: "starter", name: "Starter" })
+    expect(parsed.plans[0]).toMatchObject({ slug: "attende-essencial", tier: "essencial", name: "Starter" })
     expect(parsed.plans[0]!.prices).toHaveLength(2)
     expect(parsed.trial).toEqual({ days: 7, requiresCard: true, outboundCap: 50 })
   })
 
   it("falls back on the documented trial defaults for an empty or odd payload", () => {
-    expect(parseSignupPlans(null)).toEqual({ trial: DEFAULT_TRIAL, plans: [] })
+    expect(parseSignupPlans(null)).toEqual({ trial: DEFAULT_TRIAL, currency: "usd", plans: [] })
     expect(parseSignupPlans({ plans: "no" }).plans).toEqual([])
   })
 
   it("picks the monthly price in the preferred currency, else any monthly price", () => {
     const { plans } = parseSignupPlans({
-      plans: [{ slug: "attende_growth", prices: [{ currency: "usd", interval: "month", amount: 9900 }, { currency: "brl", interval: "month", amount: 49700 }, { currency: "brl", interval: "year", amount: 1 }] }],
+      plans: [{ slug: "attende-profissional", prices: [{ currency: "usd", interval: "month", amount: 9900 }, { currency: "brl", interval: "month", amount: 49700 }, { currency: "brl", interval: "year", amount: 1 }] }],
     })
     expect(pickMonthlyPrice(plans[0], "brl")?.amount).toBe(49700)
     expect(pickMonthlyPrice(plans[0], "eur")?.amount).toBe(9900)
     expect(pickMonthlyPrice(undefined, "brl")).toBeNull()
-    expect(preferredCurrency("portuguese")).toBe("brl")
+    // One billing currency for everyone for now (JSYNQ creates the subscription in USD).
+    expect(preferredCurrency("portuguese")).toBe("usd")
     expect(preferredCurrency("english")).toBe("usd")
     expect(formatSignupPrice({ currency: "usd", interval: "month", amount: 9900 }, "en-US")).toBe("$99")
   })

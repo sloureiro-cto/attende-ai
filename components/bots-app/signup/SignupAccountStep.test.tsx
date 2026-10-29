@@ -13,7 +13,7 @@ jest.mock("context/UserLanguageContext", () => ({ useUserLanguage: () => ({ user
 
 const base = {
   plans: [],
-  planSlug: "attende_starter" as const,
+  planSlug: "attende-essencial" as const,
   onPlanChange: jest.fn(),
   initial: { name: "", email: "", businessName: "" },
   error: null,
@@ -87,7 +87,7 @@ describe("SignupAccountStep", () => {
   it("lets the user pick a plan", () => {
     const onPlanChange = jest.fn()
     render(<SignupAccountStep {...base} onPlanChange={onPlanChange} onSubmit={jest.fn()} />)
-    fireEvent.click(screen.getByRole("radio", { name: /Growth/ }))
-    expect(onPlanChange).toHaveBeenCalledWith("attende_growth")
+    fireEvent.click(screen.getByRole("radio", { name: /Profissional/ }))
+    expect(onPlanChange).toHaveBeenCalledWith("attende-profissional")
   })
 })

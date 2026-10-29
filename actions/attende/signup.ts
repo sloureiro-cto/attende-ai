@@ -2,7 +2,7 @@
 
 import jwt from "jsonwebtoken"
 import { type AttendeApiResult, attendeFetch } from "lib/attende/signup/api"
-import { DEFAULT_TRIAL, parseSignupPlans, type SignupPlansResponse } from "lib/attende/signup/plans"
+import { BILLING_CURRENCY, DEFAULT_TRIAL, parseSignupPlans, type SignupPlansResponse } from "lib/attende/signup/plans"
 import type {
   CreateSignupData,
   CreateSignupInput,
@@ -21,7 +21,7 @@ function toResult<T>(result: AttendeApiResult<T>): SignupActionResult<T> {
 /** Public. Never fails: a missing catalog just means prices are shown at checkout. */
 export async function getSignupPlansAction(): Promise<SignupPlansResponse> {
   const result = await attendeFetch<unknown>("/attende/signup/plans", {})
-  return result.ok ? parseSignupPlans(result.data) : { trial: DEFAULT_TRIAL, plans: [] }
+  return result.ok ? parseSignupPlans(result.data) : { trial: DEFAULT_TRIAL, currency: BILLING_CURRENCY, plans: [] }
 }
 
 /** Public. Creates the (unverified) JSYNQ account; JSYNQ e-mails the code. 409 `USER_EXISTS_UNMANAGED`: sign in instead. */
@@ -70,13 +70,20 @@ export async function resendSignupAction(input: { email: string }): Promise<Sign
   return toResult(await attendeFetch<{ sent: boolean }>("/attende/signup/resend", { method: "POST", body: input }))
 }
 
-/** Session. A SetupIntent for the card form. */
+/** Session. JSYNQ's SetupIntent for the card form (confirmed with JSYNQ's publishable key). */
 export async function createSignupSetupIntentAction(): Promise<SignupActionResult<SetupIntentData>> {
   return toResult(await attendeFetch<SetupIntentData>("/attende/signup/setup-intent", { method: "POST", body: {}, session: true }))
 }
 
-/** Session. Creates the workspace and the 7-day trial subscription. Idempotent on the backend. */
-export async function startAttendeTrialAction(input: { paymentMethodId: string; planSlug?: string }): Promise<SignupActionResult<StartTrialData>> {
+/**
+ * Session. Creates the workspace and its JSYNQ subscription with the 7-day trial (or, with `withoutTrial`, charged at
+ * once: offered when the card or e-mail already had a trial). Idempotent on the backend.
+ */
+export async function startAttendeTrialAction(input: {
+  paymentMethodId: string
+  planSlug?: string
+  withoutTrial?: boolean
+}): Promise<SignupActionResult<StartTrialData>> {
   return toResult(
     await attendeFetch<StartTrialData>("/attende/signup/start-trial", { method: "POST", body: input, session: true })
   )

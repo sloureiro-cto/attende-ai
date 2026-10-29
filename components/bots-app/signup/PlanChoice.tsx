@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 import { ATTENDE_PLAN_SLUGS, AttendePlanSlug, formatSignupPrice, pickMonthlyPrice, preferredCurrency, SignupPlan } from "lib/attende/signup/plans"
 import { useAcquisitionT } from "../acquisition/useAcquisitionT"
 
-const NAME_KEY = { attende_starter: "signupPlanStarter", attende_growth: "signupPlanGrowth", attende_scale: "signupPlanScale" } as const
+const NAME_KEY = { "attende-essencial": "signupPlanEssencial", "attende-profissional": "signupPlanProfissional", "attende-escala": "signupPlanEscala" } as const
 const LOCALE = { english: "en-US", portuguese: "pt-BR", spanish: "es-ES" } as const
 
 type Props = {

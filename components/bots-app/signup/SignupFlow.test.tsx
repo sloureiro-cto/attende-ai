@@ -42,7 +42,7 @@ jest.mock("./SignupCardStep", () => ({
   },
 }))
 
-const catalog = { trial: { days: 7, requiresCard: true, outboundCap: 50 }, plans: [] }
+const catalog = { trial: { days: 7, requiresCard: true, outboundCap: 50 }, currency: "usd", plans: [] }
 
 const fillAccount = () => {
   fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Maria Silva" } })
@@ -63,14 +63,14 @@ describe("SignupFlow", () => {
   it("walks account -> code -> card and signs in with the verify proof after the code", async () => {
     mockCreate.mockResolvedValue({ success: true, data: { email: "maria@empresa.com.br", nextStep: "verify_email" } })
     mockVerify.mockResolvedValue({ success: true, data: { id: "u1", signupProof: "proof-jwt" } })
-    render(<SignupFlow catalog={catalog} initialPlan="growth" />)
+    render(<SignupFlow catalog={catalog} initialPlan="profissional" />)
 
     fillAccount()
     await screen.findByText("otp for maria@empresa.com.br")
-    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ email: "Maria@Empresa.com.br", businessName: "Clínica Sorriso", locale: "en", planSlug: "attende_growth" }))
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ email: "Maria@Empresa.com.br", businessName: "Clínica Sorriso", locale: "en", planSlug: "attende-profissional" }))
 
     fireEvent.click(screen.getByText("submit code"))
-    await screen.findByText("card step for attende_growth")
+    await screen.findByText("card step for attende-profissional")
     expect(mockVerify).toHaveBeenCalledWith({ email: "maria@empresa.com.br", otp: "123456" })
     // JSYNQ accounts have 2FA on: no password sign-in (it would ask for another code), the proof instead.
     expect(mockSignIn).toHaveBeenCalledWith("credentials", { signupProof: "proof-jwt", redirect: false })
@@ -78,13 +78,13 @@ describe("SignupFlow", () => {
 
   it("an e-mail that already has a JSYNQ account gets the sign-in link on the account step", async () => {
     mockCreate.mockResolvedValue({ success: false, status: 409, reference: "USER_EXISTS_UNMANAGED" })
-    render(<SignupFlow catalog={catalog} initialPlan="growth" />)
+    render(<SignupFlow catalog={catalog} initialPlan="profissional" />)
     fillAccount()
     const alert = await screen.findByRole("alert")
     expect(alert).toHaveTextContent("This e-mail already has an account. Sign in with it to start your trial.")
     expect(within(alert).getByRole("link", { name: "Sign in" })).toHaveAttribute(
       "href",
-      `/login?callbackUrl=${encodeURIComponent("/signup?existing=1&plan=attende_growth")}`
+      `/login?callbackUrl=${encodeURIComponent("/signup?existing=1&plan=attende-profissional")}`
     )
     expect(screen.queryByText(/otp for/)).not.toBeInTheDocument()
   })
@@ -92,7 +92,7 @@ describe("SignupFlow", () => {
   it("sends an e-mail that already has an account to sign in, then back to the card step", async () => {
     mockCreate.mockResolvedValue({ success: true, data: { email: "maria@empresa.com.br", nextStep: "verify_email" } })
     mockVerify.mockResolvedValue({ success: false, status: 409, reference: "USER_EXISTS_UNMANAGED" })
-    render(<SignupFlow catalog={catalog} initialPlan="growth" />)
+    render(<SignupFlow catalog={catalog} initialPlan="profissional" />)
 
     fillAccount()
     await screen.findByText("otp for maria@empresa.com.br")
@@ -104,7 +104,7 @@ describe("SignupFlow", () => {
     const link = screen.getByRole("link", { name: "Sign in to continue" })
     expect(link).toHaveAttribute(
       "href",
-      `/login?callbackUrl=${encodeURIComponent("/signup?existing=1&plan=attende_growth")}`
+      `/login?callbackUrl=${encodeURIComponent("/signup?existing=1&plan=attende-profissional")}`
     )
     // No sign-in, and no code form to retry.
     expect(mockSignIn).not.toHaveBeenCalled()
@@ -162,8 +162,8 @@ describe("SignupFlow", () => {
   })
 
   it("refreshes the session with the new workspace and goes to onboarding once the trial started", async () => {
-    render(<SignupFlow catalog={catalog} resumeAtCard initialPlan="scale" />)
-    await screen.findByText("card step for attende_scale")
+    render(<SignupFlow catalog={catalog} resumeAtCard initialPlan="escala" />)
+    await screen.findByText("card step for attende-escala")
     await startedCallback!({ workspaceId: "w1" })
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith({ workspaceId: "w1" }))
     expect(mockPush).toHaveBeenCalledWith("/setup")

@@ -1,7 +1,7 @@
 import { isCanceled, nextCharge, parseAttendeInvoices, parseAttendeSubscription, parseAttendeUsage, pendingCancellation } from "../model"
 
 const subscription = (extra: Record<string, unknown> = {}) => ({
-  planSlug: "attende_growth",
+  planSlug: "attende-profissional",
   status: "active",
   price: { amount: 497, currency: "brl", interval: "month", intervalCount: 1 },
   trialEndsAt: null,
@@ -13,7 +13,9 @@ describe("parseAttendeSubscription", () => {
   it("reads the subscription block of /attende/entitlements (amount already in major units)", () => {
     const sub = parseAttendeSubscription({ subscription: subscription() })
     expect(sub).toEqual({
-      planSlug: "attende_growth",
+      source: "attende",
+      ended: false,
+      planSlug: "attende-profissional",
       status: "active",
       price: { amount: 497, currency: "BRL", interval: "month", intervalCount: 1 },
       trialEndsAt: null,
@@ -48,7 +50,7 @@ describe("parseAttendeSubscription", () => {
 })
 
 describe("nextCharge", () => {
-  const base = { planSlug: "attende_growth", price: null, trialEndsAt: "2026-10-30T00:00:00.000Z", currentPeriodEnd: "2026-11-22T00:00:00.000Z", cancelAtPeriodEnd: false, canceledAt: null }
+  const base = { source: "attende" as const, ended: false, planSlug: "attende-profissional", price: null, trialEndsAt: "2026-10-30T00:00:00.000Z", currentPeriodEnd: "2026-11-22T00:00:00.000Z", cancelAtPeriodEnd: false, canceledAt: null }
   it("is the trial end while trialing and the period end while active", () => {
     expect(nextCharge({ ...base, status: "trialing" })?.date).toBe("2026-10-30T00:00:00.000Z")
     expect(nextCharge({ ...base, status: "active" })?.date).toBe("2026-11-22T00:00:00.000Z")
@@ -82,7 +84,7 @@ describe("parseAttendeUsage", () => {
 })
 
 describe("pendingCancellation / isCanceled", () => {
-  const base = { planSlug: "attende_growth", price: null, trialEndsAt: null, currentPeriodEnd: "2026-11-22T00:00:00.000Z", cancelAtPeriodEnd: false, canceledAt: null }
+  const base = { source: "attende" as const, ended: false, planSlug: "attende-profissional", price: null, trialEndsAt: null, currentPeriodEnd: "2026-11-22T00:00:00.000Z", cancelAtPeriodEnd: false, canceledAt: null }
   it("dates a scheduled cancellation at the period end, and it is not yet canceled", () => {
     const sub = { ...base, status: "active", cancelAtPeriodEnd: true, canceledAt: "2026-10-20T12:00:00.000Z" }
     expect(pendingCancellation(sub)).toEqual({ date: "2026-11-22T00:00:00.000Z" })

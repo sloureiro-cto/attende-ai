@@ -4,11 +4,21 @@ import { Danger } from "iconsax-react"
 import Link from "next/link"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { type BillingLoad, getAttendeBillingAction, openBillingPortalAction, type PortalKind } from "actions/attende/billing"
+import {
+  type BillingActionResult,
+  type BillingLoad,
+  cancelSubscriptionAction,
+  changePlanAction,
+  getAttendeBillingAction,
+  openBillingPortalAction,
+  type PortalKind,
+  resumeSubscriptionAction,
+} from "actions/attende/billing"
 import { showToast } from "app/utils/showToast"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "components/ui/alert-dialog"
 import { type AttendeSubscription, blockedBy, isCanceled, limitRows, nextCharge, pendingCancellation, STATUS_KEY, tierName, trialClock, type UsageMeterRow } from "lib/attende/billing/model"
 import { formatDate, formatMoney, formatNumber } from "lib/attende/format"
+import { ATTENDE_PLAN_SLUGS } from "lib/attende/signup/plans"
 import { serviceErrorKey } from "lib/attende/result"
 import { BillingInvoices } from "./BillingInvoices"
 import { SubscriptionGate } from "./SubscriptionGate"
@@ -47,8 +57,32 @@ function priceText(price: AttendeSubscription["price"], language: string, t: T):
 export function BillingView({ initial }: { initial: BillingLoad }) {
   const { t, language } = useAcquisitionT()
   const [load, setLoad] = useState(initial)
-  const [busy, setBusy] = useState<PortalKind | "reload" | null>(null)
+  const [busy, setBusy] = useState<PortalKind | "reload" | "cancel" | "resume" | "change" | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [choosePlan, setChoosePlan] = useState(false)
+
+  /** Cancel / resume / change plan: the backend changes the subscription in Stripe, then the page re-reads it. */
+  const act = async (kind: "cancel" | "resume" | "change", run: () => Promise<BillingActionResult>, done: string) => {
+    if (busy) return
+    setBusy(kind)
+    try {
+      const result = await run()
+      if (result.success) {
+        showToast("success", done)
+        setLoad(await getAttendeBillingAction())
+      } else {
+        const service = serviceErrorKey(result.error)
+        showToast(
+          "error",
+          t(service ?? (result.error === "BILLING_OWNER_ONLY" ? "billOwnerOnly" : result.error === "BILLING_SUBSCRIPTION_ENDED" ? "billEndedTitle" : "billActionFailed"))
+        )
+      }
+    } catch {
+      showToast("error", t("billActionFailed"))
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const openPortal = async (kind: PortalKind) => {
     if (busy) return
@@ -94,6 +128,10 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
 
   const { billing, workspaceId, usage } = load.data
   const subscription = load.data.subscription
+  // Attende comes with the company's paid JSYNQ plan: billing lives in JSYNQ, nothing to buy or cancel here.
+  const jsynqPlan = billing.source === "jsynq_plan" || subscription?.source === "jsynq_plan"
+  const attendeSub = subscription && subscription.source === "attende" ? subscription : null
+  const ended = attendeSub?.ended === true
   const clock = trialClock(billing.status, billing.trialEndsAt)
   const blocked = blockedBy(billing.status, clock)
   const included = limitRows(billing.limits)
@@ -115,7 +153,11 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
           <div className="flex flex-col gap-1">
             <span className="text-body-12 font-semibold uppercase tracking-wide text-neutral-700">{t("billCurrentPlan")}</span>
             <span className="text-[22px] font-semibold tracking-tight text-neutral-900">{name ?? t("billNoPlan")}</span>
-            {billing.status !== "none" && <span className="text-body-14 text-neutral-700">{price ?? (subscription ? t("billPriceUnknown") : null)}</span>}
+            {jsynqPlan ? (
+              <span className="text-body-14 font-semibold text-primary-dark">{t("billIncludedJsynq")}</span>
+            ) : (
+              billing.status !== "none" && <span className="text-body-14 text-neutral-700">{price ?? (attendeSub ? t("billPriceUnknown") : null)}</span>
+            )}
           </div>
           <span className={cn("rounded-full px-3 py-1 text-body-13 font-semibold", STATUS_TONE[billing.status])}>{t(STATUS_KEY[billing.status])}</span>
         </div>
@@ -145,8 +187,14 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
               <p className="text-body-14 font-semibold text-warning-darkest">{t("billCancelsOn", { date: formatDate(cancels.date, language) })}</p>
               {billing.status !== "trialing" && <p className="text-body-13 text-neutral-800">{t("billCancelsOnHint")}</p>}
             </div>
-            <button type="button" className={actionClass({ variant: "secondary", size: "sm" })} disabled={busy !== null} aria-busy={busy === "manage"} onClick={() => void openPortal("manage")}>
-              {t("billManage")}
+            <button
+              type="button"
+              className={actionClass({ variant: "secondary", size: "sm" })}
+              disabled={busy !== null}
+              aria-busy={busy === "resume"}
+              onClick={() => void act("resume", resumeSubscriptionAction, t("billResumeDone"))}
+            >
+              {t("billResume")}
             </button>
           </div>
         ) : (
@@ -156,7 +204,28 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
         {billing.status === "past_due" && <p className="text-body-13 text-warning-darkest">{t("billPastDueHint")}</p>}
         {billing.status === "canceled" && <p className="text-body-13 text-neutral-700">{t("billCanceledHint")}</p>}
 
-        {(billing.status === "none" || billing.status === "canceled" || (billing.status === "trialing" && !subscription)) && (
+        {jsynqPlan && (
+          <div data-testid="bill-jsynq-included" className="flex flex-col gap-3 rounded-xl bg-neutral-10 px-4 py-3">
+            <p className="text-body-14 text-neutral-800">{t("billIncludedJsynqBody")}</p>
+            <a href={BOTS_BRAND.jsynqUrl} target="_blank" rel="noopener noreferrer" className={actionClass({ variant: "secondary", size: "sm" })}>
+              {t("billManageInJsynq")}
+            </a>
+          </div>
+        )}
+
+        {ended && !jsynqPlan && (
+          <div data-testid="bill-ended" className="flex flex-col gap-2 rounded-xl border border-neutral-50 px-4 py-3">
+            <p className="text-body-14 font-semibold text-neutral-900">{t("billEndedTitle")}</p>
+            <p className="text-body-13 text-neutral-700">{t("billEndedBody")}</p>
+            <div className="flex flex-wrap gap-2">
+              <a href={`mailto:${BOTS_BRAND.contactEmail}`} className={actionClass()}>
+                {t("billContactSupport")}
+              </a>
+            </div>
+          </div>
+        )}
+
+        {!jsynqPlan && !ended && (billing.status === "none" || billing.status === "canceled" || (billing.status === "trialing" && !subscription)) && (
           <div className="flex flex-col gap-3">
             {billing.status === "none" && <p className="text-body-14 text-neutral-700">{t("billNoPlanHint")}</p>}
             <div className="flex flex-wrap gap-2">
@@ -244,35 +313,80 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
         )}
       </PremiumCard>
 
-      {subscription && (
+      {attendeSub && !ended && (
         <PremiumCard className="flex flex-col gap-4 p-6">
           <div className="flex flex-col gap-1">
             <h2 className="text-body-16 font-semibold text-neutral-900">{t("billManageTitle")}</h2>
             <p className="text-body-13 text-neutral-700">{t("billManageBody")}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className={actionClass()} disabled={busy !== null} aria-busy={busy === "change_plan"} onClick={() => void openPortal("change_plan")}>
+            <button type="button" className={actionClass()} disabled={busy !== null} aria-busy={busy === "change"} onClick={() => setChoosePlan(true)}>
               {t("billChangePlan")}
             </button>
             <button type="button" className={actionClass({ variant: "secondary" })} disabled={busy !== null} aria-busy={busy === "payment_method"} onClick={() => void openPortal("payment_method")}>
               {t("billUpdateCard")}
             </button>
-            {!subscription.canceledAt && !subscription.cancelAtPeriodEnd && (
-              <button type="button" className={actionClass({ variant: "ghost" })} disabled={busy !== null} onClick={() => setConfirmCancel(true)}>
+            {!attendeSub.cancelAtPeriodEnd ? (
+              <button type="button" className={actionClass({ variant: "ghost" })} disabled={busy !== null} aria-busy={busy === "cancel"} onClick={() => setConfirmCancel(true)}>
                 {t("billCancel")}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={actionClass({ variant: "ghost" })}
+                disabled={busy !== null}
+                aria-busy={busy === "resume"}
+                onClick={() => void act("resume", resumeSubscriptionAction, t("billResumeDone"))}
+              >
+                {t("billResume")}
               </button>
             )}
           </div>
         </PremiumCard>
       )}
 
-      <PremiumCard className="flex flex-col gap-4 p-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-body-16 font-semibold text-neutral-900">{t("billInvoices")}</h2>
-          <p className="text-body-12 text-neutral-700">{t("billInvoicesHint")}</p>
-        </div>
-        <BillingInvoices workspaceId={workspaceId} />
-      </PremiumCard>
+      {!jsynqPlan && (
+        <PremiumCard className="flex flex-col gap-4 p-6">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-body-16 font-semibold text-neutral-900">{t("billInvoices")}</h2>
+            <p className="text-body-12 text-neutral-700">{t("billInvoicesHint")}</p>
+          </div>
+          <BillingInvoices workspaceId={workspaceId} />
+        </PremiumCard>
+      )}
+
+      <AlertDialog open={choosePlan} onOpenChange={setChoosePlan}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("billChangePlanTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("billChangePlanBody")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-2">
+            {ATTENDE_PLAN_SLUGS.map((slug) => {
+              const current = slug === (attendeSub?.planSlug ?? billing.tier)
+              const label = tierName(slug) ?? slug
+              return (
+                <button
+                  key={slug}
+                  type="button"
+                  data-plan={slug}
+                  className={actionClass({ variant: current ? "ghost" : "secondary" })}
+                  disabled={current || busy !== null}
+                  onClick={() => {
+                    setChoosePlan(false)
+                    void act("change", () => changePlanAction(slug), t("billChangePlanDone", { plan: label }))
+                  }}
+                >
+                  {current ? `${label} · ${t("billChangePlanCurrent")}` : t("billChangePlanTo", { plan: label })}
+                </button>
+              )
+            })}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("billCancelKeep")}</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
         <AlertDialogContent>
@@ -285,7 +399,7 @@ export function BillingView({ initial }: { initial: BillingLoad }) {
             <AlertDialogAction
               onClick={() => {
                 setConfirmCancel(false)
-                void openPortal("manage")
+                void act("cancel", cancelSubscriptionAction, t("billCancelDone"))
               }}
             >
               {t("billCancelConfirm")}

@@ -1,5 +1,5 @@
 /** Shapes of `/api/attende/signup` on the Attende API (`server/modules/signup`). */
-export type SignupActionError = { success: false; status: number; reference?: string; message?: string }
+export type SignupActionError = { success: false; status: number; reference?: string; message?: string; details?: Record<string, unknown> }
 export type SignupActionResult<T> = { success: true; data: T } | SignupActionError
 
 export type CreateSignupInput = {
@@ -31,7 +31,7 @@ export type SetupIntentData = { clientSecret: string }
 export type StartTrialData = {
   workspaceId: string
   subscriptionStatus: string
-  trialEndsAt: string
+  trialEndsAt: string | null
   plan: { slug: string; name: string }
   alreadyStarted: boolean
   entitlements?: { tier: string; status: string; trialOutboundCap?: number; trialOutboundUsed?: number }

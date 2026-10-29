@@ -5,7 +5,7 @@ describe("parseAttendeBilling", () => {
     const parsed = parseAttendeBilling({
       status: true,
       entitlements: {
-        tier: "attende_growth",
+        tier: "attende-profissional",
         status: "trialing",
         limits: { lines: 3, seats: 5 },
         trialEndsAt: "2026-10-29T12:00:00.000Z",
@@ -14,8 +14,9 @@ describe("parseAttendeBilling", () => {
       usage: { trialOutbound: { used: 12, cap: 50 } },
     })
     expect(parsed).toEqual({
-      tier: "attende_growth",
+      tier: "attende-profissional",
       status: "trialing",
+      source: "attende",
       limits: { lines: 3, seats: 5 },
       trialEndsAt: "2026-10-29T12:00:00.000Z",
       trialOutboundCap: 50,
@@ -25,7 +26,7 @@ describe("parseAttendeBilling", () => {
 
   it("keeps an unreadable trial counter as unavailable (null), never 0", () => {
     const parsed = parseAttendeBilling({
-      entitlements: { tier: "attende_starter", status: "trialing", limits: null },
+      entitlements: { tier: "attende-essencial", status: "trialing", limits: null },
       usage: { trialOutbound: { used: null, cap: 50 } },
     })
     expect(parsed.trialOutboundUsed).toBeNull()
@@ -40,6 +41,7 @@ describe("parseAttendeBilling", () => {
       trialEndsAt: null,
       trialOutboundCap: 0,
       trialOutboundUsed: null,
+      source: "attende",
     }
     expect(parseAttendeBilling(null)).toEqual(none)
     expect(parseAttendeBilling({})).toEqual(none)
@@ -79,6 +81,7 @@ describe("trialClock", () => {
 
 describe("plan state helpers", () => {
   it("names the tier", () => {
+    expect(tierName("attende-profissional")).toBe("Profissional")
     expect(tierName("attende_growth")).toBe("Growth")
     expect(tierName(null)).toBeNull()
   })

@@ -13,9 +13,9 @@ import { AttendeTranslationKey, useAttendeT } from "../nav/useAttendeT"
 const LOCALES = { english: "en-US", portuguese: "pt-BR", spanish: "es" } as const
 
 const TIER_KEYS = {
-  starter: { name: "tierStarter", forWho: "tierStarterFor" },
-  growth: { name: "tierGrowth", forWho: "tierGrowthFor" },
-  scale: { name: "tierScale", forWho: "tierScaleFor" },
+  essencial: { name: "tierEssencial", forWho: "tierEssencialFor" },
+  profissional: { name: "tierProfissional", forWho: "tierProfissionalFor" },
+  escala: { name: "tierEscala", forWho: "tierEscalaFor" },
 } as const satisfies Record<AttendeTier["id"], { name: AttendeTranslationKey; forWho: AttendeTranslationKey }>
 
 const FAQ: { q: AttendeTranslationKey; a: AttendeTranslationKey }[] = [

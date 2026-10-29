@@ -2,6 +2,9 @@ import type { AttendeTierLimits } from "lib/attende/plans"
 import type { BillingTranslationKey } from "lib/i18n/translations/attende/billing"
 
 export type BillingStatus = "trialing" | "active" | "past_due" | "canceled" | "none"
+/** `attende`: an Attende subscription. `jsynq_plan`: included in the company's paid JSYNQ plan (billed in JSYNQ). */
+export type BillingSource = "attende" | "jsynq_plan"
+const sourceOf = (value: unknown): BillingSource => (value === "jsynq_plan" ? "jsynq_plan" : "attende")
 
 export type AttendeBilling = {
   tier: string | null
@@ -12,6 +15,7 @@ export type AttendeBilling = {
   trialOutboundCap: number
   /** Outbound messages sent during the trial. `null` = not available right now (never shown as 0). */
   trialOutboundUsed: number | null
+  source: BillingSource
 }
 
 const STATUSES: readonly BillingStatus[] = ["trialing", "active", "past_due", "canceled", "none"]
@@ -27,6 +31,7 @@ const NO_PLAN: AttendeBilling = {
   trialEndsAt: null,
   trialOutboundCap: 0,
   trialOutboundUsed: null,
+  source: "attende",
 }
 
 /**
@@ -56,6 +61,7 @@ export function parseAttendeBilling(raw: unknown): AttendeBilling {
     trialEndsAt: endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt.toISOString() : null,
     trialOutboundCap: num(outbound?.cap),
     trialOutboundUsed: numOrNull(outbound?.used),
+    source: sourceOf(block.source),
   }
 }
 
@@ -100,10 +106,10 @@ export function trialClock(status: BillingStatus, trialEndsAt: string | null, no
   return days <= 1 ? { kind: "today" } : { kind: "days", days }
 }
 
-/** Display name of the tier slug (`attende_growth` -> `Growth`). */
+/** Display name of the tier slug (`attende-profissional` -> `Profissional`). */
 export function tierName(tier: string | null): string | null {
   if (!tier) return null
-  const name = tier.replace(/^attende_/, "")
+  const name = tier.replace(/^attende[-_]/, "")
   return name ? name.charAt(0).toUpperCase() + name.slice(1) : null
 }
 
@@ -124,13 +130,16 @@ export function blockedBy(status: BillingStatus, clock: TrialClock): Subscriptio
 
 /** The workspace's Attende-ai subscription (the `subscription` block of `GET /attende/entitlements`). */
 export type AttendeSubscription = {
+  source: BillingSource
+  /** An Attende subscription that ended: it cannot be reactivated from the app (support does it). */
+  ended: boolean
   planSlug: string | null
   status: string
   /** Price of the plan in major units with its own currency and period; null when the price can't be resolved. */
   price: { amount: number; currency: string; interval: "month" | "year"; intervalCount: number } | null
   trialEndsAt: string | null
   currentPeriodEnd: string | null
-  /** The customer scheduled the end at the period end (in the portal) and can still undo it there. */
+  /** The customer scheduled the end at the period end and can still undo it. */
   cancelAtPeriodEnd: boolean
   /** When the cancellation was requested or the subscription ended. Also set while `cancelAtPeriodEnd` is pending. */
   canceledAt: string | null
@@ -160,6 +169,8 @@ export function parseAttendeSubscription(raw: unknown): AttendeSubscription | nu
     typeof price.currency === "string" &&
     price.currency
   return {
+    source: sourceOf(sub.source),
+    ended: sub.ended === true,
     planSlug: typeof sub.planSlug === "string" && sub.planSlug ? sub.planSlug : null,
     status: typeof sub.status === "string" ? sub.status : "unknown",
     price: validPrice
@@ -179,7 +190,7 @@ export function parseAttendeSubscription(raw: unknown): AttendeSubscription | nu
 
 /**
  * When a scheduled cancellation takes effect: the end of the paid period (or of the trial). `null` when none is pending.
- * The customer can still undo it in the Stripe portal until then.
+ * The customer can still undo it until then.
  */
 export function pendingCancellation(sub: AttendeSubscription | null): { date: string } | null {
   if (!sub?.cancelAtPeriodEnd || (sub.status !== "active" && sub.status !== "trialing")) return null

@@ -1,21 +1,21 @@
 import { initialSignupState, signupReducer, stepIndex } from "./signupState"
 
 describe("signupReducer", () => {
-  const created = { type: "account_created", name: "Maria", email: "m@x.com", businessName: "Clínica", planSlug: "attende_growth" } as const
+  const created = { type: "account_created", name: "Maria", email: "m@x.com", businessName: "Clínica", planSlug: "attende-profissional" } as const
 
   it("moves account -> otp -> card keeping what the user typed", () => {
-    const afterAccount = signupReducer(initialSignupState("attende_starter"), created)
-    expect(afterAccount).toEqual({ step: "otp", name: "Maria", email: "m@x.com", businessName: "Clínica", planSlug: "attende_growth" })
+    const afterAccount = signupReducer(initialSignupState("attende-essencial"), created)
+    expect(afterAccount).toEqual({ step: "otp", name: "Maria", email: "m@x.com", businessName: "Clínica", planSlug: "attende-profissional" })
     expect(signupReducer(afterAccount, { type: "email_verified" }).step).toBe("card")
   })
 
   it("ignores a verification that arrives outside the otp step", () => {
-    const initial = initialSignupState("attende_starter")
+    const initial = initialSignupState("attende-essencial")
     expect(signupReducer(initial, { type: "email_verified" })).toBe(initial)
   })
 
   it("goes back to the account step without losing the data", () => {
-    const back = signupReducer(signupReducer(initialSignupState("attende_starter"), created), { type: "back_to_account" })
+    const back = signupReducer(signupReducer(initialSignupState("attende-essencial"), created), { type: "back_to_account" })
     expect(back).toMatchObject({ step: "account", email: "m@x.com" })
   })
 
