@@ -26,7 +26,7 @@ describe('app/api route files', () => {
         else if (entry.name === 'route.ts') files.push(full);
       }
     };
-    for (const dir of ['attende', 'messaging-automations', 'cron']) walk(path.join(APP_DIR, 'api', dir));
+    for (const dir of ['attende', 'messaging-automations', 'cron', 'automations']) walk(path.join(APP_DIR, 'api', dir));
     // The JSYNQ partner webhook / inbound-routing endpoints are gone (no partner API), and so is Attende's own Stripe
     // webhook: JSYNQ's webhook syncs every subscription change.
     expect(fs.existsSync(path.join(APP_DIR, 'api', 'jsynq'))).toBe(false);

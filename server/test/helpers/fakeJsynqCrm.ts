@@ -20,6 +20,11 @@ export type FakeCard = {
   lastMessageAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Checklist item: the parent card (a child card done through `completed`). */
+  parent?: string | null;
+  completed?: boolean;
+  deleted?: boolean;
+  date?: string | null;
 };
 export type FakeColumn = { _id: string; board: string; title: string; columnStatus: string };
 export type FakeContact = { _id: string; workspaceId: string; fullName: string; phone: string; email: string };
@@ -81,6 +86,15 @@ export class FakeCrm {
   transitions: Array<{ conversationId: string; newState: string }> = [];
   /** Called after a message is written (the fake websocket broadcasts it). */
   onMessage: ((conversation: FakeConversation, message: FakeMessage) => void) | null = null;
+  /** Called on card changes, as JSYNQ's `crm-dashboard:<projectId>` notifications (the fake websocket broadcasts it). */
+  onCardEvent: ((workspaceId: string, projectId: string, type: string, payload: Record<string, unknown>) => void) | null = null;
+  /** Card comments: `{cardId, boardId, text}`. */
+  comments: Array<{ cardId: string; boardId: string; text: string }> = [];
+  /** Every conversation patch / mark-read: `{conversationId, body}` / conversation ids. */
+  conversationPatches: Array<{ conversationId: string; body: Record<string, unknown> }> = [];
+  reads: string[] = [];
+  /** Every card write route hit, as `METHOD path` with the card id (create, clone, delete, move-to-board). */
+  cardWrites: string[] = [];
   private seq = 0;
 
   /** A contact message (or any message) in `conversation`, newest; bumps the conversation's `lastMessageAt`. */
@@ -110,6 +124,11 @@ export class FakeCrm {
     this.assigns = [];
     this.transitions = [];
     this.onMessage = null;
+    this.onCardEvent = null;
+    this.comments = [];
+    this.conversationPatches = [];
+    this.reads = [];
+    this.cardWrites = [];
     this.cardsGets = 0;
   }
 
@@ -142,7 +161,119 @@ export class FakeCrm {
     return card;
   }
 
+  /** What JSYNQ's `notifyCrmDashboard*` would broadcast for this card change. */
+  emitCard(card: FakeCard, type: 'created' | 'moved' | 'updated', extra: Record<string, unknown> = {}) {
+    const base = { projectId: card.project, cardId: card._id, updatedAt: card.updatedAt };
+    const payload =
+      type === 'created'
+        ? { ...base, columnId: card.column, boardId: card.board, title: card.title, createdAt: card.createdAt, parentId: card.parent ?? null }
+        : type === 'moved'
+          ? { ...base, columnId: card.column }
+          : { ...base, ...extra };
+    this.onCardEvent?.(card.workspaceId, card.project, `crm-dashboard:card-${type}`, payload);
+  }
+
+  /** Routes the automation steps use (registered before the generic `/cards/:id/:x` route). */
+  private installAutomationRoutes(r: express.Router, scoped: express.RequestHandler) {
+    const ws = (res: express.Response) => res.locals.ws as string;
+    const now = () => new Date().toISOString();
+    r.get('/projects/:p/boards', scoped, (req, res) => res.json({ status: true, boards: this.boards.filter((b) => b.project === req.params.p && b.workspaceId === ws(res)).map((b) => ({ _id: b._id, title: 'Board' })) }));
+    r.post('/projects/:p/cards', scoped, (req, res) => {
+      const body = req.body as Record<string, unknown>;
+      const parent = body.parent ? this.cards.find((c) => c._id === body.parent && c.workspaceId === ws(res)) : undefined;
+      if (body.parent && !parent) return res.status(400).json({ error: true, code: 400, message: 'Parent task not found in this project' });
+      const column = this.columns.find((c) => c._id === body.column);
+      if (!column && !parent) return res.status(400).json({ error: true, code: 400, message: 'Column not found' });
+      this.cardWrites.push(`POST create${parent ? ' subtask' : ''}`);
+      const custom = Array.isArray(body.customFields) ? (body.customFields as Array<{ fieldId: string; value: unknown }>).map((f) => ({ fieldId: f.fieldId, fieldType: 'text', value: f.value })) : [];
+      const card = this.addCard({
+        workspaceId: ws(res),
+        project: req.params.p!,
+        board: column?.board ?? parent!.board,
+        column: column?._id ?? parent!.column,
+        title: String(body.title ?? ''),
+        assignedUsers: Array.isArray(body.assignedUsers) ? (body.assignedUsers as string[]) : [],
+        customFields: custom,
+        cardStatus: column?.columnStatus ?? 'todo',
+        parent: parent?._id ?? null,
+        completed: false,
+      });
+      this.emitCard(card, 'created');
+      return res.json({ card, status: true });
+    });
+    r.post('/projects/:p/cards/:id/clone-to-project', scoped, (req, res) => {
+      const source = this.cards.find((c) => c._id === req.params.id && c.workspaceId === ws(res));
+      if (!source) return res.status(404).json({ error: true, code: 404, message: 'Not found' });
+      const { targetProjectId, targetColumnId, labelMappings } = req.body as { targetProjectId?: string; targetColumnId?: string; labelMappings?: Array<{ from: string; to: string | null }> };
+      if (!targetProjectId || !targetColumnId) return res.status(400).json({ error: true, code: 400, message: 'targetProjectId and targetColumnId are required' });
+      const column = this.columns.find((c) => c._id === targetColumnId);
+      const map = new Map((labelMappings ?? []).map((m) => [m.from, m.to]));
+      this.cardWrites.push(`POST clone ${source._id}`);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { _id: _sourceId, ...rest } = source;
+      const copy = this.addCard({
+        ...rest,
+        project: targetProjectId,
+        column: targetColumnId,
+        board: column?.board ?? source.board,
+        labels: source.labels.filter((l) => map.has(l)).map((l) => map.get(l)!).filter(Boolean),
+        customFields: source.customFields.map((f) => ({ ...f })),
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      this.emitCard(copy, 'created');
+      return res.json({ status: true, card: copy });
+    });
+    r.post('/projects/:p/cards/:id/move-to-board', scoped, (req, res) => {
+      const card = this.cards.find((c) => c._id === req.params.id && c.workspaceId === ws(res));
+      const column = this.columns.find((c) => c._id === req.body?.targetColumnId);
+      if (!card) return res.status(404).json({ error: true, code: 404, message: 'Not found' });
+      if (!column) return res.status(400).json({ error: true, code: 400, message: 'targetColumnId is required' });
+      this.cardWrites.push(`POST move-to-board ${card._id}`);
+      card.column = column._id;
+      card.board = column.board;
+      card.cardStatus = column.columnStatus;
+      card.updatedAt = now();
+      this.emitCard(card, 'moved');
+      return res.json({ status: true, card });
+    });
+    r.delete('/projects/:p/cards/:id', scoped, (req, res) => {
+      const card = this.cards.find((c) => c._id === req.params.id && c.workspaceId === ws(res));
+      if (!card) return res.status(400).json({ error: true, code: 400, message: 'Impossible to complete the request' });
+      this.cardWrites.push(`DELETE ${card._id}`);
+      card.deleted = true;
+      return res.json({ status: true });
+    });
+    r.get('/projects/:p/cards/:id/subtasks', scoped, (req, res) =>
+      res.status(200).json(this.cards.filter((c) => c.parent === req.params.id && c.workspaceId === ws(res) && !c.deleted))
+    );
+    r.post('/projects/:p/boards/:b/cards/:id/comments', scoped, (req, res) => {
+      if (typeof req.body?.text !== 'string') return res.status(400).json({ error: true, code: 400, message: '"text" is required' });
+      this.comments.push({ cardId: req.params.id!, boardId: req.params.b!, text: req.body.text });
+      return res.json({ status: true, comment: { _id: oid(), text: req.body.text } });
+    });
+    for (const channel of ['whatsapp', 'sms', 'instagram'] as const) {
+      r.post(`/${channel}-lite/sessions/:s/conversations/:id/mark-read`, scoped, (req, res) => {
+        this.reads.push(req.params.id!);
+        return res.json({ success: true, data: {} });
+      });
+      r.patch(`/${channel}-lite/sessions/:s/conversations/:id`, scoped, (req, res) => {
+        const conversation = this.conversations.find((c) => c._id === req.params.id && c.workspaceId === ws(res) && c.channel === channel);
+        if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
+        this.conversationPatches.push({ conversationId: conversation._id, body: req.body });
+        if (req.body?.linkedEntityType !== undefined) conversation.linkedEntityType = req.body.linkedEntityType;
+        if (req.body?.linkedEntityId !== undefined) {
+          conversation.linkedEntityId = req.body.linkedEntityId;
+          const card = this.cards.find((c) => c._id === req.body.linkedEntityId);
+          conversation.crmProjectId = card?.project ?? conversation.crmProjectId;
+        }
+        return res.json({ success: true, data: conversation });
+      });
+    }
+  }
+
   install(r: express.Router, scoped: express.RequestHandler) {
+    this.installAutomationRoutes(r, scoped);
     const ws = (res: express.Response) => res.locals.ws as string;
     const contactDoc = (id: string) => {
       const c = this.contacts.find((x) => x._id === id);
@@ -169,7 +300,7 @@ export class FakeCrm {
     r.get('/projects/:p/cards/paginated', scoped, (req, res) => {
       this.cardQueries.push({ ...req.query });
       const q = req.query as Record<string, string | undefined>;
-      let list = this.cards.filter((c) => c.workspaceId === ws(res) && c.project === req.params.p);
+      let list = this.cards.filter((c) => c.workspaceId === ws(res) && c.project === req.params.p && !c.parent && !c.deleted);
       if (q.boardId) list = list.filter((c) => c.board === q.boardId);
       if (q.columnId) list = list.filter((c) => c.column === q.columnId);
       if (q.search) list = list.filter((c) => c.title.toLowerCase().includes(q.search!.toLowerCase()));
@@ -203,7 +334,12 @@ export class FakeCrm {
       const card = this.cards.find((c) => c._id === req.params.id && c.workspaceId === ws(res));
       if (!card) return res.status(404).json({ error: true, code: 404, message: 'Not found' });
       this.updates.push({ cardId: card._id, body: req.body });
+      const labelsBefore = [...card.labels];
+      if (Array.isArray(req.body.labels)) card.labels = (req.body.labels as string[]).map(String);
       if (Array.isArray(req.body.addLabelIds)) for (const id of req.body.addLabelIds as string[]) if (!card.labels.includes(id)) card.labels.push(id);
+      if (Array.isArray(req.body.assignedUsers)) card.assignedUsers = (req.body.assignedUsers as string[]).map(String);
+      if (typeof req.body.title === 'string') card.title = req.body.title;
+      if (typeof req.body.completed === 'boolean') card.completed = req.body.completed;
       if (Array.isArray(req.body.customFields)) {
         for (const f of req.body.customFields as Array<{ fieldId: string; value: unknown }>) {
           const existing = card.customFields.find((c) => c.fieldId === f.fieldId);
@@ -211,14 +347,18 @@ export class FakeCrm {
           else card.customFields.push({ fieldId: f.fieldId, fieldType: 'text', value: f.value });
         }
       }
+      let moved = false;
       if (req.body.column) {
         const column = this.columns.find((c) => c._id === req.body.column);
         if (!column) return res.status(500).json({ error: true, code: 500, message: 'Column not found' });
+        moved = card.column !== column._id;
         card.column = column._id;
         card.board = column.board;
         card.cardStatus = column.columnStatus;
       }
       card.updatedAt = new Date().toISOString();
+      if (moved) this.emitCard(card, 'moved');
+      if (JSON.stringify([...labelsBefore].sort()) !== JSON.stringify([...card.labels].sort())) this.emitCard(card, 'updated', { labelIds: [...card.labels] });
       return res.json({ status: true, card });
     });
 

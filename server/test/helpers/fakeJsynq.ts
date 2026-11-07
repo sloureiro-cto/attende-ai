@@ -121,6 +121,16 @@ export class FakeJsynq {
     }
   }
 
+  /** Any room (e.g. `crm-dashboard:<projectId>`): every authenticated socket of a member of the workspace gets it. */
+  broadcastRoom(workspaceId: string, room: string, type: string, payload: Record<string, unknown>) {
+    if (this.muteSockets) return;
+    const ws = this.workspaces.get(workspaceId);
+    for (const s of this.sockets) {
+      if (s.room !== room || !s.userId || !ws?.members.includes(s.userId) || s.ws.readyState !== WebSocket.OPEN) continue;
+      s.ws.send(JSON.stringify({ type, payload }));
+    }
+  }
+
   /** Kills every socket as a network drop would (clients reconnect). */
   dropSockets() {
     for (const s of this.sockets) s.ws.terminate();
@@ -306,6 +316,7 @@ export class FakeJsynq {
 
   /** New messages in the fake inbox reach the room like JSYNQ's notifications do. */
   private installBroadcastHook() {
+    this.crm.onCardEvent = (workspaceId, projectId, type, payload) => this.broadcastRoom(workspaceId, `crm-dashboard:${projectId}`, type, payload);
     this.crm.onMessage = (c, m) => {
       if (m.direction === 'inbound') {
         this.broadcast(c.workspaceId, 'messaging-inbox:new-inbound-message', {
