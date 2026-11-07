@@ -47,6 +47,15 @@ export function webhookUrlProblem(raw: string): string | null {
   return null;
 }
 
+const hexId = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v);
+
+/** A field id and the value written into it (variables allowed). `card:owner` takes a member id or a variable. */
+function fieldValueProblem(fieldId: unknown, value: unknown, add: (message: string, blocking?: boolean) => void) {
+  if (typeof fieldId !== 'string' || !fieldId.trim() || fieldId.length > 80) return add('every field needs a field id (max 80)', true);
+  if (typeof value !== 'string' || value.length > 1000) return add('field values are texts of at most 1000 characters', true);
+  if (fieldId === 'card:owner' && value.trim() && !hexId(value.trim()) && !/^\{\{.+\}\}$/.test(value.trim())) add('the owner must be a member', true);
+}
+
 const isNum = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v);
 
@@ -172,6 +181,7 @@ function checkNode(
       return;
     case 'set_field':
       if (!node.fieldId?.trim()) add('needs a field');
+      else fieldValueProblem(node.fieldId, node.value, add);
       return;
     case 'move_stage':
       if (!/^[0-9a-f]{24}$/i.test(node.columnId ?? '')) {
@@ -259,6 +269,58 @@ function checkNode(
         add('choose a role');
       return;
     }
+    case 'create_card': {
+      if (!hexId(node.projectId) || !hexId(node.columnId)) add('needs a board and a stage');
+      if (node.boardId !== undefined && node.boardId !== '' && !hexId(node.boardId)) add('boardId is not a valid board id', true);
+      if (typeof node.title !== 'string' || node.title.length > 200) add('title is too long (max 200)', true);
+      if (node.ownerUserId !== undefined && node.ownerUserId !== '' && !hexId(node.ownerUserId)) add('ownerUserId is not a valid user id', true);
+      if (node.fields !== undefined) {
+        if (!Array.isArray(node.fields) || node.fields.length > 30) add('at most 30 fields', true);
+        else for (const f of node.fields) fieldValueProblem(f?.fieldId, f?.value, add);
+      }
+      return;
+    }
+    case 'duplicate_card':
+      if (node.columnId !== undefined && node.columnId !== '' && !hexId(node.columnId)) add('columnId is not a valid stage id', true);
+      return;
+    case 'delete_card':
+      if (node.confirmed !== true) add('confirm that this step deletes the lead');
+      return;
+    case 'move_board':
+      if (!hexId(node.projectId) || !hexId(node.columnId)) add('needs a board and a stage');
+      return;
+    case 'set_value':
+      if (typeof node.value !== 'string' || !node.value.trim()) add('needs a value');
+      else if (node.value.length > 200) add('value is too long', true);
+      return;
+    case 'set_owner':
+    case 'assign_conversation':
+      if (!hexId(node.userId)) add('needs a member');
+      return;
+    case 'remove_label':
+      if (!node.labelText?.trim()) add('needs a label');
+      else if (node.labelText.length > ADVANCED_AUTOMATION_LIMITS.labelChars) add(`label is too long (max ${ADVANCED_AUTOMATION_LIMITS.labelChars})`, true);
+      return;
+    case 'add_comment':
+      if (typeof node.text !== 'string' || !node.text.trim()) add('needs a text');
+      else if (node.text.length > ADVANCED_AUTOMATION_LIMITS.textChars) add('text is too long', true);
+      return;
+    case 'add_checklist_item':
+    case 'check_checklist_item':
+      if (typeof node.title !== 'string' || !node.title.trim()) add('needs the item title');
+      else if (node.title.length > 200) add('item title is too long (max 200)', true);
+      if (node.kind === 'check_checklist_item' && typeof node.checked !== 'boolean') add('checked must be true or false', true);
+      return;
+    case 'mark_read':
+      return;
+    case 'save_reply':
+      if (!node.fieldId?.trim()) add('needs a field');
+      else if (node.fieldId.length > 80) add('field id is too long', true);
+      return;
+    case 'wait_reply':
+      if (!Number.isInteger(node.minutes) || node.minutes < 1 || node.minutes > ADVANCED_AUTOMATION_LIMITS.noReplyMinutesMax) add('the wait must be between 1 minute and 7 days', true);
+      if (node.saveAnswerTo !== undefined && (typeof node.saveAnswerTo !== 'string' || node.saveAnswerTo.length > 80)) add('field id is too long', true);
+      return;
     case 'stop':
       return;
     default:

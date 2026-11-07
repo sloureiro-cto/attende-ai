@@ -102,6 +102,12 @@ export type JsynqCard = {
   cardProducts?: Array<{ product?: unknown; quantity?: number; price?: number; discount?: { type?: string; value?: number } | null }> | null;
   customFields?: Array<{ fieldId?: string; fieldType?: string; value?: unknown }> | null;
   cardStatus?: string | null;
+  /** Checklist items are child cards (`parent`), done through `completed`. */
+  parent?: string | { _id?: string } | null;
+  completed?: boolean;
+  deleted?: boolean;
+  /** Deadline (ISO). */
+  date?: string | null;
   lastMessageAt?: string | null;
   createdAt?: string;
   updatedAt?: string;

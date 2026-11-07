@@ -66,9 +66,11 @@ export const ATTENDE_ROUTES: AttendeRoute[] = [
   { method: 'POST', path: '/api/messaging-automations/advanced/preview', handler: automations.previewAutomationRoute },
   { method: 'GET', path: '/api/messaging-automations/advanced/:id/stats', handler: automations.getAutomationStats },
   { method: 'GET', path: '/api/messaging-automations/advanced/:id/stats/series', handler: automations.getAutomationStatsSeries },
+  { method: 'POST', path: '/api/messaging-automations/advanced/:id/webhook-secret', handler: automations.rotateWebhookSecret },
   { method: 'GET', path: '/api/messaging-automations/advanced/:id', handler: automations.getAutomation },
   { method: 'PATCH', path: '/api/messaging-automations/advanced/:id', handler: automations.patchAutomation },
   { method: 'DELETE', path: '/api/messaging-automations/advanced/:id', handler: automations.deleteAutomation },
+  { method: 'POST', path: '/api/automations/hooks/:automationId', handler: automations.automationWebhook },
 
   { method: 'GET', path: '/api/cron/billing-reconcile', handler: billingReconcileCron },
   { method: 'GET', path: '/api/cron/agent-sweeper', handler: agentSweeperCron },

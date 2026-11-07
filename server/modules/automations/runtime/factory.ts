@@ -10,7 +10,9 @@ import { automationStats } from '../stats';
 import { GatewayEffectExecutor } from './executor';
 import type { ConversationGateway } from './ports';
 import { MongoRunStore } from './runStore';
-import { AutomationRuntime, type RuntimeAutomation } from './runtime';
+import { AutomationRuntime, type RuntimeAutomation, type RuntimeDeps } from './runtime';
+import { mongoTriggerGuards, type TriggerGuards } from './triggers';
+import type { AdvancedAutomationTriggerKind } from '../types';
 
 const toRuntime = (d: IAdvancedAutomation): RuntimeAutomation => ({
   id: String(d._id),
@@ -23,7 +25,19 @@ const toRuntime = (d: IAdvancedAutomation): RuntimeAutomation => ({
   edges: d.edges,
   version: d.version,
   createdBy: d.createdBy,
+  channels: (d.channels ?? []).map((c) => ({ channel: c.channel, enabledSessionIds: (c.enabledSessionIds ?? []).map(String) })),
 });
+
+/** Lead lookups the trigger starts need (the worker's gateway implements them on JSYNQ routes). */
+export type TriggerLookups = Pick<RuntimeDeps, 'findCardConversation' | 'cardFacts'>;
+
+/** Active automations of a workspace whose trigger is one of `kinds`. */
+export async function findTriggerAutomations(workspaceId: string, kinds: AdvancedAutomationTriggerKind[]): Promise<RuntimeAutomation[]> {
+  const docs = await AdvancedAutomationModel.find({ workspaceId, status: 'active', 'trigger.kind': { $in: kinds } })
+    .sort({ updatedAt: 1 })
+    .lean<IAdvancedAutomation[]>();
+  return docs.map(toRuntime);
+}
 
 export type AutomationsRuntime = {
   runtime: AutomationRuntime;
@@ -38,7 +52,9 @@ export type AutomationsRuntime = {
  * with `ADVANCED_AUTOMATIONS_RUNTIME_ENABLED` whether to build it at all. Without a gateway this
  * returns null: no timers run (Next.js never builds one).
  */
-export function createAutomationsRuntime(opts: { gateway?: ConversationGateway; now?: () => Date } = {}): AutomationsRuntime | null {
+export function createAutomationsRuntime(
+  opts: { gateway?: ConversationGateway; now?: () => Date; lookups?: TriggerLookups; guards?: TriggerGuards; runsPerMinute?: number } = {}
+): AutomationsRuntime | null {
   if (!opts.gateway) {
     if (env().ADVANCED_AUTOMATIONS_RUNTIME_ENABLED) log.warn('automations.runtime_without_gateway');
     return null;
@@ -46,10 +62,15 @@ export function createAutomationsRuntime(opts: { gateway?: ConversationGateway; 
   const gateway = opts.gateway;
   const store = new MongoRunStore();
   const now = opts.now ?? (() => new Date());
+  const guards = opts.guards ?? mongoTriggerGuards;
   const runtime = new AutomationRuntime({
     store,
     gateway,
-    executor: new GatewayEffectExecutor(gateway),
+    executor: new GatewayEffectExecutor(gateway, logAdvancedAutomation, (ctx, change) => guards.recordEcho(ctx.key.workspaceId, change, ctx.automation.id, ctx.runId, now())),
+    findTriggerAutomations,
+    guards,
+    ...(opts.runsPerMinute ? { runsPerMinute: opts.runsPerMinute } : {}),
+    ...(opts.lookups ?? {}),
     async loadAutomation(workspaceId, automationId) {
       if (!/^[0-9a-f]{24}$/i.test(automationId)) return null;
       const doc = await AdvancedAutomationModel.findOne({ _id: new mongoose.Types.ObjectId(automationId), workspaceId }).lean<IAdvancedAutomation>();

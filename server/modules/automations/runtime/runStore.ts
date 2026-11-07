@@ -75,6 +75,10 @@ export class MongoRunStore implements AutomationRunStore {
     return res.modifiedCount === 1;
   }
 
+  async setRunCard(key: ConversationKey, runId: string, card: { projectId: string; cardId: string; createdByRun?: boolean }): Promise<void> {
+    await AutomationRunModel.updateOne({ ...filterOf(key), 'run.runId': runId }, { $set: { 'run.card': card } });
+  }
+
   async findDue(now: Date, limit: number): Promise<ConversationKey[]> {
     const rows = await AutomationRunModel.find({ waitUntil: { $lte: now }, 'run.status': { $in: IN_FLIGHT } })
       .sort({ waitUntil: 1 })

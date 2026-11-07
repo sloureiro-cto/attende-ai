@@ -2,7 +2,7 @@ import 'server-only';
 import { randomUUID } from 'crypto';
 import type { Deps } from '../../deps';
 import { startJobs, type Job } from '../../lib/cron';
-import { acquireLease, releaseLease, renewLease } from '../../lib/lease';
+import { acquireLease, releaseLease, renewLease, runExclusive } from '../../lib/lease';
 import { errMessage, log } from '../../lib/logger';
 import { createAutomationsRuntime, type AutomationsRuntime } from '../automations/runtime/factory';
 import { decideAccess } from '../billing/deriveEntitlements';
@@ -16,6 +16,7 @@ import { ConversationSync, MAX_MESSAGE_AGE_MS } from './conversationSync';
 import { isChannel, type ConversationRef, type WorkerEvent } from './events';
 import { JsynqConversationGateway } from './gateway';
 import { HandoffAssigner } from './handoffAssignee';
+import { TriggerSources } from './triggerSources';
 import { WorkerWorkspaceModel } from './models';
 import { INBOX_EVENTS, InboxSocket, type InboxSocketMessage } from './socket';
 
@@ -45,7 +46,10 @@ export type WorkerOptions = {
     socketRefreshMs: number;
     socketMinBackoffMs: number;
     socketMaxBackoffMs: number;
+    schedulesMs: number;
   }>;
+  /** Per-automation runs per minute (default `TRIGGER_LIMITS.runsPerMinute`). */
+  runsPerMinute?: number;
   /** Test seam: sees every normalized event after it was handled. */
   onEvent?: (event: WorkerEvent) => void;
 };
@@ -61,6 +65,7 @@ const DEFAULTS = {
   socketRefreshMs: 45 * 60_000,
   socketMinBackoffMs: 1000,
   socketMaxBackoffMs: 30_000,
+  schedulesMs: 60_000,
 };
 
 type Watched = { socket: InboxSocket; polling: Promise<void> | null };
@@ -85,6 +90,8 @@ export class Worker {
   readonly assigner: HandoffAssigner;
   readonly gateway: JsynqConversationGateway;
   readonly automations: AutomationsRuntime | null;
+  /** Conversation, CRM and time triggers (null without the runtime). */
+  readonly triggers: TriggerSources | null;
   private readonly iv: typeof DEFAULTS;
   private watched = new Map<string, Watched>();
   private watchFromCache = new Map<string, Date>();
@@ -102,7 +109,28 @@ export class Worker {
     this.iv = { ...DEFAULTS, ...opts.intervals };
     this.clients = new WorkspaceClients(opts.deps);
     this.gateway = new JsynqConversationGateway(this.clients, opts.deps);
-    this.automations = opts.runtimeEnabled ? createAutomationsRuntime({ gateway: this.gateway, now: opts.deps.now }) : null;
+    this.automations = opts.runtimeEnabled
+      ? createAutomationsRuntime({
+          gateway: this.gateway,
+          now: opts.deps.now,
+          runsPerMinute: opts.runsPerMinute,
+          lookups: {
+            findCardConversation: (w, card, sessions) => this.gateway.findCardConversation(w, card, sessions),
+            cardFacts: (w, card) => this.gateway.cardFacts(w, card),
+          },
+        })
+      : null;
+    this.triggers = this.automations
+      ? new TriggerSources({
+          clients: this.clients,
+          gateway: this.gateway,
+          runtime: this.automations.runtime,
+          now: opts.deps.now,
+          watchFrom: (w) => this.watchFrom(w),
+          wsUrl: opts.wsUrl,
+          socket: { refreshMs: this.iv.socketRefreshMs, minBackoffMs: this.iv.socketMinBackoffMs, maxBackoffMs: this.iv.socketMaxBackoffMs },
+        })
+      : null;
     this.assigner = new HandoffAssigner(this.clients);
     this.sync = new ConversationSync({
       clients: this.clients,
@@ -167,6 +195,7 @@ export class Worker {
       { name: 'worker-billing', everyMs: this.iv.billingMs, run: () => new BillingService(this.opts.deps).reconcile({ staleMs: this.iv.billingMs }).then(() => undefined) },
     ];
     if (this.automations) jobs.push(...this.automations.jobs.map((j) => ({ ...j, everyMs: this.iv.timersMs })));
+    if (this.triggers) jobs.push({ name: 'automation-schedules', everyMs: this.iv.schedulesMs, run: () => this.tickSchedules() });
     if (this.opts.reportsEnabled !== false) {
       jobs.push({ name: 'worker-reports', everyMs: this.iv.reportsMs, run: () => runReportsJob(this.opts.deps, 'worker', (d) => runReportsSync(d, { budgetMs: 4 * 60_000 })) });
     }
@@ -179,6 +208,7 @@ export class Worker {
     const stop = this.stopJobs;
     this.stopJobs = null;
     for (const w of this.watched.values()) w.socket.stop();
+    this.triggers?.stopAll();
     await stop?.();
     await Promise.allSettled([...this.watched.values()].map((w) => w.polling));
     this.watched.clear();
@@ -216,6 +246,7 @@ export class Worker {
       w.socket.stop();
       this.watched.delete(workspaceId);
       this.clients.forget(workspaceId);
+      this.triggers?.forget(workspaceId);
       log.info('worker.workspace_removed', { workspaceId });
     }
     for (const workspaceId of wanted) {
@@ -236,6 +267,22 @@ export class Worker {
       socket.start();
       log.info('worker.workspace_added', { workspaceId });
     }
+    // CRM boards the active CRM triggers need (`crm-dashboard:<projectId>`), re-read with the workspaces.
+    if (this.triggers) {
+      for (const workspaceId of this.watched.keys()) {
+        if (!this.leader) return;
+        await this.triggers.refreshCrm(workspaceId).catch((error) => log.warn('worker.crm_refresh_failed', { workspaceId, error: errMessage(error) }));
+      }
+    }
+  }
+
+  /** Time triggers, one instance at a time (`job:automation-schedules`, on top of the worker lease). */
+  async tickSchedules(): Promise<void> {
+    if (!this.triggers || !this.leader) return;
+    const triggers = this.triggers;
+    await runExclusive('automation-schedules', this.holder, { ttlMs: Math.max(30_000, this.iv.schedulesMs - 5_000), now: () => new Date() }, () =>
+      triggers.tickSchedules([...this.watched.keys()])
+    );
   }
 
   socketOf(workspaceId: string): InboxSocket | undefined {
@@ -268,6 +315,7 @@ export class Worker {
     if (m.type === INBOX_EVENTS.conversationUpdated) {
       // Assignment changed: only a conversation still unassigned can need the handoff assignee.
       if (p.assignedUserId == null) void this.checkConversation(ref);
+      else if (typeof p.assignedUserId === 'string' && this.triggers) void this.triggers.onAssigned(ref, p.assignedUserId);
       return;
     }
     void this.sync.sync(ref);
@@ -328,6 +376,11 @@ export class Worker {
       await this.handle({ type: 'conversation_state', ...ref, state: row.conversation.conversationState ?? null, assignedUserId: row.conversation.assignedUserId ?? null, conversation: row.conversation });
     }
     await WorkerWorkspaceModel.updateOne({ workspaceId }, { $set: { pollCursor: startedAt, lastPollAt: this.opts.deps.now(), lastPollError: null } });
+    if (this.triggers) {
+      // Handoffs and silences (no websocket event for either), then the CRM catch-up.
+      await this.triggers.pollConversations(workspaceId).catch((error) => log.warn('worker.trigger_poll_failed', { workspaceId, error: errMessage(error) }));
+      await this.triggers.pollCrm(workspaceId);
+    }
   }
 
   /** Reads one conversation's state (inbox deep link) and emits it: after an AI reply or an unassignment. */
@@ -349,7 +402,7 @@ export class Worker {
     switch (event.type) {
       case 'inbound_message':
         if (this.automations) {
-          await this.automations.runtime.onInboundMessage({
+          const { handled } = await this.automations.runtime.onInboundMessage({
             workspaceId: event.workspaceId,
             channel: event.channel,
             conversationId: event.conversationId,
@@ -358,6 +411,8 @@ export class Worker {
             text: event.text,
             firstInbound: event.firstInbound,
           });
+          // Not taken by a running or new-conversation automation: keyword and "any message" triggers.
+          if (!handled && this.triggers) await this.triggers.onInbound(event);
         }
         break;
       case 'message_sent':
@@ -369,6 +424,7 @@ export class Worker {
         break;
       case 'conversation_state':
         if (event.state === 'human_handoff' && !event.assignedUserId) await this.assigner.handle(event, event.conversation);
+        if (event.state === 'human_handoff' && this.triggers) await this.triggers.onHandoff(event, event.conversation);
         break;
     }
     this.eventsHandled += 1;

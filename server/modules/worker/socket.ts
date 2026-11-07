@@ -13,10 +13,27 @@ export const INBOX_EVENTS = {
 
 export type InboxSocketMessage = { type: string; payload: Record<string, unknown> };
 
+/**
+ * What JSYNQ broadcasts in `crm-dashboard:<projectId>` (src/modules/projects/crm-dashboard/notifications on
+ * origin/staging), each `{type, payload}` with `projectId, cardId`. The JSYNQ web app joins it the same way as the
+ * inbox (`hooks/useCrmDashboardSocket`: `?room=` then a `handshake` with the token).
+ */
+export const CRM_EVENTS = {
+  /** `{projectId, cardId, columnId, boardId?, title, createdAt, updatedAt, parentId?}`. */
+  cardCreated: 'crm-dashboard:card-created',
+  /** `{projectId, cardId, columnId, updatedAt}` (no previous column). */
+  cardMoved: 'crm-dashboard:card-moved',
+  /** `{projectId, cardId, updatedAt, labelIds?, assignedUserIds?, title?...}`: only what changed. */
+  cardUpdated: 'crm-dashboard:card-updated',
+  cardDeleted: 'crm-dashboard:card-deleted',
+} as const;
+
 export type InboxSocketOptions = {
   /** JSYNQ websocket endpoint, e.g. `wss://api.example.com/ws`. */
   url: string;
   workspaceId: string;
+  /** Room to join; default `messaging-inbox:<workspaceId>`. `crm-dashboard:<projectId>` for a CRM board. */
+  room?: string;
   /** A fresh server-minted token (1 h) per connect and per refresh. Null = nobody to act as: retry later. */
   token: () => Promise<string | null>;
   onMessage: (message: InboxSocketMessage) => void;
@@ -47,7 +64,7 @@ export class InboxSocket {
   constructor(private readonly opts: InboxSocketOptions) {}
 
   get room() {
-    return `messaging-inbox:${this.opts.workspaceId}`;
+    return this.opts.room ?? `messaging-inbox:${this.opts.workspaceId}`;
   }
 
   start() {

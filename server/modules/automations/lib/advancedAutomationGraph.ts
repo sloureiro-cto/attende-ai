@@ -29,6 +29,22 @@ export function nodeOutputs(node: AdvancedAutomationNode): string[] {
       return [...node.paths.map((p) => p.id), 'else'];
     case 'ai_agent':
       return ['understood', 'not_understood'];
+    case 'wait_reply':
+      return ['answered', 'no_reply'];
+    case 'create_card':
+    case 'duplicate_card':
+    case 'delete_card':
+    case 'move_board':
+    case 'set_value':
+    case 'set_owner':
+    case 'remove_label':
+    case 'add_comment':
+    case 'add_checklist_item':
+    case 'check_checklist_item':
+    case 'mark_read':
+    case 'assign_conversation':
+    case 'save_reply':
+      return ['next'];
     case 'wait':
     case 'set_field':
     case 'move_stage':

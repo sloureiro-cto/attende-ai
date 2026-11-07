@@ -11,10 +11,14 @@ import type { AdvancedAutomationChannel, AdvancedAutomationDefinition } from './
 
 export type PreviewEvent = { type: 'start' } | { type: 'inbound'; text: string; optionId?: string } | { type: 'timer' };
 
-export type PreviewEffect = EngineEffect & { delivery?: { kind: ChoiceDelivery['kind']; warnings: string[]; text?: string } };
+export type PreviewEffect = EngineEffect & { delivery?: { kind: ChoiceDelivery['kind']; warnings: string[]; text?: string }; refused?: boolean };
 
 /** A step the preview (and production) cannot run for real: JSYNQ has no endpoint for it. */
-export type PreviewUnavailable = { kind: 'condition'; type: string } | { kind: 'ai_step'; nodeId: string };
+export type PreviewUnavailable =
+  | { kind: 'condition'; type: string }
+  | { kind: 'ai_step'; nodeId: string }
+  /** A destructive step (delete a lead): listed, never carried out or simulated as done. */
+  | { kind: 'refused_in_preview'; nodeId: string };
 
 /**
  * Runs the real engine on an automation (saved or draft) without sending or storing anything; the
@@ -71,6 +75,10 @@ export async function previewAutomation(params: {
   });
 
   const effects: PreviewEffect[] = result.effects.map((effect) => {
+    if (effect.type === 'delete_card') {
+      note({ kind: 'refused_in_preview', nodeId: effect.nodeId });
+      return { ...effect, refused: true } as PreviewEffect;
+    }
     if (effect.type !== 'send_message' || (effect.replyMode !== 'buttons' && effect.replyMode !== 'list')) return effect;
     const plan = planChoiceDelivery(params.channel, effect.replyMode, effect.options ?? [], { whatsappInteractive: params.whatsappInteractive === true });
     return {

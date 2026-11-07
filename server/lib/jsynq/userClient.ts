@@ -208,6 +208,48 @@ export function userClient(token: string) {
       const list = Array.isArray(body) ? body : (body as { leadSources?: unknown })?.leadSources ?? unwrap<unknown>(body);
       return Array.isArray(list) ? (list as Array<{ _id: string; text?: string; color?: string | null }>) : [];
     },
+    /** `GET /api/projects/:p/boards`: the project's boards. */
+    async listBoards(projectId: string): Promise<Array<{ _id: string; title?: string }>> {
+      const res = await call<{ boards?: Array<{ _id: unknown; title?: string }> }>('GET', `/api/projects/${encodeURIComponent(projectId)}/boards`);
+      return (res.body?.boards ?? []).map((b) => ({ _id: String(b._id), title: b.title }));
+    },
+    /**
+     * `POST /api/projects/:p/cards` (`{title, column, board, customFields, assignedUsers, parent}`): a lead/deal in a
+     * CRM project, or (with `parent`) a checklist item of a card. JSYNQ takes the status from the column and publishes
+     * `crm-dashboard:card-created`. Not idempotent: the caller keeps its own record.
+     */
+    async createCard(projectId: string, body: Record<string, unknown>): Promise<JsynqCard> {
+      const res = await call<{ card?: JsynqCard; newCard?: JsynqCard }>('POST', `/api/projects/${encodeURIComponent(projectId)}/cards`, { body, timeoutMs: 30_000 });
+      const card = res.body?.card ?? res.body?.newCard;
+      if (!card?._id) throw new Error('JSYNQ card creation returned no card');
+      return { ...card, _id: String(card._id) };
+    },
+    /** `POST /api/projects/:p/cards/:id/clone-to-project` `{targetProjectId, targetColumnId, labelMappings}`. */
+    async cloneCard(projectId: string, cardId: string, body: { targetProjectId: string; targetColumnId: string; labelMappings?: Array<{ from: string; to: string | null }> }): Promise<JsynqCard> {
+      const res = await call<{ card?: JsynqCard }>('POST', `/api/projects/${encodeURIComponent(projectId)}/cards/${encodeURIComponent(cardId)}/clone-to-project`, { body, timeoutMs: 30_000 });
+      const card = res.body?.card;
+      if (!card?._id) throw new Error('JSYNQ clone returned no card');
+      return { ...card, _id: String(card._id) };
+    },
+    /** `DELETE /api/projects/:p/cards/:id`: JSYNQ marks the card deleted (`deleted: true`); there is no archive route. */
+    async deleteCard(projectId: string, cardId: string): Promise<void> {
+      await call('DELETE', `/api/projects/${encodeURIComponent(projectId)}/cards/${encodeURIComponent(cardId)}`);
+    },
+    /** `POST /api/projects/:p/cards/:id/move-to-board` `{targetColumnId}`: JSYNQ checks access to both boards. */
+    async moveCardToBoard(projectId: string, cardId: string, targetColumnId: string): Promise<JsynqCard | null> {
+      const res = await call<{ card?: JsynqCard }>('POST', `/api/projects/${encodeURIComponent(projectId)}/cards/${encodeURIComponent(cardId)}/move-to-board`, { body: { targetColumnId }, idempotent: true });
+      return res.body?.card ?? null;
+    },
+    /** `GET /api/projects/:p/cards/:id/subtasks`: the card's checklist items (child cards, `completed`). */
+    async listSubtasks(projectId: string, cardId: string): Promise<Array<{ _id: string; title?: string; completed?: boolean }>> {
+      const res = await call<unknown>('GET', `/api/projects/${encodeURIComponent(projectId)}/cards/${encodeURIComponent(cardId)}/subtasks`);
+      const list = Array.isArray(res.body) ? res.body : unwrap<unknown>(res.body);
+      return Array.isArray(list) ? (list as Array<{ _id: unknown; title?: string; completed?: boolean }>).map((c) => ({ ...c, _id: String(c._id) })) : [];
+    },
+    /** `POST /api/projects/:p/boards/:b/cards/:id/comments` `{text}`. */
+    async addCardComment(projectId: string, boardId: string, cardId: string, text: string): Promise<void> {
+      await call('POST', `/api/projects/${encodeURIComponent(projectId)}/boards/${encodeURIComponent(boardId)}/cards/${encodeURIComponent(cardId)}/comments`, { body: { text } });
+    },
     /** `GET /api/users/workspaces/:id`: members with name and photo. */
     async listWorkspaceUsers(workspaceId: string): Promise<Array<{ id: string; name?: string; email?: string; image?: string | null }>> {
       const res = await call<{ members?: Array<{ id: string; name?: string; email?: string; image?: string | null }> }>('GET', `/api/users/workspaces/${encodeURIComponent(workspaceId)}`);
@@ -262,6 +304,17 @@ export function userClient(token: string) {
     /** `PATCH /api/{channel}-lite/sessions/:s/conversations/:id/assign` `{userId}`. */
     async assignConversation(channel: Channel, sessionId: string, conversationId: string, userId: string): Promise<void> {
       await call('PATCH', `${SESSION_PATH[channel]}/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(conversationId)}/assign`, { body: { userId } });
+    },
+    /** `POST /api/{channel}-lite/sessions/:s/conversations/:id/mark-read`. */
+    async markConversationRead(channel: Channel, sessionId: string, conversationId: string): Promise<void> {
+      await call('POST', `${SESSION_PATH[channel]}/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(conversationId)}/mark-read`, { idempotent: true });
+    },
+    /** `PATCH /api/{channel}-lite/sessions/:s/conversations/:id` `{linkedEntityType: 'card', linkedEntityId}`: links the conversation to a card. */
+    async linkConversationToCard(channel: Channel, sessionId: string, conversationId: string, cardId: string): Promise<void> {
+      await call('PATCH', `${SESSION_PATH[channel]}/${encodeURIComponent(sessionId)}/conversations/${encodeURIComponent(conversationId)}`, {
+        body: { linkedEntityType: 'card', linkedEntityId: cardId },
+        idempotent: true,
+      });
     },
     /** `POST /api/projects/:p/label` `{text, color}`. */
     async createLabel(projectId: string, input: { text: string; color: string }): Promise<{ _id: string }> {

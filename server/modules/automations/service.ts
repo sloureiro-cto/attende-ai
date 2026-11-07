@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash, randomBytes } from 'crypto';
 import mongoose from 'mongoose';
 import { AppError, badRequest, codedError } from '../../lib/errors';
 import type { UserClient } from '../../lib/jsynq';
@@ -6,10 +7,15 @@ import { viaJsynq } from '../../lib/jsynq';
 import { conditionShapeIssues } from './lib/conditions';
 import { automationRegexIssues } from './lib/automationRegexIssues';
 import { utcDay } from './lib/advancedAutomationStats';
-import type { ParsedAutomationCreate, ParsedAutomationPatch } from './lib/parseAdvancedAutomationInput';
+import { triggerCompletenessIssues, type ParsedAutomationCreate, type ParsedAutomationPatch } from './lib/parseAdvancedAutomationInput';
 import { blockingIssues, validateAdvancedAutomation, type AdvancedAutomationIssue } from './lib/validateAdvancedAutomation';
 import { AdvancedAutomationModel, AdvancedAutomationStatsModel, type IAdvancedAutomation } from './models';
-import type { AdvancedAutomationChannel, AdvancedAutomationNode, AdvancedAutomationStatus } from './types';
+import { CRM_TRIGGER_KINDS, TIME_TRIGGER_KINDS, type AdvancedAutomationChannel, type AdvancedAutomationNode, type AdvancedAutomationStatus } from './types';
+
+/** Header the webhook trigger's secret travels in. */
+export const WEBHOOK_SECRET_HEADER = 'X-Attende-Secret';
+export const webhookPath = (automationId: string) => `/api/automations/hooks/${automationId}`;
+export const hashWebhookSecret = (secret: string) => createHash('sha256').update(secret, 'utf8').digest('hex');
 
 export const LIST_MAX_LIMIT = 100;
 
@@ -82,6 +88,11 @@ async function handoffTargetIssues(dir: WorkspaceDirectory, nodes: AdvancedAutom
     if (n.assignMode === 'member_list') for (const id of n.userIds ?? []) userIds.add(id.toLowerCase());
     if (n.assignMode === 'by_workspace_role' && n.workspaceRoleId) roleIds.add(n.workspaceRoleId.toLowerCase());
     if (n.to === 'ai' && n.agentId) agentIds.add(n.agentId.toLowerCase());
+  }
+  // Members named by lead / conversation steps (owner, assignee).
+  for (const n of nodes) {
+    if ((n?.kind === 'set_owner' || n?.kind === 'assign_conversation') && /^[0-9a-f]{24}$/i.test(n.userId ?? '')) userIds.add(n.userId.toLowerCase());
+    if (n?.kind === 'create_card' && n.ownerUserId && /^[0-9a-f]{24}$/i.test(n.ownerUserId)) userIds.add(n.ownerUserId.toLowerCase());
   }
   const issues: AdvancedAutomationIssue[] = [];
   if (agentIds.size && dir.agentIds) {
@@ -165,8 +176,28 @@ export class AutomationService {
   }
 
   async get(workspaceId: string, id: string) {
-    const doc = await this.load(workspaceId, id);
-    return { ...doc, _id: String(doc._id), id: String(doc._id), issues: validateAdvancedAutomation(doc) };
+    const { webhookSecretHash, webhookSecretSetAt, ...doc } = await this.load(workspaceId, id);
+    return {
+      ...doc,
+      _id: String(doc._id),
+      id: String(doc._id),
+      issues: validateAdvancedAutomation(doc),
+      // The secret itself is never returned (it is shown once, when generated).
+      webhook: { configured: !!webhookSecretHash, setAt: webhookSecretSetAt ? new Date(webhookSecretSetAt).toISOString() : null, path: webhookPath(String(doc._id)) },
+    };
+  }
+
+  /** A new webhook secret for the automation (the previous one stops working at once). Returned once, stored hashed. */
+  async rotateWebhookSecret(workspaceId: string, userId: string, id: string): Promise<{ secret: string; path: string; header: string }> {
+    const current = await this.load(workspaceId, id);
+    const secret = `whsec_${randomBytes(24).toString('base64url')}`;
+    // Not an edit of the flow: `updatedAt` stays, so the builder's next save does not see a conflict.
+    await AdvancedAutomationModel.updateOne(
+      { _id: current._id, workspaceId },
+      { $set: { webhookSecretHash: hashWebhookSecret(secret), webhookSecretSetAt: new Date(), updatedBy: userId } },
+      { timestamps: false }
+    );
+    return { secret, path: webhookPath(String(current._id)), header: WEBHOOK_SECRET_HEADER };
   }
 
   /** Sessions must belong to the workspace (JSYNQ, user token); an unknown id is an error, never dropped. */
@@ -189,7 +220,11 @@ export class AutomationService {
     selfId?: string
   ) {
     const issues = [...validateAdvancedAutomation(a), ...conditionIssues(a)];
-    if (!a.channels.some((c) => c.enabledSessionIds.length > 0)) issues.push({ path: 'channels', message: 'select at least one account the automation runs on' });
+    for (const message of triggerCompletenessIssues(a.trigger)) issues.push({ path: 'trigger', message });
+    // Lead triggers (CRM, time, webhook) can run without a channel: their message steps reach the lead's conversation
+    // on the selected channels when there is one, and are skipped otherwise.
+    const leadTrigger = (CRM_TRIGGER_KINDS as readonly string[]).includes(a.trigger.kind) || (TIME_TRIGGER_KINDS as readonly string[]).includes(a.trigger.kind) || a.trigger.kind === 'webhook';
+    if (!leadTrigger && !a.channels.some((c) => c.enabledSessionIds.length > 0)) issues.push({ path: 'channels', message: 'select at least one account the automation runs on' });
     const targets = a.nodes.flatMap((n) => (n?.kind === 'goto_automation' ? [n.automationId] : []));
     if (targets.length) {
       const found = await AdvancedAutomationModel.find({ workspaceId, _id: { $in: targets.filter(isOid).map((t) => new mongoose.Types.ObjectId(t)) } })

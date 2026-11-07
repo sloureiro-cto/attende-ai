@@ -26,6 +26,9 @@ export interface IAdvancedAutomation {
   version: number;
   createdBy: string;
   updatedBy?: string;
+  /** Webhook trigger: SHA-256 of the per-automation secret (the secret itself is shown once and never stored). */
+  webhookSecretHash?: string | null;
+  webhookSecretSetAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,12 +51,16 @@ const AdvancedAutomationSchema = new Schema<IAdvancedAutomation>(
     version: { type: Number, default: 1 },
     createdBy: { type: String, required: true },
     updatedBy: String,
+    webhookSecretHash: { type: String, default: null },
+    webhookSecretSetAt: { type: Date, default: null },
   },
   { timestamps: true, collection: 'advanced_automations' }
 );
 AdvancedAutomationSchema.index({ workspaceId: 1, status: 1, updatedAt: -1 });
 // Trigger lookup on inbound: which active automations run on this session?
 AdvancedAutomationSchema.index({ workspaceId: 1, status: 1, 'channels.enabledSessionIds': 1 });
+// Trigger lookup for CRM / time / webhook events: active automations of a kind.
+AdvancedAutomationSchema.index({ workspaceId: 1, status: 1, 'trigger.kind': 1 });
 export const AdvancedAutomationModel = model('AdvancedAutomation', AdvancedAutomationSchema);
 
 /** Daily funnel counters for one automation: `_id = <automationId>:<YYYY-MM-DD>`, updated with `$inc`. */
@@ -122,3 +129,69 @@ export const AutomationRunModel = model('AutomationRun', RunSchema);
 
 /** Most recent automation starts kept per conversation (dedupe window + start rate limit). */
 export const RUN_HISTORY_MAX = 20;
+
+// ---- trigger bookkeeping (shared by the worker's triggers and the webhook route) -------------------------------------
+
+/** One trigger event an automation already handled (`<automationId>:<eventId>`): redeliveries are no-ops. */
+export interface IAutomationTriggerEvent {
+  _id: string;
+  workspaceId: string;
+  at: Date;
+}
+const TriggerEventSchema = new Schema<IAutomationTriggerEvent>(
+  { _id: { type: String }, workspaceId: { type: String, required: true }, at: { type: Date, required: true } },
+  { collection: 'automation_trigger_events', versionKey: false }
+);
+TriggerEventSchema.index({ at: 1 }, { expireAfterSeconds: 7 * 24 * 3600 });
+export const AutomationTriggerEventModel = model('AutomationTriggerEvent', TriggerEventSchema);
+
+/** "Only once per lead": `<automationId>:<lead key>` (a card, or a conversation without one). Kept 400 days. */
+export interface IAutomationLeadStart {
+  _id: string;
+  workspaceId: string;
+  at: Date;
+}
+const LeadStartSchema = new Schema<IAutomationLeadStart>(
+  { _id: { type: String }, workspaceId: { type: String, required: true }, at: { type: Date, required: true } },
+  { collection: 'automation_lead_starts', versionKey: false }
+);
+LeadStartSchema.index({ at: 1 }, { expireAfterSeconds: 400 * 24 * 3600 });
+export const AutomationLeadStartModel = model('AutomationLeadStart', LeadStartSchema);
+
+/** Fixed-window counters shared by every instance: runs per automation per minute, webhook calls per minute. */
+export interface IAutomationCounter {
+  _id: string;
+  n: number;
+  expireAt: Date;
+}
+const CounterSchema = new Schema<IAutomationCounter>(
+  { _id: { type: String }, n: { type: Number, default: 0 }, expireAt: { type: Date, required: true } },
+  { collection: 'automation_counters', versionKey: false }
+);
+CounterSchema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });
+export const AutomationCounterModel = model('AutomationCounter', CounterSchema);
+
+/**
+ * Anti-loop marker: a change an automation itself made in JSYNQ (`<workspaceId>:<subject>:<change>` -> the automation
+ * and run). A trigger event for that same change within the window does not start that automation again.
+ */
+export interface IAutomationEcho {
+  _id: string;
+  workspaceId: string;
+  automationId: string;
+  runId: string;
+  at: Date;
+}
+const EchoSchema = new Schema<IAutomationEcho>(
+  {
+    _id: { type: String },
+    workspaceId: { type: String, required: true },
+    automationId: { type: String, required: true },
+    runId: { type: String, required: true },
+    at: { type: Date, required: true },
+  },
+  { collection: 'automation_echoes', versionKey: false }
+);
+// Each kind of marker has its own window (`mongoTriggerGuards.isEcho`); a message marker must outlive a silence.
+EchoSchema.index({ at: 1 }, { expireAfterSeconds: 31 * 24 * 3600 });
+export const AutomationEchoModel = model('AutomationEcho', EchoSchema);

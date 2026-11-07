@@ -7,7 +7,8 @@ import { entitlementGate } from '../billing/gate';
 import type { BusinessHours } from './lib/conditions';
 import { parseAutomationCreate, parseAutomationGraph, parseAutomationPatch } from './lib/parseAdvancedAutomationInput';
 import { previewAutomation, type PreviewEvent } from './preview';
-import { AutomationService, jsynqDirectory } from './service';
+import { AutomationService, jsynqDirectory, WEBHOOK_SECRET_HEADER } from './service';
+import { handleAutomationWebhook } from './webhook';
 import { automationStats } from './stats';
 import type { AdvancedAutomationChannel, AdvancedAutomationStatus } from './types';
 
@@ -117,4 +118,24 @@ export const deleteAutomation = route(guards, async (http) => {
   const { ctx, automations } = service(http);
   await automations.remove(ctx.workspaceId, id(http));
   return noContent();
+});
+
+export const rotateWebhookSecret = route(guards, async (http) => {
+  const { ctx, automations } = service(http);
+  return ok(await automations.rotateWebhookSecret(ctx.workspaceId, ctx.userId, id(http)));
+});
+
+/** Per address, in memory (a first line): the shared per-automation limit is in `handleAutomationWebhook`. */
+const hookIpLimiter = rateLimit({ windowMs: 60_000, limit: 240, key: (http) => `hook:${http.ip}` });
+
+/** `POST /api/automations/hooks/:automationId`: no session; the per-automation secret header authenticates. */
+export const automationWebhook = route([hookIpLimiter], async (http) => {
+  const result = await handleAutomationWebhook({
+    deps: http.deps,
+    automationId: String(http.params.automationId ?? ''),
+    secret: http.header(WEBHOOK_SECRET_HEADER),
+    idempotencyKey: http.header('idempotency-key'),
+    body: () => http.body(),
+  });
+  return ok(result, 202);
 });

@@ -97,3 +97,99 @@ const AiHandoffSchema = new Schema<IAiHandoff>(
 );
 AiHandoffSchema.index({ workspaceId: 1, channel: 1, conversationId: 1 }, { unique: true });
 export const AiHandoffModel = model('AutomationAiHandoff', AiHandoffSchema);
+
+// ---- automation_actions: idempotency of the non-idempotent JSYNQ writes of a step (create card, clone, comment...) --
+
+export interface IAutomationAction {
+  /** `runId:nodeId:eventId[:action]` (the executor's step key). */
+  _id: string;
+  workspaceId: string;
+  state: 'pending' | 'done';
+  /** What the call returned that a replay must return again (the created card). */
+  result?: { projectId?: string; cardId?: string } | null;
+  at: Date;
+}
+const AutomationActionSchema = new Schema<IAutomationAction>(
+  {
+    _id: { type: String },
+    workspaceId: { type: String, required: true },
+    state: { type: String, enum: ['pending', 'done'], required: true },
+    result: { type: Schema.Types.Mixed, default: null },
+    at: { type: Date, required: true },
+  },
+  { collection: 'automation_actions', versionKey: false }
+);
+AutomationActionSchema.index({ at: 1 }, { expireAfterSeconds: 30 * 24 * 3600 });
+export const AutomationActionModel = model('AutomationAction', AutomationActionSchema);
+
+// ---- worker_card_snapshots: what the worker last saw of a card (stage, labels), to turn CRM events into triggers ----
+
+export interface IWorkerCardSnapshot {
+  /** `<workspaceId>:<cardId>`. */
+  _id: string;
+  workspaceId: string;
+  projectId: string;
+  column: string | null;
+  /** Label ids; null = never seen (a first sight is a baseline, never "labels added"). */
+  labels: string[] | null;
+  /** Bumped on every change seen; part of the trigger event ids. */
+  rev: number;
+  at: Date;
+}
+const CardSnapshotSchema = new Schema<IWorkerCardSnapshot>(
+  {
+    _id: { type: String },
+    workspaceId: { type: String, required: true },
+    projectId: { type: String, required: true },
+    column: { type: String, default: null },
+    labels: { type: [String], default: null },
+    rev: { type: Number, default: 0 },
+    at: { type: Date, required: true },
+  },
+  { collection: 'worker_card_snapshots', versionKey: false }
+);
+CardSnapshotSchema.index({ at: 1 }, { expireAfterSeconds: 180 * 24 * 3600 });
+export const WorkerCardSnapshotModel = model('WorkerCardSnapshot', CardSnapshotSchema);
+
+// ---- worker_crm_cursors: the CRM catch-up poll's cursor per watched project --------------------------------------
+
+export interface IWorkerCrmCursor {
+  /** `<workspaceId>:<projectId>`. */
+  _id: string;
+  workspaceId: string;
+  cursor: Date;
+}
+const CrmCursorSchema = new Schema<IWorkerCrmCursor>(
+  { _id: { type: String }, workspaceId: { type: String, required: true }, cursor: { type: Date, required: true } },
+  { collection: 'worker_crm_cursors', versionKey: false }
+);
+export const WorkerCrmCursorModel = model('WorkerCrmCursor', CrmCursorSchema);
+
+// ---- automation_schedule_states: progress of a time trigger's pass for its current slot (one day) ----------------
+
+export interface IAutomationScheduleState {
+  /** The automation id. */
+  _id: string;
+  workspaceId: string;
+  /** Local date of the pass (`YYYY-MM-DD`). */
+  slot: string;
+  /** Next page to read (1-based). */
+  page: number;
+  done: boolean;
+  /** Leads read in this slot. */
+  read: number;
+  at: Date;
+}
+const ScheduleStateSchema = new Schema<IAutomationScheduleState>(
+  {
+    _id: { type: String },
+    workspaceId: { type: String, required: true },
+    slot: { type: String, required: true },
+    page: { type: Number, default: 1 },
+    done: { type: Boolean, default: false },
+    read: { type: Number, default: 0 },
+    at: { type: Date, required: true },
+  },
+  { collection: 'automation_schedule_states', versionKey: false }
+);
+export const AutomationScheduleStateModel = model('AutomationScheduleState', ScheduleStateSchema);

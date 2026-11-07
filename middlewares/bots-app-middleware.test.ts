@@ -171,12 +171,21 @@ describe("handleBotsAppRequest: Attende API routes", () => {
     "/api/attende/billing/cancel",
     "/api/cron/billing-reconcile",
     "/api/cron/agent-sweeper",
+    "/api/automations/hooks/0123456789abcdef01234567",
+    "/api/messaging-automations/advanced/abc/webhook-secret",
   ])("api: %s", (p) => expect(classifyBotsAppPath(p)).toBe("api"))
 
-  it.each(["/api/attendex", "/api/messaging-automations", "/api/messaging-automations/basic", "/api/stripe", "/api/stripe/webhook", "/api/stripe/webhooks", "/api/jsynq", "/api/jsynq/webhooks", "/api/jsynq/inbound", "/api/cronjobs"])(
+  it.each(["/api/attendex", "/api/messaging-automations", "/api/messaging-automations/basic", "/api/stripe", "/api/stripe/webhook", "/api/stripe/webhooks", "/api/jsynq", "/api/jsynq/webhooks", "/api/jsynq/inbound", "/api/cronjobs", "/api/automations", "/api/automations/hooksx", "/api/automations/other"])(
     "look-alikes stay blocked: %s",
     (p) => expect(classifyBotsAppPath(p)).toBe("blocked")
   )
+
+  it("lets an automation webhook POST through without a session (its secret header authenticates)", async () => {
+    mockGetToken.mockResolvedValue(null)
+    const res = await handleBotsAppRequest(req("/api/automations/hooks/0123456789abcdef01234567", { method: "POST" }))
+    expect(res.status).toBe(200)
+    expect(mockGetToken).not.toHaveBeenCalled()
+  })
 
   it("lets an API POST through without a session and without reading the cookie", async () => {
     mockGetToken.mockResolvedValue(null)
