@@ -371,6 +371,69 @@ Known limits:
   messages is not treated as new (`firstInbound: false`).
 - **Not available:** WhatsApp template sends, creating a card for an unlinked conversation, assignment by role.
 
+### Automations pack (2026-11-07): lead steps, triggers, webhook
+
+Checked against JSYNQ `origin/staging` at `d78ae2d9` (2026-11-07). Every call below is an existing staging route.
+
+**Lead / record / conversation steps** (gateway, server-minted owner token). A step acts on the run's card: the one
+the run created, the trigger's lead, else the conversation's linked card.
+
+| Step | JSYNQ endpoint |
+| --- | --- |
+| Fill a field (custom fields of the board, `email`, `phone`, `company`, `contactName`, `estimateRevenue`) | `PUT /api/projects/:p/cards/:id {customFields: [{fieldId, value}]}` (JSYNQ merges) |
+| Fill the lead name / owner (`card:title`, `card:owner`) | `PUT /api/projects/:p/cards/:id {title}` / `{assignedUsers: [userId]}` |
+| Field picker (builder) | `GET /api/projects/:p/boards`, `GET /api/projects/:p/card-field-definitions?boardId=` (user token) |
+| Create a lead | `POST /api/projects/:p/cards {title, column, board, customFields, assignedUsers}`, then `PATCH /api/{channel}-lite/sessions/:s/conversations/:id {linkedEntityType: 'card', linkedEntityId}` when the conversation has no card |
+| Duplicate | `POST /api/projects/:p/cards/:id/clone-to-project {targetProjectId: p, targetColumnId, labelMappings}` (same project, labels mapped to themselves) |
+| Delete the lead | `DELETE /api/projects/:p/cards/:id` (JSYNQ sets `deleted: true`; there is no archive route) |
+| Move to another board | `POST /api/projects/:p/cards/:id/move-to-board {targetColumnId}` |
+| Change the value | `PUT .../cards/:id {customFields: [{fieldId: 'estimateRevenue', value}]}` |
+| Set / change the owner | `PUT .../cards/:id {assignedUsers: [userId]}` |
+| Remove a label | `GET /api/projects/:p/labels`, `GET .../cards/:id`, `PUT .../cards/:id {labels}` |
+| Comment | `POST /api/projects/:p/boards/:b/cards/:id/comments {text}` |
+| Checklist item (a child card) | `POST /api/projects/:p/cards {title, parent, board, column}`; check / uncheck: `GET .../cards/:id/subtasks`, `PUT .../cards/:sub {completed}` |
+| Mark as read | `POST /api/{channel}-lite/sessions/:s/conversations/:id/mark-read` |
+| Assign without taking the AI off | `PATCH /api/{channel}-lite/sessions/:s/conversations/:id/assign {userId}` (no state change) |
+| A lead's conversation (lead triggers) | `GET /api/projects/:p/cards/:id/{whatsapp,instagram,sms}-conversations` |
+
+Non-idempotent writes (create, clone, comment, checklist item) are recorded per step key in `automation_actions`, like
+`automation_sends`. "Delete" is checked again in the gateway: only the linked card, the trigger's lead of a lead run,
+or a card this run created; the preview never runs it.
+
+**Triggers** (worker; the webhook in Next.js). `runtime.onTriggerEvent` is shared.
+
+| Trigger | Source |
+| --- | --- |
+| Lead created / moved to a stage / label added / won / lost | websocket room `crm-dashboard:<projectId>` (same `?room=&token=` + `handshake` as the inbox; events `crm-dashboard:card-created`, `card-moved`, `card-updated` with `labelIds`), one socket per CRM project an active CRM trigger needs; catch-up poll `GET /api/projects/:p/cards/paginated?orderBy=updatedAt:desc` every minute and after a reconnect. Won / lost: the stage's status from `GET /api/projects/:p/boards` + `GET /api/projects/:p/columns/kanban?boardId=` (`win`/`done` = won, `lost` = lost) |
+| Keyword, any message (optionally outside business hours) | the inbound stream (inbox websocket + safety poll), when no running automation took the message |
+| Assigned to someone | `messaging-inbox:conversation-updated` with `assignedUserId` |
+| Handed to a person | the safety poll: `GET /api/workspaces/:w/messaging/inbox/conversations?conversationState=human_handoff` (no websocket event for state changes); keyed by the handoff time in `conversationStateHistory` |
+| Contact / team silent for X | the safety poll over the inbox (`lastMessageAt`, `lastMessageDirection`), up to 10 pages of 50 a minute |
+| Scheduled (daily / weekly, the leads of a stage), X days before / after a date field | job `automation-schedules` (every minute, lease `job:automation-schedules`): `GET /api/projects/:p/cards/paginated?boardId&columnId&orderBy=updatedAt:asc`, 4 pages of 50 per automation per tick, 2,000 leads per day; date fields are compared in memory |
+| Webhook | `POST /api/automations/hooks/:automationId` (Next.js, no session): header `X-Attende-Secret` (per automation, shown once, stored as SHA-256, rotatable), 60 calls a minute per automation (shared Mongo counter) plus a per-address limit, optional `Idempotency-Key`. The lead is matched by e-mail or phone (`GET /api/workspaces/:w/directory?type=contact&search=`, then `GET /api/workspaces/:w/contacts/:id/deals`, a deal on the trigger's board) or created in the trigger's stage (`POST /api/projects/:p/cards`) |
+
+**Protections:** dedupe per automation and event id (`automation_trigger_events`), "only once per lead"
+(`automation_lead_starts`), 30 starts per automation per minute (`automation_counters`, shared by every instance), the
+existing per-run step cap (50 per advance, 500 per run) and per-conversation start limit (6 an hour), and the anti-loop
+markers (`automation_echoes`): a change an automation makes (moved, label, card created or copied, assigned, handed off,
+its own message before a silence) does not start that same automation again. Filters: channel, board / stages,
+labels.
+
+Known limits of the pack:
+
+- **Archive:** JSYNQ cards have no archive. "Delete lead" deletes (JSYNQ's soft delete); the step warns and must be
+  confirmed before the automation can go active.
+- **CRM events carry no previous stage and no author.** A label counts as added against the worker's last snapshot of
+  the card; a card the worker never saw before (not among the 200 most recently updated when its board was first
+  watched, not changed since) is a baseline on first sight. An automation's own changes are told apart by markers,
+  not by JSYNQ.
+- **Assignment** has no poll fallback: an assignment while the inbox socket is down is not a trigger.
+- **Handoffs** are read every minute (newest 50); **silences** scan the newest 500 conversations a minute.
+- **Time triggers** read whole boards (JSYNQ cannot filter cards by a custom date): 200 leads per tick, 2,000 per day.
+- **Lead runs without a conversation** skip message, handoff, mark-read and assignment steps (logged).
+- **Webhook phone match** compares the last 9 digits of the contacts the directory search returns.
+- **Comments** are sent as plain text; **checklist items** are matched by title (JSYNQ checklist items are child cards).
+
 ## Gaps that need JSYNQ changes (not made)
 
 - **Billing currency.** `upgrade-to-trial` creates every subscription in USD and Stripe cannot change it afterwards,

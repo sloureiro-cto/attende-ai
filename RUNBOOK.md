@@ -83,8 +83,11 @@ files with a clear message instead of a failed upload.
 
 `worker/index.ts` (`yarn worker`): listens to JSYNQ per Attende workspace, runs the advanced automations, counts AI
 replies against the quota, assigns handoffs ("quem assume") and syncs the reports every 10 minutes, for every
-Attende workspace whose plan is active or trialing (re-read every minute). JSYNQ events and routes it uses:
-`docs/jsynq-apis-used.md` ("Worker").
+Attende workspace whose plan is active or trialing (re-read every minute). It also delivers the automation triggers
+other than "new conversation" and the webhook: CRM triggers (one `crm-dashboard:<projectId>` socket per CRM board an
+active CRM trigger needs, plus a catch-up poll), conversation triggers (keyword, any message, assignment, handoff,
+silences) and the time triggers (job `automation-schedules`, every minute). Without the worker those triggers never
+start. JSYNQ events and routes it uses: `docs/jsynq-apis-used.md` ("Worker", "Automations pack").
 
 - **Image:** `Dockerfile.worker` (`docker build -f Dockerfile.worker -t attende-worker .`).
 - **Env:** `ATTENDE_MONGODB_URI`, `AUTH_SECRET` (same as the app and JSYNQ), `JSYNQ_API_URL`; optional
@@ -98,7 +101,8 @@ Attende workspace whose plan is active or trialing (re-read every minute). JSYNQ
   25 s) and the new one takes it within ~30 s. Do not scale it out.
 - **Network:** outbound HTTPS and WSS to JSYNQ, and the Attende Mongo. Nothing calls it except the health check.
 - **Logs:** one JSON line per event (ids and counts, never tokens or message text). Watch `worker.sync_failed`,
-  `worker.poll_failed`.
+  `worker.poll_failed`, `worker.crm_poll_failed`, `worker.schedule_failed`, `worker.schedule_capped` and
+  `automation.trigger_skipped` (`reason`: `run_cap`, `once_per_lead`, `own_change`, `duplicate_event`).
 
 **Failure modes:**
 
