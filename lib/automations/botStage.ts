@@ -10,7 +10,7 @@ type MoveStageNode = Extract<AdvancedAutomationNode, { kind: "move_stage" }>
 
 export const EMPTY_STAGE: StageSelection = { projectId: "", boardId: "", columnId: "" }
 
-export const stageOfNode = (node: Pick<MoveStageNode, "projectId" | "boardId" | "columnId">): StageSelection => ({
+export const stageOfNode = (node: Partial<Pick<MoveStageNode, "projectId" | "boardId" | "columnId">>): StageSelection => ({
   projectId: node.projectId ?? "",
   boardId: node.boardId ?? "",
   columnId: node.columnId ?? "",
@@ -46,11 +46,17 @@ export function columnTitle(columns: IColumn[] | undefined, columnId: string): s
   return title || undefined
 }
 
+/** Steps that store a stage (project, board, column) the canvas names. */
+const STAGE_KINDS = new Set<AdvancedAutomationNode["kind"]>(["move_stage", "move_board", "create_card", "duplicate_card"])
+type StageNode = { id: string; kind: AdvancedAutomationNode["kind"]; projectId?: string; boardId?: string; columnId?: string }
+const asStage = (n: AdvancedAutomationNode): StageNode | null => (STAGE_KINDS.has(n.kind) ? (n as StageNode) : null)
+
 /** Distinct (project, board) pairs of the move-stage steps: what must be loaded to name them. */
 export function stageRefsOfNodes(nodes: AdvancedAutomationNode[]): Array<{ projectId: string; boardId: string }> {
   const seen = new Map<string, { projectId: string; boardId: string }>()
-  for (const n of nodes) {
-    if (n.kind !== "move_stage" || !n.projectId) continue
+  for (const node of nodes) {
+    const n = asStage(node)
+    if (!n || !n.projectId) continue
     seen.set(`${n.projectId}:${n.boardId ?? ""}`, { projectId: n.projectId, boardId: n.boardId ?? "" })
   }
   return [...seen.values()]
@@ -63,8 +69,9 @@ export function stageLabelsByNode(
   projects: Array<Pick<IProject, "_id" | "title">>
 ): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const n of nodes) {
-    if (n.kind !== "move_stage" || !n.columnId) continue
+  for (const node of nodes) {
+    const n = asStage(node)
+    if (!n || !n.columnId) continue
     const column = columnTitle(n.projectId ? columnsByProject[n.projectId] : undefined, n.columnId)
     if (!column) continue
     const project = projects.find((p) => p._id === n.projectId)?.title?.trim()

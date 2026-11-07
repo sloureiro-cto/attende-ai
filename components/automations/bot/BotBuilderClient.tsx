@@ -44,6 +44,7 @@ import {
 } from "lib/automations/botBuilderState"
 import { nodeIssues, unreachableNodeIds } from "lib/automations/botGraph"
 import { stageLabelsByNode, stageRefsOfNodes } from "lib/automations/botStage"
+import { triggerIssues } from "lib/automations/botTrigger"
 import type { EditorContextData } from "lib/automations/editorContext"
 import { type BotTemplateId, buildBotTemplate } from "lib/automations/templates"
 import type {
@@ -167,9 +168,10 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
     if (draft.nodes.length === 0) list.push("advancedAutomationBlockNoSteps")
     else if (!draft.startNodeId) list.push("advancedAutomationBlockNoStart")
     if (problemNodeIds.length > 0) list.push("advancedAutomationBlockSteps")
+    if (triggerIssues(draft.trigger).length > 0) list.push("advancedAutomationBlockTrigger")
     if (draft.nodes.some((n) => UNAVAILABLE_KINDS.has(n.kind))) list.push("advancedAutomationBlockTemplateUnavailable")
     return list
-  }, [draft.name, draft.channels, draft.nodes, draft.startNodeId, problemNodeIds.length])
+  }, [draft.name, draft.channels, draft.nodes, draft.startNodeId, draft.trigger, problemNodeIds.length])
 
   const { confirmLeave, leaveDialog } = useLeaveConfirm({
     dirty,
@@ -389,7 +391,7 @@ export function BotBuilderClient({ initial, context, seed }: Props) {
         {previewOpen ? (
           <BotPreviewPanel draft={draft} onClose={() => setPreviewOpen(false)} />
         ) : selectedId === START_NODE_ID ? (
-          <BotStartInspector draft={draft} dispatch={dispatch} onClose={closeInspector} />
+          <BotStartInspector draft={draft} dispatch={dispatch} onClose={closeInspector} ctx={context} lookups={lookups} webhook={initial?.webhook} />
         ) : selectedNode ? (
           <BotInspector
             node={selectedNode}

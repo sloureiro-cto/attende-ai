@@ -44,7 +44,15 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
 
   const systemLabel = useCallback(
     (effect: PreviewEffect) =>
-      t(automationsKey(effect.type === "handoff" && effect.to === "ai" ? "advancedAutomationEffect_handoff_ai" : `advancedAutomationEffect_${effect.type}`)),
+      t(
+        automationsKey(
+          effect.type === "handoff" && effect.to === "ai"
+            ? "advancedAutomationEffect_handoff_ai"
+            : effect.type === "delete_card" && effect.refused
+              ? "advancedAutomationEffect_delete_card_refused"
+              : `advancedAutomationEffect_${effect.type}`
+        )
+      ),
     [t]
   )
 
@@ -87,13 +95,18 @@ export function BotPreviewPanel({ draft, onClose }: Props) {
           next.push({ id: ++seq.current, side: "system", text: systemLabel(effect) })
         }
       }
+      // A step the preview refuses (deleting a lead) is said once, even when the engine reported no effect for it.
+      const refused = (res.data.unavailable ?? []).filter((u) => u.kind === "refused_in_preview")
+      if (refused.length > 0 && !res.data.effects.some((e) => e.type === "delete_card")) {
+        next.push({ id: ++seq.current, side: "system", text: t("advancedAutomationEffect_delete_card_refused") })
+      }
       setBubbles((b) => [...b, ...next])
       setState(res.data.state)
       setFinished(res.data.finished)
       setChoices(lastChoices)
       setReplyMode(lastMode)
     },
-    [channel, draft.edges, draft.nodes, draft.startNodeId, systemLabel]
+    [channel, draft.edges, draft.nodes, draft.startNodeId, systemLabel, t]
   )
 
   const restart = useCallback(() => {

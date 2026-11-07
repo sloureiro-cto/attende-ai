@@ -18,7 +18,7 @@ import {
   useStore,
 } from "reactflow"
 import { cn } from "@/lib/utils"
-import { useAutomationsT } from "components/automations/ui/useAutomationsT"
+import { automationsKey, useAutomationsT } from "components/automations/ui/useAutomationsT"
 import IconButton from "components/IconButton/IconButton"
 import { type BotBuilderAction, type BotDraft, START_NODE_ID, startPillPosition } from "lib/automations/botBuilderState"
 import { nodeIssues, nodeOutputs } from "lib/automations/botGraph"
@@ -74,7 +74,7 @@ function CanvasInner({
   // Domain -> ReactFlow nodes. Unchanged steps keep their object so memoized cards don't re-render
   // while another step is being edited.
   const startCaption = useMemo(() => {
-    const kind = t(draft.trigger.kind === "manual" ? "advancedAutomationTriggerManual" : "advancedAutomationTriggerNewConversation")
+    const kind = t(automationsKey(`advancedAutomationTrigger_${draft.trigger.kind}`))
     return showStats && stats
       ? `${kind}\n${t("advancedAutomationStatsStarted", { count: stats.started })} · ${t("advancedAutomationStatsRange")}`
       : kind

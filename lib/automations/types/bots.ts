@@ -29,7 +29,16 @@ export type AdvancedAutomationNode =
   | (NodeBase & { kind: "split"; paths: Array<{ id: string; name: string; percent: number }> })
   | (NodeBase & { kind: "goto_automation"; automationId: string })
   | (NodeBase & { kind: "stop" })
-  | (NodeBase & { kind: "set_field"; fieldId: string; value: string })
+  | (NodeBase & {
+      kind: "set_field"
+      /** Custom field id of the board, a JSYNQ CRM field (`email`, `phone`, `company`, `estimateRevenue`, `contactName`) or `card:title` / `card:owner`. */
+      fieldId: string
+      /** Variables allowed (`{{lead.name}}`, `{{answer}}`). */
+      value: string
+      projectId?: string
+      boardId?: string
+      fieldType?: string
+    })
   | (NodeBase & { kind: "move_stage"; columnId: string; projectId?: string; boardId?: string })
   | (NodeBase & {
       kind: "add_label"
@@ -56,16 +65,81 @@ export type AdvancedAutomationNode =
     })
   | (NodeBase & { kind: "webhook"; url: string })
   | (NodeBase & { kind: "send_meta_template"; templateId: string })
+  | (NodeBase & {
+      kind: "create_card"
+      projectId: string
+      boardId: string
+      columnId: string
+      title: string
+      fields?: Array<{ fieldId: string; value: string }>
+      ownerUserId?: string
+      linkConversation?: boolean
+    })
+  | (NodeBase & { kind: "duplicate_card"; columnId?: string; projectId?: string; boardId?: string })
+  | (NodeBase & { kind: "delete_card"; confirmed?: boolean })
+  | (NodeBase & { kind: "move_board"; projectId: string; boardId: string; columnId: string })
+  | (NodeBase & { kind: "set_value"; value: string })
+  | (NodeBase & { kind: "set_owner"; userId: string })
+  | (NodeBase & { kind: "remove_label"; labelText: string; projectId?: string })
+  | (NodeBase & { kind: "add_comment"; text: string })
+  | (NodeBase & { kind: "add_checklist_item"; title: string })
+  | (NodeBase & { kind: "check_checklist_item"; title: string; checked: boolean })
+  | (NodeBase & { kind: "mark_read" })
+  | (NodeBase & { kind: "assign_conversation"; userId: string })
+  | (NodeBase & { kind: "save_reply"; fieldId: string; projectId?: string; boardId?: string })
+  | (NodeBase & { kind: "wait_reply"; minutes: number; businessHoursOnly?: boolean; saveAnswerTo?: string })
 
 export type AdvancedAutomationNodeKind = AdvancedAutomationNode["kind"]
 
 export type AdvancedAutomationEdge = { id: string; from: string; output: string; to: string }
 
+export const CONVERSATION_TRIGGER_KINDS = [
+  "new_conversation",
+  "keyword",
+  "any_message",
+  "contact_no_reply",
+  "team_no_reply",
+  "handed_to_human",
+  "conversation_assigned",
+] as const
+export const CRM_TRIGGER_KINDS = ["card_created", "card_stage_changed", "card_label_added", "card_won", "card_lost"] as const
+export const TIME_TRIGGER_KINDS = ["scheduled", "date_field"] as const
+export const OTHER_TRIGGER_KINDS = ["webhook", "manual"] as const
+export const TRIGGER_KINDS = [...CONVERSATION_TRIGGER_KINDS, ...CRM_TRIGGER_KINDS, ...TIME_TRIGGER_KINDS, ...OTHER_TRIGGER_KINDS] as const
+export type AdvancedAutomationTriggerKind = (typeof TRIGGER_KINDS)[number]
+
+/** Same limits as the server (`TRIGGER_LIMITS`). */
+export const TRIGGER_LIMITS = { keywords: 20, keywordChars: 60, silenceMinutesMin: 5, silenceMinutesMax: 60 * 24 * 30 } as const
+
+export type AdvancedAutomationTriggerFilters = {
+  channels?: AutomationChannelBinding["channel"][]
+  projectId?: string
+  boardId?: string
+  columnIds?: string[]
+  /** Label names (case-insensitive). */
+  labels?: string[]
+}
+
 export type AdvancedAutomationTrigger = {
-  kind: "new_conversation" | "manual"
+  kind: AdvancedAutomationTriggerKind
   dedupeDays: number
   filter?: Record<string, unknown>
+  filters?: AdvancedAutomationTriggerFilters
+  oncePerLead?: boolean
+  keywords?: string[]
+  outsideBusinessHoursOnly?: boolean
+  minutes?: number
+  userId?: string
+  projectId?: string
+  boardId?: string
+  columnId?: string
+  labelText?: string
+  schedule?: { frequency: "daily" | "weekly"; time: string; weekdays?: number[] }
+  dateField?: { fieldId: string; offsetDays: number; time: string }
 }
+
+/** Webhook trigger state of a saved automation (the secret itself is never returned). */
+export type AdvancedAutomationWebhookInfo = { configured: boolean; setAt?: string | null; path: string }
 
 export type AdvancedAutomationIssue = { path: string; message: string; blocking?: boolean }
 
@@ -102,6 +176,7 @@ export type AdvancedAutomationDetail = {
   version: number
   updatedAt: string
   issues: AdvancedAutomationIssue[]
+  webhook?: AdvancedAutomationWebhookInfo
 }
 
 export type SaveAdvancedAutomationInput = {
@@ -136,8 +211,14 @@ export type PreviewEffect =
     }
   | { type: string; [key: string]: unknown }
 
+export type AdvancedAutomationPreviewUnavailable =
+  | { kind: "condition"; type: string }
+  | { kind: "ai_step"; nodeId: string }
+  | { kind: "refused_in_preview"; nodeId: string }
+
 export type AdvancedAutomationPreviewResult = {
   state: Record<string, unknown>
   effects: PreviewEffect[]
   finished: boolean
+  unavailable?: AdvancedAutomationPreviewUnavailable[]
 }

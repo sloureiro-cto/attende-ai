@@ -11,7 +11,8 @@ import { Dropdown, DropdownTrigger } from "components/ui/dropdown-menu"
 import { newBotId, SALES_BOT_LIMITS } from "lib/automations/botGraph"
 import type { AutomationsTranslationKey } from "lib/i18n/translations/automations"
 import type { Narrow } from "./types"
-import { CardFieldPicker, DurationField, FieldBlock, SwitchRow } from "../BotInspectorControls"
+import { CardFieldPicker } from "./CardFieldPicker"
+import { DurationField, FieldBlock, SwitchRow } from "../BotInspectorControls"
 
 const VARIABLES = ["{{lead.name}}", "{{lead.phone}}", "{{lead.email}}", "{{card.title}}"] as const
 
@@ -141,12 +142,12 @@ export function SendMessageFields({ node, channels, ctx, lookups, patch, t }: Na
       {node.replyMode === "free" || listLike ? (
         <FieldBlock label={t("advancedAutomationFieldSaveAnswer")} hint={t("advancedAutomationSaveAnswerHint")}>
           <CardFieldPicker
-            value={node.saveAnswerTo ?? ""}
-            onChange={(saveAnswerTo) => patch({ saveAnswerTo: saveAnswerTo || undefined })}
+            value={{ fieldId: node.saveAnswerTo ?? "" }}
+            onChange={(next) => patch({ saveAnswerTo: next.fieldId || undefined })}
             projects={ctx.crmProjects}
             lookups={lookups}
             t={t}
-            placeholder={t("advancedAutomationPickField")}
+            includeOwner={false}
           />
         </FieldBlock>
       ) : null}

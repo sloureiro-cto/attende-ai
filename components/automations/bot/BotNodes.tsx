@@ -59,6 +59,40 @@ function summarize(node: AdvancedAutomationNode, t: AutomationsTFn, stageLabel?:
       return node.to === "ai" ? t("advancedAutomationHandoffAiSummary") : t(`advancedAutomationAssign_${node.assignMode ?? "all_crm_members"}`)
     case "stop":
       return ""
+    case "create_card":
+      return node.columnId ? stageLabel || t("advancedAutomationSummaryStageSet") : t("advancedAutomationSummaryNotSet")
+    case "duplicate_card":
+      return node.columnId ? stageLabel || t("advancedAutomationSummaryStageSet") : t("advancedAutomationSummarySameStage")
+    case "delete_card":
+      return node.confirmed ? t("advancedAutomationSummaryDeleteCard") : t("advancedAutomationSummaryNotSet")
+    case "move_board":
+      return node.columnId ? stageLabel || t("advancedAutomationSummaryStageSet") : t("advancedAutomationSummaryNotSet")
+    case "set_value":
+      return node.value.trim() || t("advancedAutomationSummaryNotSet")
+    case "set_owner":
+    case "assign_conversation":
+      return node.userId ? t("advancedAutomationSummaryMemberSet") : t("advancedAutomationSummaryNotSet")
+    case "remove_label":
+      return node.labelText.trim() || t("advancedAutomationSummaryNotSet")
+    case "add_comment":
+      return node.text.trim() || t("advancedAutomationSummaryNotSet")
+    case "add_checklist_item":
+      return node.title.trim() || t("advancedAutomationSummaryNotSet")
+    case "check_checklist_item":
+      return node.title.trim()
+        ? t(node.checked ? "advancedAutomationSummaryCheck" : "advancedAutomationSummaryUncheck", { title: node.title.trim() })
+        : t("advancedAutomationSummaryNotSet")
+    case "mark_read":
+      return t("advancedAutomationSummaryMarkRead")
+    case "save_reply":
+      return node.fieldId ? t("advancedAutomationSummaryFieldSet") : t("advancedAutomationSummaryNotSet")
+    case "wait_reply": {
+      const { value, unit } = minutesParts(node.minutes)
+      return t("advancedAutomationSummaryWaitReply", {
+        value,
+        unit: t(unit === "days" ? "advancedAutomationUnitDays" : unit === "hours" ? "advancedAutomationUnitHours" : "advancedAutomationUnitMinutes"),
+      })
+    }
   }
 }
 

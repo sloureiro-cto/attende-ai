@@ -112,57 +112,6 @@ export function DurationField({
   )
 }
 
-/** Project -> custom field picker. Stores only the field id (the card's project decides at run time). */
-export function CardFieldPicker({
-  value,
-  onChange,
-  projects,
-  lookups,
-  t,
-  placeholder,
-}: {
-  value: string
-  onChange: (fieldId: string) => void
-  projects: IProject[]
-  lookups: BotLookups
-  t: AutomationsTFn
-  placeholder: string
-}) {
-  const [projectId, setProjectId] = useState(projects[0]?._id ?? "")
-  const { loadFields } = lookups
-  useEffect(() => {
-    if (projectId) loadFields(projectId)
-  }, [projectId, loadFields])
-
-  const loaded = lookups.fields[`${projectId}:`]
-  const items = useMemo(() => {
-    const list = (loaded?.data ?? []).map((f) => ({ value: f.fieldId, displayName: f.fieldName }))
-    return value && !list.some((i) => i.value === value) ? [{ value, displayName: value }, ...list] : list
-  }, [loaded?.data, value])
-
-  return (
-    <div className="flex flex-col gap-2">
-      {projects.length > 1 ? (
-        <BotSelect
-          size="small"
-          value={projectId}
-          onValueChange={setProjectId}
-          placeholder={t("advancedAutomationPickProject")}
-          items={projects.map((p) => ({ value: p._id, displayName: p.title ?? p._id }))}
-        />
-      ) : null}
-      <BotSelect
-        size="small"
-        value={value}
-        onValueChange={onChange}
-        placeholder={loaded?.status === "loading" ? t("advancedAutomationLoading") : placeholder}
-        items={items}
-        emptyContent={<p className="px-3 py-2 text-body-12 text-neutral-500">{t("advancedAutomationNoFields")}</p>}
-      />
-    </div>
-  )
-}
-
 /**
  * Project -> board -> column picker. Same data and components as the rule editor's "move card" action:
  * boards come from the project's tabs plus whatever the loaded columns reveal, columns are fetched per

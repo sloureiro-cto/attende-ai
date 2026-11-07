@@ -7,6 +7,22 @@ import { AiAgentFields } from "./AiAgentFields"
 import { ConditionFields } from "./ConditionFields"
 import { GotoBotFields } from "./GotoBotFields"
 import { HandoffFields } from "./HandoffFields"
+import {
+  AddChecklistItemFields,
+  AddCommentFields,
+  AssignConversationFields,
+  CheckChecklistItemFields,
+  CreateCardFields,
+  DeleteCardFields,
+  DuplicateCardFields,
+  MarkReadFields,
+  MoveBoardFields,
+  RemoveLabelFields,
+  SaveReplyFields,
+  SetOwnerFields,
+  SetValueFields,
+  WaitReplyFields,
+} from "./LeadFields"
 import { SendMessageFields } from "./SendMessageFields"
 import { SetFieldFields } from "./SetFieldFields"
 import { SplitFields } from "./SplitFields"
@@ -104,5 +120,33 @@ export function KindFields(props: KindProps) {
       return <HandoffFields {...props} node={node} />
     case "stop":
       return <p className="text-body-12 text-neutral-500">{props.t("advancedAutomationStopHint")}</p>
+    case "create_card":
+      return <CreateCardFields {...props} node={node} />
+    case "duplicate_card":
+      return <DuplicateCardFields {...props} node={node} />
+    case "delete_card":
+      return <DeleteCardFields {...props} node={node} />
+    case "move_board":
+      return <MoveBoardFields {...props} node={node} />
+    case "set_value":
+      return <SetValueFields {...props} node={node} />
+    case "set_owner":
+      return <SetOwnerFields {...props} node={node} />
+    case "remove_label":
+      return <RemoveLabelFields {...props} node={node} />
+    case "add_comment":
+      return <AddCommentFields {...props} node={node} />
+    case "add_checklist_item":
+      return <AddChecklistItemFields {...props} node={node} />
+    case "check_checklist_item":
+      return <CheckChecklistItemFields {...props} node={node} />
+    case "mark_read":
+      return <MarkReadFields {...props} node={node} />
+    case "assign_conversation":
+      return <AssignConversationFields {...props} node={node} />
+    case "save_reply":
+      return <SaveReplyFields {...props} node={node} />
+    case "wait_reply":
+      return <WaitReplyFields {...props} node={node} />
   }
 }

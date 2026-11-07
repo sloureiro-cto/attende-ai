@@ -2,7 +2,8 @@
 
 import { TextArea } from "components/TextArea/TextArea"
 import type { Narrow } from "./types"
-import { CardFieldPicker, FieldBlock } from "../BotInspectorControls"
+import { CardFieldPicker } from "./CardFieldPicker"
+import { FieldBlock } from "../BotInspectorControls"
 
 export function AiAgentFields({ node, ctx, lookups, patch, t }: Narrow<"ai_agent">) {
   return (
@@ -23,12 +24,12 @@ export function AiAgentFields({ node, ctx, lookups, patch, t }: Narrow<"ai_agent
       />
       <FieldBlock label={t("advancedAutomationFieldSaveAnswer")}>
         <CardFieldPicker
-          value={node.saveAnswerTo}
-          onChange={(saveAnswerTo) => patch({ saveAnswerTo })}
+          value={{ fieldId: node.saveAnswerTo }}
+          onChange={(next) => patch({ saveAnswerTo: next.fieldId })}
           projects={ctx.crmProjects}
           lookups={lookups}
           t={t}
-          placeholder={t("advancedAutomationPickField")}
+          includeOwner={false}
         />
       </FieldBlock>
     </>

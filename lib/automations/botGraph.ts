@@ -43,6 +43,21 @@ export function nodeOutputs(node: AdvancedAutomationNode): string[] {
       return [...node.paths.map((p) => p.id), "else"]
     case "ai_agent":
       return ["understood", "not_understood"]
+    case "wait_reply":
+      return ["answered", "no_reply"]
+    case "create_card":
+    case "duplicate_card":
+    case "delete_card":
+    case "move_board":
+    case "set_value":
+    case "set_owner":
+    case "remove_label":
+    case "add_comment":
+    case "add_checklist_item":
+    case "check_checklist_item":
+    case "mark_read":
+    case "assign_conversation":
+    case "save_reply":
     case "wait":
     case "set_field":
     case "move_stage":
@@ -115,6 +130,34 @@ export function createBotNode(kind: AdvancedAutomationNodeKind, x: number, y: nu
       return { ...base, kind, url: "" }
     case "send_meta_template":
       return { ...base, kind, templateId: "" }
+    case "create_card":
+      return { ...base, kind, projectId: "", boardId: "", columnId: "", title: "{{lead.name}}", linkConversation: true }
+    case "duplicate_card":
+      return { ...base, kind }
+    case "delete_card":
+      return { ...base, kind, confirmed: false }
+    case "move_board":
+      return { ...base, kind, projectId: "", boardId: "", columnId: "" }
+    case "set_value":
+      return { ...base, kind, value: "" }
+    case "set_owner":
+      return { ...base, kind, userId: "" }
+    case "remove_label":
+      return { ...base, kind, labelText: "" }
+    case "add_comment":
+      return { ...base, kind, text: "" }
+    case "add_checklist_item":
+      return { ...base, kind, title: "" }
+    case "check_checklist_item":
+      return { ...base, kind, title: "", checked: true }
+    case "mark_read":
+      return { ...base, kind }
+    case "assign_conversation":
+      return { ...base, kind, userId: "" }
+    case "save_reply":
+      return { ...base, kind, fieldId: "" }
+    case "wait_reply":
+      return { ...base, kind, minutes: 60 }
   }
 }
 
@@ -126,7 +169,7 @@ const PRESET_FIELDS: Record<AdvancedAutomationNodeKind, readonly string[]> = {
   split: ["paths", "label"],
   goto_automation: ["automationId", "label"],
   stop: ["label"],
-  set_field: ["fieldId", "value", "label"],
+  set_field: ["fieldId", "value", "projectId", "boardId", "fieldType", "label"],
   move_stage: ["columnId", "projectId", "boardId", "label"],
   add_label: ["labelText", "labelColor", "projectId", "label"],
   create_task: ["title", "dueInHours", "label"],
@@ -134,6 +177,20 @@ const PRESET_FIELDS: Record<AdvancedAutomationNodeKind, readonly string[]> = {
   handoff: ["message", "to", "agentId", "assignMode", "userIds", "specificUserId", "workspaceRoleId", "label"],
   webhook: ["url", "label"],
   send_meta_template: ["templateId", "label"],
+  create_card: ["projectId", "boardId", "columnId", "title", "fields", "ownerUserId", "linkConversation", "label"],
+  duplicate_card: ["projectId", "boardId", "columnId", "label"],
+  delete_card: ["label"],
+  move_board: ["projectId", "boardId", "columnId", "label"],
+  set_value: ["value", "label"],
+  set_owner: ["userId", "label"],
+  remove_label: ["labelText", "projectId", "label"],
+  add_comment: ["text", "label"],
+  add_checklist_item: ["title", "label"],
+  check_checklist_item: ["title", "checked", "label"],
+  mark_read: ["label"],
+  assign_conversation: ["userId", "label"],
+  save_reply: ["fieldId", "projectId", "boardId", "label"],
+  wait_reply: ["minutes", "businessHoursOnly", "saveAnswerTo", "label"],
 }
 
 /** A preset comes from a drag-and-drop payload, which anything on the page (or outside it) can forge: keep only known fields. */
@@ -168,6 +225,9 @@ type NodeIssueCode =
   | "webhook_url_invalid"
   | "template_missing"
   | "handoff_target_missing"
+  | "user_missing"
+  | "value_missing"
+  | "delete_not_confirmed"
 
 /** Per-step completeness check used to show "needs setup" on the canvas and block activation. */
 export function nodeIssues(node: AdvancedAutomationNode): NodeIssueCode[] {
@@ -227,6 +287,42 @@ export function nodeIssues(node: AdvancedAutomationNode): NodeIssueCode[] {
       if (node.assignMode === "specific_user" && !hex24(node.specificUserId)) issues.push("handoff_target_missing")
       if (node.assignMode === "member_list" && !node.userIds?.length) issues.push("handoff_target_missing")
       if (node.assignMode === "by_workspace_role" && !hex24(node.workspaceRoleId)) issues.push("handoff_target_missing")
+      return issues
+    case "create_card":
+      if (!hex24(node.columnId)) issues.push("column_missing")
+      if (!node.title.trim()) issues.push("title_missing")
+      if ((node.fields ?? []).some((f) => !f.fieldId.trim())) issues.push("field_missing")
+      return issues
+    case "duplicate_card":
+      return issues
+    case "delete_card":
+      if (node.confirmed !== true) issues.push("delete_not_confirmed")
+      return issues
+    case "move_board":
+      if (!hex24(node.columnId)) issues.push("column_missing")
+      return issues
+    case "set_value":
+      if (!node.value.trim()) issues.push("value_missing")
+      return issues
+    case "set_owner":
+    case "assign_conversation":
+      if (!hex24(node.userId)) issues.push("user_missing")
+      return issues
+    case "remove_label":
+      if (!node.labelText.trim()) issues.push("label_missing")
+      return issues
+    case "add_comment":
+      if (!node.text.trim()) issues.push("text_missing")
+      return issues
+    case "add_checklist_item":
+    case "check_checklist_item":
+      if (!node.title.trim()) issues.push("title_missing")
+      return issues
+    case "save_reply":
+      if (!node.fieldId.trim()) issues.push("field_missing")
+      return issues
+    case "mark_read":
+    case "wait_reply":
       return issues
     case "stop":
       return issues

@@ -137,3 +137,13 @@ export async function previewAdvancedAutomationAction(input: {
   if (!res.data?.state) return { success: false, error: "" }
   return { success: true, data: res.data }
 }
+
+/** Generates (or rotates) the webhook secret of an automation. The secret is returned once and never again. */
+export async function rotateAdvancedAutomationWebhookSecretAction(
+  id: string
+): Promise<ActionResult<{ secret: string; path: string; header: string }>> {
+  const res = await call<{ secret: string; path: string; header: string }>("POST", `${BASE}/${enc(id)}/webhook-secret`)
+  if (!res.ok) return res.error
+  if (!res.data?.secret) return { success: false, error: "" }
+  return { success: true, data: res.data }
+}
