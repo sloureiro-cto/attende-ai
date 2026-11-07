@@ -4,6 +4,8 @@ import { ReportsView } from "components/bots-app/reports/ReportsView"
 import { parseReportFilters } from "lib/attende/reports/model"
 
 export const metadata: Metadata = { title: "Reports" }
+/** A view may start a bounded reports sync that runs after the response (`waitUntil`, ~20 s): room for it. */
+export const maxDuration = 60
 
 type SearchParams = Record<string, string | string[] | undefined>
 

@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { agentViewFixture, sdrTemplateFixture } from "lib/attende/agents/fixtures"
+import type { JsynqAgentView } from "lib/attende/agents/types"
 import { AgentsView } from "./AgentsView"
 
 jest.mock("next/navigation", () => ({ useRouter: () => ({ push: jest.fn(), refresh: jest.fn() }) }))
@@ -9,9 +10,11 @@ const showToast = jest.fn()
 jest.mock("app/utils/showToast", () => ({ showToast: (...a: unknown[]) => showToast(...a) }))
 const goLiveAttendeAgentAction = jest.fn()
 const pauseAttendeAgentAction = jest.fn()
+const setJsynqAgentLineAction = jest.fn()
 jest.mock("actions/attende/agents", () => ({
   goLiveAttendeAgentAction: (...a: unknown[]) => goLiveAttendeAgentAction(...a),
   pauseAttendeAgentAction: (...a: unknown[]) => pauseAttendeAgentAction(...a),
+  setJsynqAgentLineAction: (...a: unknown[]) => setJsynqAgentLineAction(...a),
 }))
 
 beforeEach(() => jest.clearAllMocks())
@@ -136,5 +139,60 @@ describe("AgentsView", () => {
     render(<AgentsView initialAgents={[]} initialError={{ success: false, status: 403, code: "ATTENDE_NOT_ENTITLED" }} />)
     expect(screen.getByText("This company has no Attende-ai plan, so AI agents are not available.")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "See plans" })).toHaveAttribute("href", "/billing")
+  })
+
+  describe("agents created in JSYNQ", () => {
+    const jsynqAgent = (over: Partial<JsynqAgentView> = {}): JsynqAgentView => ({
+      kind: "jsynq",
+      id: "j1",
+      agentId: "j1",
+      name: "Sales bot",
+      model: "gpt-4.1-mini",
+      role: "sales",
+      status: "live",
+      lines: [{ channel: "whatsapp", sessionId: "s1", bindingId: "b1", label: "Main", exists: true, connected: true, active: true }],
+      editPath: "/agents/j1",
+      ...over,
+    })
+
+    it("lists them apart from the Attende agents, says they are edited in JSYNQ and links there", () => {
+      render(<AgentsView initialAgents={[agentViewFixture({ id: "a1", name: "Front desk", status: "draft", lines: [] })]} initialJsynqAgents={[jsynqAgent()]} />)
+      expect(screen.getByText("2 agents")).toBeInTheDocument()
+      const section = screen.getByRole("region", { name: "Created in JSYNQ" })
+      const card = within(section).getByTestId("jsynq-agent-card")
+      expect(within(card).getByRole("heading", { name: "Sales bot" })).toBeInTheDocument()
+      expect(within(card).getByText("Model: gpt-4.1-mini")).toBeInTheDocument()
+      expect(within(card).getByText(/cannot be edited here/)).toBeInTheDocument()
+      expect(within(card).getByRole("link", { name: /Edit in JSYNQ/ })).toHaveAttribute("href", expect.stringMatching(/\/agents\/j1$/))
+      // No Attende wizard actions on it.
+      expect(within(card).queryByRole("link", { name: /^Edit:/ })).toBeNull()
+    })
+
+    it("a workspace with only JSYNQ agents is not told to create its first agent", () => {
+      render(<AgentsView initialAgents={[]} initialJsynqAgents={[jsynqAgent()]} />)
+      expect(screen.queryByRole("heading", { name: "Create your first agent" })).toBeNull()
+      expect(screen.getByRole("link", { name: /New agent/ })).toHaveAttribute("href", "/ai-agents/new")
+    })
+
+    it("switches one channel through the binding action and shows the server's answer", async () => {
+      setJsynqAgentLineAction.mockResolvedValueOnce({ success: true, data: jsynqAgent({ status: "paused", lines: [{ ...jsynqAgent().lines[0]!, active: false }] }) })
+      render(<AgentsView initialAgents={[]} initialJsynqAgents={[jsynqAgent()]} />)
+      const toggle = screen.getByRole("switch", { name: "Main" })
+      expect(toggle).toHaveAttribute("aria-checked", "true")
+      await userEvent.click(toggle)
+      expect(setJsynqAgentLineAction).toHaveBeenCalledWith("j1", "b1", false)
+      expect(await screen.findByRole("switch", { name: "Main" })).toHaveAttribute("aria-checked", "false")
+      expect(showToast).toHaveBeenCalledWith("success", "Channel updated.")
+    })
+
+    it("explains a refused switch (an automation runs on the line) and keeps the state", async () => {
+      setJsynqAgentLineAction.mockResolvedValueOnce({ success: false, status: 409, code: "ATTENDE_AUTOMATION_ON_LINE", details: { lines: [{ channel: "whatsapp", sessionId: "s1" }] } })
+      const off = jsynqAgent({ status: "paused", lines: [{ ...jsynqAgent().lines[0]!, active: false }] })
+      render(<AgentsView initialAgents={[]} initialJsynqAgents={[off]} />)
+      await userEvent.click(screen.getByRole("switch", { name: "Main" }))
+      expect(setJsynqAgentLineAction).toHaveBeenCalledWith("j1", "b1", true)
+      expect(screen.getByRole("switch", { name: "Main" })).toHaveAttribute("aria-checked", "false")
+      expect(await screen.findByText(/An active automation already answers on Main/)).toBeInTheDocument()
+    })
   })
 })

@@ -1,8 +1,9 @@
-import { listAttendeAgentsAction } from "actions/attende/agents"
+import { listWorkspaceAgentsAction } from "actions/attende/agents"
 import { listInstagramSessionsAction } from "actions/instagram-lite/sessions"
 import { listAdvancedAutomationsAction } from "actions/messaging-automations/advancedAutomations"
 import { listSmsSessionsAction } from "actions/sms-lite/sessions"
 import { listWhatsAppSessionsAction } from "actions/whatsapp-lite"
+import { BOTS_ROUTES } from "components/bots-app/brand"
 import type { AutomationChannel } from "lib/automations/types"
 import {
   attachAgents,
@@ -43,7 +44,7 @@ export async function loadLines({ withBots = true }: Options = {}): Promise<Line
     listInstagramSessionsAction(),
     listSmsSessionsAction(),
     withBots ? settle(listAdvancedAutomationsAction({ limit: BOTS_PAGE_LIMIT })) : Promise.resolve(null),
-    withBots ? settle(listAttendeAgentsAction()) : Promise.resolve(null),
+    withBots ? settle(listWorkspaceAgentsAction()) : Promise.resolve(null),
   ])
 
   const failedChannels: AutomationChannel[] = []
@@ -57,7 +58,8 @@ export async function loadLines({ withBots = true }: Options = {}): Promise<Line
 
   const botList = bots && bots.success ? bots.data : null
   if (botList) lines = attachBots(lines, botList.items)
-  const agentList = agents && agents.success ? agents.data : null
+  // Attende's agents and the ones that exist only in JSYNQ (those open the agents list, where they are switched).
+  const agentList = agents && agents.success ? [...agents.data.agents, ...agents.data.jsynqAgents.map((a) => ({ ...a, href: BOTS_ROUTES.agents }))] : null
   if (agentList) lines = attachAgents(lines, agentList)
 
   return {

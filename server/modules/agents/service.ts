@@ -11,9 +11,9 @@ import { runDryRun, type DryRunResult } from './lib/dryRun';
 import { validateAgentForm, type FromTemplateBody, type PatchSetupBody } from './lib/formSchema';
 import { agentDisplayName, compileAgentProfile } from './lib/promptCompiler';
 import { AgentSetupModel, type AgentLine, type IAgentSetup } from './models';
-import type { AgentPorts, LineStatus } from './ports';
+import type { AgentPorts, BindingInfo, LineStatus, WorkspaceAgentInfo } from './ports';
 import { ATTENDE_TEMPLATES, getTemplate } from './templates';
-import { ATTENDE_AGENT_ERROR_CODES as CODES, type AttendeeAgentForm, type AttendeeChannel, type AttendeeTemplateKey } from './types';
+import { ATTENDE_AGENT_ERROR_CODES as CODES, ATTENDE_CHANNELS, type AttendeeAgentForm, type AttendeeChannel, type AttendeeTemplateKey } from './types';
 
 export type AgentContext = { workspaceId: string; userId: string };
 
@@ -37,6 +37,38 @@ export type AgentView = {
   updatedAt: string;
   warnings?: string[];
 };
+
+/**
+ * An agent that exists only in JSYNQ (created there, not by the Attende wizard). Attende shows it next to its own
+ * agents and can switch each of its channels on or off (its `all_inbound` bindings, `POST /api/automation-bindings/:id/
+ * pause|resume`); everything else is edited in JSYNQ (`editPath` on the JSYNQ app). JSYNQ's own system agents
+ * (`isSystem`: the workspace's default assistant, the auto lead creator) are never listed.
+ */
+export type JsynqAgentView = {
+  kind: 'jsynq';
+  /** The JSYNQ agent id (there is no Attende setup). */
+  id: string;
+  agentId: string;
+  name: string;
+  description?: string;
+  /** `modelConfig.model`, when JSYNQ returns it. */
+  model?: string;
+  /** JSYNQ's `category` (`sales`, `support`, ...), else its `type`. */
+  role?: string;
+  status: AgentStatus;
+  lines: Array<{ channel: AttendeeChannel; sessionId: string; bindingId: string; exists: boolean; connected: boolean; label?: string; active: boolean }>;
+  /** Path of the agent's page in the JSYNQ app (prefix it with the JSYNQ URL). */
+  editPath: string;
+};
+
+export type AgentsListing = { agents: AgentView[]; jsynqAgents: JsynqAgentView[] };
+
+/** The JSYNQ app's agent page (`/agents/:id`, which opens the agent editor). */
+export const jsynqAgentEditPath = (agentId: string) => `/agents/${encodeURIComponent(agentId)}`;
+
+/** A channel an agent answers on: an `all_inbound` binding that is not finished, on a channel Attende knows. */
+const isChannelBinding = (b: BindingInfo): b is BindingInfo & { agentId: string; sessionId: string } =>
+  !!b.agentId && !!b.sessionId && b.targetType === 'all_inbound' && b.status !== 'completed' && (ATTENDE_CHANNELS as readonly string[]).includes(b.channel);
 
 /** A `creating` setup older than this is a crashed create: a retry may take it over. */
 export const CREATE_STALE_MS = 2 * 60_000;
@@ -71,6 +103,95 @@ export class AgentService {
       offset += r.lines.length;
       return this.render(r, agents.get(String(r.agentId)) ?? null, statuses, ls);
     });
+  }
+
+  /**
+   * The agents page: Attende's own agents (as `list`) plus the workspace's agents that exist only in JSYNQ. One read of
+   * each JSYNQ list serves both.
+   */
+  async listAll(workspaceId: string): Promise<AgentsListing> {
+    const [agents, jsynqAgents] = await Promise.all([this.list(workspaceId), this.listJsynq(workspaceId)]);
+    return { agents, jsynqAgents };
+  }
+
+  /** Agents of the workspace that exist only in JSYNQ, in JSYNQ's order (by name). */
+  async listJsynq(workspaceId: string): Promise<JsynqAgentView[]> {
+    const ours = await this.attendeAgentIds(workspaceId);
+    const [infos, bindings] = await viaJsynq(() => Promise.all([this.ports.listAgentInfos(), this.ports.listBindingInfos()]));
+    const foreign = infos.filter((a) => !a.isSystem && !ours.has(a.id));
+    if (foreign.length === 0) return [];
+    const byAgent = new Map<string, Array<BindingInfo & { agentId: string; sessionId: string }>>();
+    for (const b of bindings) if (isChannelBinding(b)) byAgent.set(b.agentId, [...(byAgent.get(b.agentId) ?? []), b]);
+    const all = foreign.flatMap((a) => (byAgent.get(a.id) ?? []).map((b) => ({ channel: b.channel as AttendeeChannel, sessionId: b.sessionId })));
+    const statuses = all.length ? await viaJsynq(() => this.ports.lineStatuses(all)) : [];
+    const statusOf = new Map(statuses.map((s) => [`${s.channel}:${s.sessionId}`, s]));
+    return foreign.map((a) => this.renderJsynq(a, byAgent.get(a.id) ?? [], statusOf));
+  }
+
+  /**
+   * Switches one channel of a JSYNQ-only agent on or off (its binding's pause / resume). Turning one on follows the
+   * same conflict rule as an Attende agent's go-live: refused (409 `ATTENDE_AUTOMATION_ON_LINE`) on a line where an
+   * active advanced automation runs. Attende's own agents use go-live / pause instead (404 here).
+   */
+  async setJsynqLine(ctx: AgentContext, agentId: string, bindingId: string, active: boolean): Promise<JsynqAgentView> {
+    const ours = await this.attendeAgentIds(ctx.workspaceId);
+    const [infos, bindings] = await viaJsynq(() => Promise.all([this.ports.listAgentInfos(), this.ports.listBindingInfos()]));
+    const agent = infos.find((a) => a.id === agentId && !a.isSystem && !ours.has(a.id));
+    if (!agent) throw codedError(404, CODES.AGENT_NOT_FOUND, 'Agent not found');
+    const binding = bindings.find((b) => b.id === bindingId);
+    if (!binding || !isChannelBinding(binding) || binding.agentId !== agentId) throw codedError(404, CODES.AGENT_NOT_FOUND, 'Channel not found for this agent');
+
+    if (active && binding.status !== 'active') {
+      const automated = new Set((await activeSessions(ctx.workspaceId)).map((s) => `${s.channel}:${s.sessionId.toLowerCase()}`));
+      if (automated.has(`${binding.channel}:${binding.sessionId.toLowerCase()}`)) {
+        throw codedError(409, CODES.AUTOMATION_ON_LINE, 'An active automation runs on this line. Pause it first.', {
+          lines: [{ channel: binding.channel, sessionId: binding.sessionId }],
+        });
+      }
+      await viaJsynq(() => this.ports.resumeBinding(binding.id));
+    } else if (!active && binding.status === 'active') {
+      // Billing pauses only ever touch Attende's own bindings, so nothing resumes this behind the person's back.
+      await viaJsynq(() => this.ports.pauseBinding(binding.id));
+    }
+    log.info('agent.jsynq_line_set', { workspaceId: ctx.workspaceId, agentId, bindingId, active });
+    const fresh = await viaJsynq(() => this.ports.listBindingInfos());
+    const lines = fresh.filter((b): b is BindingInfo & { agentId: string; sessionId: string } => isChannelBinding(b) && b.agentId === agentId);
+    const statuses = await viaJsynq(() => this.ports.lineStatuses(lines.map((l) => ({ channel: l.channel as AttendeeChannel, sessionId: l.sessionId }))));
+    return this.renderJsynq(agent, lines, new Map(statuses.map((s) => [`${s.channel}:${s.sessionId}`, s])));
+  }
+
+  /** JSYNQ agent ids Attende created (ready setups and creates in flight or left behind). */
+  private async attendeAgentIds(workspaceId: string): Promise<Set<string>> {
+    const rows = await AgentSetupModel.find({ workspaceId }).select('agentId pending').lean<Array<Pick<IAgentSetup, 'agentId' | 'pending'>>>();
+    return new Set(rows.flatMap((r) => [r.agentId, r.pending?.agentId].filter((id): id is string => !!id).map(String)));
+  }
+
+  private renderJsynq(agent: WorkspaceAgentInfo, bindings: Array<BindingInfo & { sessionId: string }>, statusOf: Map<string, LineStatus>): JsynqAgentView {
+    const lines = bindings.map((b) => {
+      const ls = statusOf.get(`${b.channel}:${b.sessionId}`);
+      return {
+        channel: b.channel as AttendeeChannel,
+        sessionId: b.sessionId,
+        bindingId: b.id,
+        exists: ls?.exists ?? false,
+        connected: ls?.connected ?? false,
+        ...(ls?.label ? { label: ls.label } : {}),
+        active: b.status === 'active',
+      };
+    });
+    const role = agent.category ?? agent.type;
+    return {
+      kind: 'jsynq',
+      id: agent.id,
+      agentId: agent.id,
+      name: agent.name,
+      ...(agent.description ? { description: agent.description } : {}),
+      ...(agent.model ? { model: agent.model } : {}),
+      ...(role ? { role } : {}),
+      status: lines.length === 0 ? 'draft' : lines.some((l) => l.active) ? 'live' : 'paused',
+      lines,
+      editPath: jsynqAgentEditPath(agent.id),
+    };
   }
 
   async get(workspaceId: string, id: string): Promise<AgentView> {

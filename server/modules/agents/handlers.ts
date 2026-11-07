@@ -39,10 +39,20 @@ export const postFromTemplate = route(guards, async (http) => {
   return ok(view, created ? 201 : 200);
 });
 
+/** `{agents, jsynqAgents}`: Attende's own agents, then the ones that exist only in JSYNQ (see `JsynqAgentView`). */
 export const listAgents = route(guards, async (http) => {
   const { ctx, agents } = services(http);
-  return ok({ agents: await agents.list(ctx.workspaceId) });
+  return ok(await agents.listAll(ctx.workspaceId));
 });
+
+/** `POST /api/attende/agents/jsynq/:agentId/bindings/:bindingId/{pause,resume}`: one channel of a JSYNQ-only agent. */
+const setJsynqLine = (active: boolean) =>
+  route(guards, async (http) => {
+    const { ctx, agents } = services(http);
+    return ok(await agents.setJsynqLine(ctx, String(http.params.agentId), String(http.params.bindingId), active));
+  });
+export const postJsynqLinePause = setJsynqLine(false);
+export const postJsynqLineResume = setJsynqLine(true);
 
 export const getAgent = route(guards, async (http) => {
   const { ctx, agents } = services(http);

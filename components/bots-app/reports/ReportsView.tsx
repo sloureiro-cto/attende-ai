@@ -1,6 +1,7 @@
 "use client"
 
 import { Calendar, Refresh } from "iconsax-react"
+import { useEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
 import type { ReportData } from "actions/attende/reports"
 import { formatTime } from "lib/attende/format"
@@ -70,6 +71,24 @@ function PeriodSummary({ overview, filters, i18n }: { overview: OverviewResponse
   )
 }
 
+/** While the reports are "preparing", check again every 20 s (each check also lets the server continue the backfill). */
+export const PREPARING_POLL_MS = 20_000
+const PREPARING_POLL_MAX = 45
+
+function usePreparingPoll(preparing: boolean, reload: () => void) {
+  const polls = useRef(0)
+  const latest = useRef(reload)
+  latest.current = reload
+  useEffect(() => {
+    if (!preparing || polls.current >= PREPARING_POLL_MAX) return
+    const timer = window.setTimeout(() => {
+      polls.current += 1
+      latest.current()
+    }, PREPARING_POLL_MS)
+    return () => window.clearTimeout(timer)
+  }, [preparing])
+}
+
 /** The reports dashboard. Server renders the first answer; later filter changes go through the server action. */
 export function ReportsView({ initial }: Props) {
   const i18n = useAttendeReportsT()
@@ -77,6 +96,8 @@ export function ReportsView({ initial }: Props) {
   const { state, load, reload } = useReportData(initial)
   const { filters, preset, data, error, loading } = state
   const overview = data?.overview ?? null
+
+  usePreparingPoll(overview?.status?.state === "preparing" && !loading && !error, reload)
 
   const hasFilters = filters.channel !== null || filters.agentId !== null
   const reset = () => load({ ...filters, ...presetRange(30), channel: null, agentId: null }, 30)

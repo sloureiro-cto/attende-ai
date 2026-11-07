@@ -9,6 +9,18 @@ export type JsynqAgent = {
   description?: string;
   systemPrompt?: string;
   isActive?: boolean;
+  /** `specialized` | `orchestrator`. */
+  type?: string;
+  /** `sales`, `support`, `marketing`, ... */
+  category?: string;
+  modelConfig?: { provider?: string; model?: string } | null;
+  /**
+   * Agents JSYNQ creates for itself (`SeedDefaultAgentService`: the workspace's default assistant; the auto lead
+   * creator). Never a customer's agent.
+   */
+  isSystem?: boolean;
+  isTemplate?: boolean;
+  parentAgentId?: string | null;
 };
 
 export type JsynqBinding = {

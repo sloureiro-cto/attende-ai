@@ -47,6 +47,8 @@ export const ATTENDE_ROUTES: AttendeRoute[] = [
   { method: 'GET', path: '/api/attende/agents/:id/knowledge', handler: agents.listKnowledge },
   { method: 'POST', path: '/api/attende/agents/:id/knowledge', handler: agents.postKnowledge },
   { method: 'DELETE', path: '/api/attende/agents/:id/knowledge/:documentId', handler: agents.deleteKnowledge },
+  { method: 'POST', path: '/api/attende/agents/jsynq/:agentId/bindings/:bindingId/pause', handler: agents.postJsynqLinePause },
+  { method: 'POST', path: '/api/attende/agents/jsynq/:agentId/bindings/:bindingId/resume', handler: agents.postJsynqLineResume },
 
   { method: 'GET', path: '/api/attende/funnel', handler: funnel.getFunnel },
   { method: 'GET', path: '/api/attende/funnel/stages', handler: funnel.getFunnelStages },

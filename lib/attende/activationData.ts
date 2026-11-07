@@ -1,6 +1,6 @@
-import { listAttendeAgentsAction } from "actions/attende/agents"
+import { listWorkspaceAgentsAction } from "actions/attende/agents"
 import { getUsersFromWorkspace } from "actions/users/getUsersFromWorkspace"
-import type { AgentView } from "lib/attende/agents/types"
+import type { AgentView, JsynqAgentView } from "lib/attende/agents/types"
 import { loadInboxOverviewAction } from "lib/bots-app/inbox/actions"
 import type { BotsLine } from "lib/bots-app/lines"
 import { loadLines } from "lib/bots-app/loadLines"
@@ -10,6 +10,8 @@ export type ActivationData = {
   lines: BotsLine[]
   failedChannels: string[]
   agents: AgentView[] | null
+  /** Agents that exist only in JSYNQ; `null` with `agents`. */
+  jsynqAgents?: JsynqAgentView[] | null
   inbox: { needsReply: number; unread: number } | null
   /** People in the workspace, including you. */
   teamMembers: number | null
@@ -21,14 +23,15 @@ type Options = { workspaceId: string; withInbox?: boolean; withTeam?: boolean }
 export async function loadActivationData({ workspaceId, withInbox = true, withTeam = true }: Options): Promise<ActivationData> {
   const [lines, agents, inbox, members] = await Promise.all([
     loadLines({ withBots: false }),
-    listAttendeAgentsAction().catch(() => null),
+    listWorkspaceAgentsAction().catch(() => null),
     withInbox ? loadInboxOverviewAction().catch(() => null) : Promise.resolve(null),
     withTeam && workspaceId ? getUsersFromWorkspace(workspaceId).catch(() => null) : Promise.resolve(null),
   ])
   return {
     lines: lines.lines,
     failedChannels: lines.failedChannels,
-    agents: agents && agents.success ? agents.data : null,
+    agents: agents && agents.success ? agents.data.agents : null,
+    jsynqAgents: agents && agents.success ? agents.data.jsynqAgents : null,
     inbox: inbox && inbox.success ? { needsReply: inbox.data.needsReply, unread: inbox.data.unread } : null,
     teamMembers: members && members.success && Array.isArray(members.data) ? members.data.length : null,
   }

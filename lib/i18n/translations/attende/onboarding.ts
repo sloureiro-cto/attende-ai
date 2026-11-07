@@ -52,6 +52,28 @@ export const onboardingEntries = {
   },
   actCodeChannelUnknown: { en: "We couldn't check your channels.", pt: "Não foi possível verificar os seus canais.", es: "No pudimos verificar tus canales." },
   actCodeAgentCreated: { en: "Agent created: {agent}.", pt: "Agente criado: {agent}.", es: "Agente creado: {agent}." },
+  actCodeAgentJsynq: { en: "Your AI agents were created in JSYNQ.", pt: "Seus agentes de IA foram criados no JSYNQ.", es: "Tus agentes de IA se crearon en JSYNQ." },
+  actCodeKnowledgeJsynq: {
+    en: "What your JSYNQ agents know is set up in JSYNQ.",
+    pt: "O que seus agentes do JSYNQ sabem é configurado no JSYNQ.",
+    es: "Lo que saben tus agentes de JSYNQ se configura en JSYNQ.",
+  },
+  actCodeTestJsynq: { en: "Agents made in JSYNQ are tested in JSYNQ.", pt: "Agentes criados no JSYNQ são testados no JSYNQ.", es: "Los agentes creados en JSYNQ se prueban en JSYNQ." },
+  actCodeActiveJsynq: {
+    en: "An agent created in JSYNQ is answering customers.",
+    pt: "Um agente criado no JSYNQ está atendendo clientes.",
+    es: "Un agente creado en JSYNQ está atendiendo clientes.",
+  },
+  actCodePausedJsynq: {
+    en: "Your JSYNQ agents are turned off. Turn one on in a channel.",
+    pt: "Seus agentes do JSYNQ estão desligados. Ligue um deles em um canal.",
+    es: "Tus agentes de JSYNQ están desactivados. Activa uno en un canal.",
+  },
+  actCodeNeedsChannelJsynq: {
+    en: "Your JSYNQ agents are not on any channel. Connect one in JSYNQ.",
+    pt: "Seus agentes do JSYNQ não estão em nenhum canal. Conecte um deles no JSYNQ.",
+    es: "Tus agentes de JSYNQ no están en ningún canal. Conecta uno en JSYNQ.",
+  },
   actCodeAgentNone: { en: "No AI agent yet.", pt: "Nenhum agente de IA ainda.", es: "Aún no hay agentes de IA." },
   actCodeAgentsUnknown: { en: "We couldn't check your AI agents.", pt: "Não foi possível verificar os seus agentes de IA.", es: "No pudimos verificar tus agentes de IA." },
   actCodeKnowledgeAdded: { en: "Documents sent.", pt: "Documentos enviados.", es: "Documentos enviados." },

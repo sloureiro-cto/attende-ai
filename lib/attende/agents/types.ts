@@ -74,6 +74,26 @@ export type AgentView = {
   warnings?: Array<"not_tested" | "no_documents" | string>
 }
 
+/**
+ * An agent that exists only in JSYNQ (created there, not by the Attende wizard). Attende lists it and switches each of
+ * its channels on or off; anything else is edited in JSYNQ (`editPath`, on the JSYNQ app).
+ */
+export type JsynqAgentView = {
+  kind: "jsynq"
+  id: string
+  agentId: string
+  name: string
+  description?: string
+  model?: string
+  role?: string
+  status: AgentStatus
+  lines: Array<AgentLineView & { bindingId: string }>
+  editPath: string
+}
+
+/** `GET /api/attende/agents`. */
+export type AgentsListing = { agents: AgentView[]; jsynqAgents: JsynqAgentView[] }
+
 export type IndexStatus = "pending" | "processing" | "ready" | "failed" | "skipped"
 export type KnowledgeDocument = AgentDocument & { indexStatus: IndexStatus; pageCount?: number; errorMessage?: string }
 

@@ -26,6 +26,28 @@ const entries = {
   listError: { en: "We could not load your agents.", pt: "Não foi possível carregar os seus agentes.", es: "No pudimos cargar tus agentes." },
   agentsCountOne: { en: "1 agent", pt: "1 agente", es: "1 agente" },
   agentsCountOther: { en: "{count} agents", pt: "{count} agentes", es: "{count} agentes" },
+  jsynqSectionTitle: { en: "Created in JSYNQ", pt: "Criados no JSYNQ", es: "Creados en JSYNQ" },
+  jsynqSectionHint: {
+    en: "Agents you built in JSYNQ. Here you can turn each channel on or off; to change what they say or know, edit them in JSYNQ.",
+    pt: "Agentes que você montou no JSYNQ. Aqui você liga ou desliga cada canal; para mudar o que eles dizem ou sabem, edite no JSYNQ.",
+    es: "Agentes que creaste en JSYNQ. Aquí puedes activar o desactivar cada canal; para cambiar lo que dicen o saben, edítalos en JSYNQ.",
+  },
+  jsynqBadge: { en: "Created in JSYNQ", pt: "Criado no JSYNQ", es: "Creado en JSYNQ" },
+  jsynqNotEditable: {
+    en: "This agent was not made with the Attende setup, so it cannot be edited here.",
+    pt: "Este agente não foi criado pelo assistente do Attende, então não pode ser editado aqui.",
+    es: "Este agente no se creó con el asistente de Attende, así que no se puede editar aquí.",
+  },
+  jsynqEdit: { en: "Edit in JSYNQ", pt: "Editar no JSYNQ", es: "Editar en JSYNQ" },
+  jsynqModel: { en: "Model: {model}", pt: "Modelo: {model}", es: "Modelo: {model}" },
+  jsynqNoChannels: {
+    en: "Not on any channel yet. Connect it to a channel in JSYNQ.",
+    pt: "Ainda não está em nenhum canal. Conecte-o a um canal no JSYNQ.",
+    es: "Aún no está en ningún canal. Conéctalo a un canal en JSYNQ.",
+  },
+  jsynqLineOn: { en: "Answering on {channel}", pt: "Respondendo no {channel}", es: "Respondiendo en {channel}" },
+  jsynqLineOff: { en: "Off on {channel}", pt: "Desligado no {channel}", es: "Desactivado en {channel}" },
+  jsynqLineUpdated: { en: "Channel updated.", pt: "Canal atualizado.", es: "Canal actualizado." },
   retry: { en: "Try again", pt: "Tentar novamente", es: "Intentar de nuevo" },
 
   // ---- Agent states (the whole agent, on every channel) ----

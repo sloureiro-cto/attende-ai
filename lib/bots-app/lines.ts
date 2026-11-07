@@ -36,7 +36,8 @@ export type BotsLineTransport = "whatsapp_qr" | "whatsapp_cloud" | "instagram" |
 export type BotsLineBot = { id: string; name: string; status: AdvancedAutomationStatus }
 
 /** An AI agent bound to this line. `active` is the binding's own state: the agent answers on this line. */
-export type BotsLineAgent = { id: string; name: string; status: AgentStatus; active: boolean }
+/** `href`: where the agent opens (absent: its Attende agent page; a JSYNQ-only agent opens the agents list). */
+export type BotsLineAgent = { id: string; name: string; status: AgentStatus; active: boolean; href?: string }
 
 export type BotsLine = {
   /** Session id. Unique per channel (ids of different channels may theoretically collide, so key on both). */
@@ -152,11 +153,13 @@ export function attachBots(lines: BotsLine[], bots: AdvancedAutomationListItem[]
 }
 
 /** An AI agent is on a line when one of its bindings (`lines[]` of the agent view) points at that session. */
-export function attachAgents(lines: BotsLine[], agents: Array<Pick<AgentView, "id" | "name" | "status" | "lines">>): BotsLine[] {
+export function attachAgents(lines: BotsLine[], agents: Array<Pick<AgentView, "id" | "name" | "status" | "lines"> & { href?: string }>): BotsLine[] {
   return lines.map((line) => {
     const onLine = agents.flatMap<BotsLineAgent>((agent) => {
       const binding = agent.lines.find((l) => l.channel === line.channel && l.sessionId === line.id)
-      return binding ? [{ id: agent.id, name: agent.name, status: agent.status, active: agent.status === "live" && binding.active !== false }] : []
+      return binding
+        ? [{ id: agent.id, name: agent.name, status: agent.status, active: agent.status === "live" && binding.active !== false, ...(agent.href ? { href: agent.href } : {}) }]
+        : []
     })
     return { ...line, agents: onLine }
   })

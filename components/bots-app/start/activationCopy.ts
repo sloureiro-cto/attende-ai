@@ -43,6 +43,12 @@ const CODE_KEY: Record<StepCode, OnboardingTranslationKey> = {
   activate_needs_channel: "actCodeActivateNeedsChannel",
   activate_channel_offline: "actCodeActivateOffline",
   activate_unknown: "actCodeAgentsUnknown",
+  agent_jsynq: "actCodeAgentJsynq",
+  knowledge_jsynq: "actCodeKnowledgeJsynq",
+  test_jsynq: "actCodeTestJsynq",
+  activate_jsynq_active: "actCodeActiveJsynq",
+  activate_jsynq_paused: "actCodePausedJsynq",
+  activate_jsynq_needs_channel: "actCodeNeedsChannelJsynq",
 }
 
 /** `null`: the step waits on another one (no action of its own, the reason says what it waits for). */
@@ -69,7 +75,10 @@ function ctaKey(step: ActivationStep): OnboardingTranslationKey | null {
     case "activate_needs_channel":
       return step.href === BOTS_ROUTES.lines ? "actCtaConnectChannel" : "actCtaChooseChannel"
     case "activate_paused":
+    case "activate_jsynq_paused":
       return "actCtaTurnOn"
+    case "activate_jsynq_needs_channel":
+      return "actCtaOpenAgents"
     default:
       return "actCtaOpenChannels"
   }

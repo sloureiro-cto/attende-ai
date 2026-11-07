@@ -63,7 +63,7 @@ description in [`.env.example`](.env.example).
 | --- | --- | --- |
 | `/api/cron/billing-reconcile` | every 15 min | Re-reads each workspace's JSYNQ subscription (`GET /api/subscriptions/me`, plus the cancel flag from Stripe), pauses or resumes agents (trial over, canceled, reactivated, AI-reply quota lifted in a new month or after an upgrade). The worker does the same every 5 min without Stripe. |
 | `/api/cron/agent-sweeper` | hourly | Removes JSYNQ agents and bindings left behind by an agent creation that died half way. |
-| `/api/cron/reports` | every 10 min | Fallback for the worker's reports sync (both take the `job:reports` lease; a run within 9 min of the last one is skipped). |
+| `/api/cron/reports` | every 10 min | Fallback for the worker's reports sync (both take the `job:reports` lease; a run within 9 min of the last one is skipped). Not required for reports to work: a view of the reports page syncs its own workspace when it is stale (`waitUntil`, same per-workspace lease); the cron keeps workspaces nobody opens fresh. |
 
 Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`. To run one by hand:
 `curl -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/billing-reconcile`.

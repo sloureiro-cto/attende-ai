@@ -1,4 +1,4 @@
-import { listAttendeAgentsAction } from "actions/attende/agents"
+import { listWorkspaceAgentsAction } from "actions/attende/agents"
 import { listInstagramSessionsAction } from "actions/instagram-lite/sessions"
 import { listAdvancedAutomationsAction } from "actions/messaging-automations/advancedAutomations"
 import { listSmsSessionsAction } from "actions/sms-lite/sessions"
@@ -9,13 +9,13 @@ jest.mock("actions/whatsapp-lite", () => ({ listWhatsAppSessionsAction: jest.fn(
 jest.mock("actions/instagram-lite/sessions", () => ({ listInstagramSessionsAction: jest.fn() }))
 jest.mock("actions/sms-lite/sessions", () => ({ listSmsSessionsAction: jest.fn() }))
 jest.mock("actions/messaging-automations/advancedAutomations", () => ({ listAdvancedAutomationsAction: jest.fn() }))
-jest.mock("actions/attende/agents", () => ({ listAttendeAgentsAction: jest.fn() }))
+jest.mock("actions/attende/agents", () => ({ listWorkspaceAgentsAction: jest.fn() }))
 
 const wa = listWhatsAppSessionsAction as jest.Mock
 const ig = listInstagramSessionsAction as jest.Mock
 const sms = listSmsSessionsAction as jest.Mock
 const bots = listAdvancedAutomationsAction as jest.Mock
-const agents = listAttendeAgentsAction as jest.Mock
+const agents = listWorkspaceAgentsAction as jest.Mock
 
 const okWa = { success: true, data: [{ _id: "w1", label: "Sales", status: "connected", phoneNumber: "+55" }] }
 const okIg = { success: true, data: [{ _id: "i1", label: "Brand", status: "active", billingStatus: "active", updatedAt: "2026-10-01T00:00:00Z" }] }
@@ -24,7 +24,7 @@ const botList = (items: unknown[], total = items.length) => ({ success: true, da
 
 beforeEach(() => {
   jest.clearAllMocks()
-  agents.mockResolvedValue({ success: true, data: [] })
+  agents.mockResolvedValue({ success: true, data: { agents: [], jsynqAgents: [] } })
 })
 
 describe("loadLines", () => {
@@ -74,9 +74,19 @@ describe("loadLines", () => {
     ig.mockResolvedValue({ success: true, data: [] })
     sms.mockResolvedValue(okSms)
     bots.mockResolvedValue(botList([]))
-    agents.mockResolvedValue({ success: true, data: [{ id: "a1", name: "SDR", status: "live", lines: [{ channel: "whatsapp", sessionId: "w1", active: true }] }] })
+    agents.mockResolvedValue({
+      success: true,
+      data: {
+        agents: [{ id: "a1", name: "SDR", status: "live", lines: [{ channel: "whatsapp", sessionId: "w1", active: true }] }],
+        jsynqAgents: [{ kind: "jsynq", id: "j1", name: "Made in JSYNQ", status: "paused", lines: [{ channel: "whatsapp", sessionId: "w1", bindingId: "b1", active: false }], editPath: "/agents/j1" }],
+      },
+    })
     const res = await loadLines()
-    expect(res.lines[0]?.agents).toEqual([{ id: "a1", name: "SDR", status: "live", active: true }])
+    expect(res.lines[0]?.agents).toEqual([
+      { id: "a1", name: "SDR", status: "live", active: true },
+      // A JSYNQ-only agent opens the agents list (it has no Attende agent page).
+      { id: "j1", name: "Made in JSYNQ", status: "paused", active: false, href: "/ai-agents" },
+    ])
     expect(res.agentsUnavailable).toBe(false)
   })
 

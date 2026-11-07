@@ -102,7 +102,7 @@ JSYNQ keeps no Attende limits. Attende enforces its plan itself:
 | Limit | Counted from | Credential | Enforced at |
 | --- | --- | --- | --- |
 | Channels (`lines`) | `GET /api/whatsapp-lite/sessions`, `GET /api/sms-lite/sessions`, `GET /api/instagram-lite/sessions` (not deleted) | user JWT | `POST /api/attende/limits/check`, called by the app's channel-creation server actions (WhatsApp QR / Cloud API / embedded signup, SMS, Instagram checkout / free / subscribe) before they call JSYNQ |
-| Agents | `GET /api/agents` ∩ Attende agent setups (JSYNQ's own seeded default agent does not count) | user JWT | `POST /api/attende/agents/from-template` |
+| Agents | `GET /api/agents` ∩ Attende agent setups (JSYNQ's own seeded default agent does not count, nor do agents built in JSYNQ: for an Attende subscription only Attende-made agents count, and a workspace with Attende included in its JSYNQ plan never counts the agents it made in JSYNQ) | user JWT | `POST /api/attende/agents/from-template` |
 | Knowledge documents | `GET /api/workspace-knowledge/sources?kinds=library_document` (JSYNQ lists at most 200) | user JWT | `POST /api/attende/agents/:id/knowledge` |
 | Seats | members of `GET /api/workspaces/:workspaceId` + `GET /api/invites/workspaces?status=pending` (`pagination.total`) | user JWT | `limits/check`, called by the invite server action |
 | AI replies / month | local counter (`usage_counters`), `recordAiReply()` | — | the worker calls `recordAiReply()` per AI agent reply it sees (below); at the limit the agents are paused |
@@ -138,6 +138,19 @@ from the local counters, lines/agents/docs from the lists above (`null` when JSY
 | Line status | `GET /api/{whatsapp,sms,instagram}-lite/sessions` | user JWT |
 | Members (handoff target) | `GET /api/workspaces/:workspaceId` | user JWT |
 | Knowledge | `POST /api/workspace-knowledge/documents/upload`, `GET /api/workspace-knowledge/sources?refIds=…`, `DELETE /api/documents/:id` | user JWT |
+| Agents made in JSYNQ (listed, channels switched) | `GET /api/agents`, `GET /api/automation-bindings`, `POST /api/automation-bindings/:id/pause`, `POST .../:id/resume`, `GET /api/{whatsapp,sms,instagram}-lite/sessions` | user JWT |
+
+**Agents made in JSYNQ.** `GET /api/attende/agents` answers `{agents, jsynqAgents}`: `agents` are Attende's own (an
+`agent_setups` row); `jsynqAgents` are the other agents `GET /api/agents` returns, without JSYNQ's system agents
+(`isSystem: true`, set by `SeedDefaultAgentService` on the workspace's default assistant and on the auto lead creator;
+JSYNQ already leaves out templates and inactive agents). Sub-agents (`parentAgentId`) have no flag of their own and are
+listed. Each one shows its name, `modelConfig.model`, `category` (else `type`) and its channels: its `all_inbound`
+bindings that are not `completed` (conversation-level handoff bindings are not channels), with the line's connection.
+`POST /api/attende/agents/jsynq/:agentId/bindings/:bindingId/pause|resume` switches one channel; turning one on is
+refused with `ATTENDE_AUTOMATION_ON_LINE` where an active advanced automation runs (the conflict rule). They cannot be
+edited with the template wizard: the page links to the JSYNQ editor (`NEXT_PUBLIC_JSYNQ_URL` + `/agents/:id`, which
+JSYNQ redirects to `/agent-chat?view=agents&editAgent=:id`). Billing pauses (`access`, `ai_quota`) only ever touch
+Attende-made bindings.
 
 - The agent is created with `availableTools` = the ids of `search_knowledge_base` and `request_human_handoff`
   found in the workspace registry. A name the registry does not list is left out (logged `agent.tools_unresolved`);
@@ -224,7 +237,18 @@ reports are computed in Attende by a job and stored in Attende's Mongo:
 
 The job runs from `GET /api/cron/reports` (Vercel Cron, every 10 min, `CRON_SECRET`, 45 s budget; least recently
 synced workspaces first) and can be called from the worker (`syncWorkspaceReports(client, workspaceId, opts)`). It
-acts as the workspace owner (server-minted token, `subscriptions.userId`).
+acts as the workspace owner (server-minted token, `subscriptions.userId`). Every workspace with an entitlement that
+gives access is synced, Attende included in a paid JSYNQ plan (`source: 'jsynq_plan'`) too, and every agent's
+conversations count (AI replies are recognised by `agentExecutionId`, whoever made the agent), as do human replies.
+
+**On demand (no cron or worker needed).** A view of the reports (`overview`, `agents`, `outcomes`) starts a bounded
+sync of its workspace when it is stale: never synced, backfill not finished (again 15 s after the previous slice), or
+last run more than 10 minutes ago (`server/modules/reports/onDemand.ts`). It runs after the response through Vercel's
+`waitUntil` (`@vercel/functions`; the routes and the reports page declare `maxDuration = 60`), 20 s and 150
+conversations per slice, as the workspace's actor (else the viewer's token). It takes the same per-workspace lease
+(`report_sync_state.lockedUntil`) as the cron and the worker, so they never overlap, and one instance starts one run
+per workspace at a time. While the backfill is not finished the page says "Calculando seus relatórios" and checks
+again every 20 s, which also continues the backfill.
 
 | Step | JSYNQ endpoint | Notes |
 | --- | --- | --- |
@@ -245,8 +269,9 @@ says "Calculando seus relatórios" instead of showing numbers.
 
 Known limits:
 
-- **Freshness:** up to ~10 minutes behind (cron interval), more while a big backfill is running (it resumes run after
-  run, 300 conversations with news per workspace and run, 100 ms between JSYNQ calls).
+- **Freshness:** up to ~10 minutes behind (cron interval, or the first view after 10 minutes), more while a big
+  backfill is running (it resumes run after run, 300 conversations with news per workspace and cron run, 150 per view,
+  100 ms between JSYNQ calls).
 - **Access:** JSYNQ filters the inbox by the owner's session ACL. Conversations of a session the owner cannot see are
   not counted.
 - **Agent attribution** is per conversation (its binding's agent), not per message: the message API does not return

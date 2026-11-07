@@ -1,4 +1,5 @@
 import 'server-only';
+import { waitUntil } from '@vercel/functions';
 import { env } from './config/env';
 import { accountsClient, userClient, type AccountsClient, type UserClient } from './lib/jsynq';
 import type { AutomationsRuntime } from './modules/automations/runtime/factory';
@@ -12,6 +13,12 @@ export type Deps = {
   /** JSYNQ routes as a user: the request's JWT, or a server-minted one (`serviceToken`). */
   user: (token: string) => UserClient;
   now: () => Date;
+  /**
+   * Keeps work going after the response is sent (Vercel `waitUntil`: the function lives until the task ends, up to its
+   * `maxDuration`; elsewhere the task just runs in the process). Absent: nothing runs in the background (tests that do
+   * not opt in, scripts).
+   */
+  background?: (task: Promise<unknown>) => void;
 };
 
 export function defaultDeps(): Deps {
@@ -21,6 +28,9 @@ export function defaultDeps(): Deps {
     accounts: accountsClient(),
     user: userClient,
     now: () => new Date(),
+    background: (task) => {
+      waitUntil(task);
+    },
   };
 }
 

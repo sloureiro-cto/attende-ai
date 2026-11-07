@@ -381,9 +381,9 @@ const entries = {
   // --- states ---
   preparingTitle: { en: "Preparing your reports", pt: "Calculando seus relatórios", es: "Calculando tus informes" },
   preparingNote: {
-    en: "Until then, nothing is shown, so you never see incomplete numbers. Reports refresh about every 10 minutes.",
-    pt: "Até lá, nada é exibido, para você nunca ver números incompletos. Os relatórios são atualizados a cada ~10 min.",
-    es: "Hasta entonces no se muestra nada, para que nunca veas números incompletos. Los informes se actualizan cada ~10 min.",
+    en: "Until then, nothing is shown, so you never see incomplete numbers. This page updates by itself. Reports refresh about every 10 minutes.",
+    pt: "Até lá, nada é exibido, para você nunca ver números incompletos. Esta página se atualiza sozinha. Os relatórios são atualizados a cada ~10 min.",
+    es: "Hasta entonces no se muestra nada, para que nunca veas números incompletos. Esta página se actualiza sola. Los informes se actualizan cada ~10 min.",
   },
   preparingHint: {
     en: "We are reading the last 90 days of your conversations for the first time. This can take a few minutes on busy accounts; the numbers show up here as soon as they are complete.",

@@ -6,11 +6,21 @@ import type { AttendeeChannel } from './types';
 
 export type LineStatus = { channel: AttendeeChannel; sessionId: string; exists: boolean; connected: boolean; label?: string };
 
+/** A JSYNQ agent as `GET /api/agents` lists it (only the fields the agents page shows). */
+export type WorkspaceAgentInfo = { id: string; name: string; description?: string; type?: string; category?: string; model?: string; isSystem: boolean };
+
+/** A JSYNQ automation binding as `GET /api/automation-bindings` lists it. */
+export type BindingInfo = { id: string; agentId: string | null; channel: string; sessionId: string | null; targetType: string | null; status: 'active' | 'paused' | 'completed' };
+
 /** Everything the agent service needs from JSYNQ, behind a port (tests fake it; prod uses HTTP). */
 export type AgentPorts = {
   createAgent(input: Record<string, unknown>): Promise<{ id: string }>;
   getAgent(agentId: string): Promise<{ name: string; systemPrompt?: string } | null>;
   listAgents(): Promise<Map<string, { name: string; systemPrompt?: string }>>;
+  /** Every agent of the workspace the caller can see, with the fields the agents page shows. */
+  listAgentInfos(): Promise<WorkspaceAgentInfo[]>;
+  /** Every binding of the workspace (all agents, all targets). */
+  listBindingInfos(): Promise<BindingInfo[]>;
   updateAgent(agentId: string, patch: { name: string; description: string; systemPrompt: string }): Promise<void>;
   deleteAgent(agentId: string): Promise<void>;
   createBinding(input: { agentId: string; channel: AttendeeChannel; sessionId: string; policy: Record<string, unknown> }): Promise<{ id: string }>;
@@ -48,7 +58,18 @@ export function jsynqAgentPorts(client: UserClient, workspaceId: string): AgentP
     }
     return sessions.get(channel)!;
   };
-  let bindings: Promise<Map<string, 'active' | 'paused' | 'completed'>> | null = null;
+  let bindings: Promise<BindingInfo[]> | null = null;
+  const bindingRows = () =>
+    (bindings ??= client.listBindings().then((rows) =>
+      rows.map((b) => ({
+        id: String(b._id),
+        agentId: b.agentId ? String(b.agentId) : null,
+        channel: String(b.channel),
+        sessionId: b.sessionId ? String(b.sessionId) : null,
+        targetType: b.targetType ?? null,
+        status: b.status,
+      }))
+    ));
 
   return {
     async createAgent(input) {
@@ -62,6 +83,20 @@ export function jsynqAgentPorts(client: UserClient, workspaceId: string): AgentP
     async listAgents() {
       return new Map((await client.listAgents()).map((a) => [String(a.id), { name: a.name, systemPrompt: a.systemPrompt }]));
     },
+    async listAgentInfos() {
+      return (await client.listAgents())
+        .filter((a) => a.id && a.isActive !== false && a.isTemplate !== true)
+        .map((a) => ({
+          id: String(a.id),
+          name: a.name,
+          ...(a.description ? { description: a.description } : {}),
+          ...(a.type ? { type: a.type } : {}),
+          ...(a.category ? { category: a.category } : {}),
+          ...(a.modelConfig?.model ? { model: a.modelConfig.model } : {}),
+          isSystem: a.isSystem === true,
+        }));
+    },
+    listBindingInfos: () => bindingRows(),
     async updateAgent(agentId, patch) {
       await client.updateAgent(agentId, patch);
     },
@@ -89,8 +124,7 @@ export function jsynqAgentPorts(client: UserClient, workspaceId: string): AgentP
       await client.updateBindingPolicy(id, policy);
     },
     async bindingStatus() {
-      bindings ??= client.listBindings().then((rows) => new Map(rows.map((b) => [String(b._id), b.status])));
-      return bindings;
+      return new Map((await bindingRows()).map((b) => [b.id, b.status]));
     },
     async lineStatuses(lines) {
       return Promise.all(

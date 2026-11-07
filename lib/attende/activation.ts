@@ -1,5 +1,5 @@
 import { BOTS_ROUTES } from "components/bots-app/brand"
-import type { AgentView } from "lib/attende/agents/types"
+import type { AgentView, JsynqAgentView } from "lib/attende/agents/types"
 import type { BotsLine } from "lib/bots-app/lines"
 import { businessContext } from "./agents/context"
 
@@ -50,6 +50,13 @@ export type StepCode =
   | "activate_needs_channel"
   | "activate_channel_offline"
   | "activate_unknown"
+  // The workspace's agents were made in JSYNQ (none with the Attende setup): their knowledge and tests live there.
+  | "agent_jsynq"
+  | "knowledge_jsynq"
+  | "test_jsynq"
+  | "activate_jsynq_active"
+  | "activate_jsynq_paused"
+  | "activate_jsynq_needs_channel"
 
 export type ActivationStep = { id: ActivationStepId; state: StepState; code: StepCode; href: string }
 
@@ -62,6 +69,8 @@ export type ActivationInput = {
   failedChannels: readonly string[]
   /** `null` when the agents list could not be read. */
   agents: AgentView[] | null
+  /** Agents that exist only in JSYNQ (same list as `agents`, so `null` together). They count as the workspace's agents. */
+  jsynqAgents?: JsynqAgentView[] | null
 }
 
 export type Activation = {
@@ -121,7 +130,7 @@ const NEW_AGENT_HREF = `${BOTS_ROUTES.agents}/new`
 export const activationUnreadable = (input: Pick<ActivationInput, "failedChannels" | "agents">): boolean =>
   input.failedChannels.length >= CHANNEL_KINDS && input.agents === null
 
-export function computeActivation({ lines, failedChannels, agents }: ActivationInput): Activation {
+export function computeActivation({ lines, failedChannels, agents, jsynqAgents }: ActivationInput): Activation {
   const anyConnected = lines.some((line) => line.status === "connected")
   const channelsUnknown = failedChannels.length >= CHANNEL_KINDS
   const channelsPartial = failedChannels.length > 0
@@ -132,6 +141,8 @@ export function computeActivation({ lines, failedChannels, agents }: ActivationI
       : { id: "channel", state: "todo", code: lines.length > 0 ? "channel_offline" : "channel_none", href: BOTS_ROUTES.lines }
 
   const focusAgent = agents ? pickFocusAgent(agents) : null
+  const jsynq = jsynqAgents ?? []
+  const jsynqAnswering = jsynq.some(isAgentAnswering)
 
   let agent: ActivationStep
   let knowledge: ActivationStep
@@ -143,6 +154,16 @@ export function computeActivation({ lines, failedChannels, agents }: ActivationI
     knowledge = { id: "knowledge", state: "unknown", code: "knowledge_unknown", href: BOTS_ROUTES.agents }
     test = { id: "test", state: "unknown", code: "test_unknown", href: BOTS_ROUTES.agents }
     activate = { id: "activate", state: "unknown", code: "activate_unknown", href: BOTS_ROUTES.agents }
+  } else if (!focusAgent && jsynq.length > 0) {
+    // Agents built in JSYNQ: created, taught and tested there. Only answering is tracked here (switched per channel).
+    agent = { id: "agent", state: "done", code: "agent_jsynq", href: BOTS_ROUTES.agents }
+    knowledge = { id: "knowledge", state: "done", code: "knowledge_jsynq", href: BOTS_ROUTES.agents }
+    test = { id: "test", state: "done", code: "test_jsynq", href: BOTS_ROUTES.agents }
+    activate = jsynqAnswering
+      ? { id: "activate", state: "done", code: "activate_jsynq_active", href: BOTS_ROUTES.agents }
+      : jsynq.some((a) => a.lines.length > 0)
+        ? { id: "activate", state: "todo", code: "activate_jsynq_paused", href: BOTS_ROUTES.agents }
+        : { id: "activate", state: "todo", code: "activate_jsynq_needs_channel", href: BOTS_ROUTES.agents }
   } else if (!focusAgent) {
     agent = { id: "agent", state: "todo", code: "agent_none", href: NEW_AGENT_HREF }
     knowledge = { id: "knowledge", state: "todo", code: "knowledge_needs_agent", href: NEW_AGENT_HREF }
@@ -170,6 +191,8 @@ export function computeActivation({ lines, failedChannels, agents }: ActivationI
       activate = { id: "activate", state: "todo", code: "activate_needs_channel", href: anyConnected ? agentHref(focusAgent, "setup") : BOTS_ROUTES.lines }
     else if (lineBroken || focusAgent.status === "live") activate = { id: "activate", state: "todo", code: "activate_channel_offline", href: BOTS_ROUTES.lines }
     else activate = { id: "activate", state: "todo", code: "activate_paused", href: agentHref(focusAgent) }
+    // An agent made in JSYNQ already answering customers is the goal reached too.
+    if (activate.state !== "done" && jsynqAnswering) activate = { id: "activate", state: "done", code: "activate_jsynq_active", href: BOTS_ROUTES.agents }
   }
 
   const steps = [channel, agent, knowledge, test, activate]
@@ -194,24 +217,29 @@ export type DailySummary = {
   channelsNeedingAttention: BotsLine[]
   /** Some channel kinds could not be read: the attention list may be incomplete. */
   channelsPartial: boolean
-  /** Agents really answering (see `isAgentAnswering`). `null` when the agents could not be read. */
-  activeAgents: AgentView[] | null
+  /** Agents really answering (see `isAgentAnswering`), JSYNQ-made ones included. `null` when the agents could not be read. */
+  activeAgents: SummaryAgent[] | null
   /** Agents marked live whose channel dropped: they are not answering. */
-  agentsNeedingAttention: AgentView[] | null
+  agentsNeedingAttention: SummaryAgent[] | null
 }
+
+/** What the home's agent card shows of an agent, Attende-made or JSYNQ-made. */
+export type SummaryAgent = Pick<AgentView, "id" | "name" | "status" | "lines">
 
 export function computeDailySummary(input: {
   lines: BotsLine[]
   failedChannels: readonly string[]
   agents: AgentView[] | null
+  jsynqAgents?: JsynqAgentView[] | null
   inbox: { needsReply: number; unread: number } | null
 }): DailySummary {
+  const all: SummaryAgent[] | null = input.agents ? [...input.agents, ...(input.jsynqAgents ?? [])] : null
   return {
     waitingForTeam: input.inbox ? input.inbox.needsReply : null,
     unread: input.inbox ? input.inbox.unread : null,
     channelsNeedingAttention: input.lines.filter((line) => line.status !== "connected" && line.status !== "disabled"),
     channelsPartial: input.failedChannels.length > 0,
-    activeAgents: input.agents ? input.agents.filter(isAgentAnswering) : null,
-    agentsNeedingAttention: input.agents ? input.agents.filter((a) => a.status === "live" && !isAgentAnswering(a)) : null,
+    activeAgents: all ? all.filter(isAgentAnswering) : null,
+    agentsNeedingAttention: all ? all.filter((a) => a.status === "live" && !isAgentAnswering(a)) : null,
   }
 }

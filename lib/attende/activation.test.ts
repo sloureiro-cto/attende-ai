@@ -1,4 +1,5 @@
 import { agentViewFixture as agent } from "lib/attende/agents/fixtures"
+import type { JsynqAgentView } from "lib/attende/agents/types"
 import type { BotsLine } from "lib/bots-app/lines"
 import { activationUnreadable, agentStage, computeActivation, computeDailySummary, pickFocusAgent } from "./activation"
 
@@ -140,5 +141,48 @@ describe("computeDailySummary", () => {
   it("keeps missing sources as null, never zero", () => {
     const d = computeDailySummary({ lines: [], failedChannels: ["sms"], agents: null, inbox: null })
     expect(d).toMatchObject({ waitingForTeam: null, unread: null, activeAgents: null, agentsNeedingAttention: null, channelsPartial: true })
+  })
+})
+
+describe("agents created in JSYNQ", () => {
+  const jsynq = (over: Partial<JsynqAgentView> = {}): JsynqAgentView => ({
+    kind: "jsynq",
+    id: "j1",
+    agentId: "j1",
+    name: "Sales bot",
+    status: "live",
+    lines: [{ channel: "whatsapp", sessionId: "s1", bindingId: "b1", exists: true, connected: true, active: true }],
+    editPath: "/agents/j1",
+    ...over,
+  })
+
+  it("a workspace whose agents were all made in JSYNQ is not asked to create one, and one answering is activation", () => {
+    const a = computeActivation({ lines: connected, failedChannels: [], agents: [], jsynqAgents: [jsynq()] })
+    expect(states(a)).toEqual({
+      channel: "done:channel_connected",
+      agent: "done:agent_jsynq",
+      knowledge: "done:knowledge_jsynq",
+      test: "done:test_jsynq",
+      activate: "done:activate_jsynq_active",
+    })
+    expect(a.activated).toBe(true)
+  })
+
+  it("JSYNQ agents switched off or without a channel: activation is still to do, on the agents page", () => {
+    const paused = computeActivation({ lines: connected, failedChannels: [], agents: [], jsynqAgents: [jsynq({ status: "paused", lines: [{ ...jsynq().lines[0]!, active: false }] })] })
+    expect(paused.next).toMatchObject({ id: "activate", code: "activate_jsynq_paused", href: "/ai-agents" })
+    const bare = computeActivation({ lines: connected, failedChannels: [], agents: [], jsynqAgents: [jsynq({ status: "draft", lines: [] })] })
+    expect(bare.next).toMatchObject({ id: "activate", code: "activate_jsynq_needs_channel" })
+  })
+
+  it("an Attende agent still drives the steps; a JSYNQ agent answering completes activation", () => {
+    const a = computeActivation({ lines: connected, failedChannels: [], agents: [agent({ status: "paused", form: nameOnly })], jsynqAgents: [jsynq()] })
+    expect(a.steps.find((s) => s.id === "agent")?.code).toBe("agent_created")
+    expect(a.steps.find((s) => s.id === "activate")?.code).toBe("activate_jsynq_active")
+  })
+
+  it("the home counts JSYNQ agents that answer", () => {
+    const d = computeDailySummary({ lines: [], failedChannels: [], agents: [], jsynqAgents: [jsynq()], inbox: null })
+    expect(d.activeAgents?.map((x) => x.id)).toEqual(["j1"])
   })
 })

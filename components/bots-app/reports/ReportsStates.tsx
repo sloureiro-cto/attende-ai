@@ -1,6 +1,7 @@
 "use client"
 
 import { Chart21, Danger, Lock1, SearchStatus, Timer1 } from "iconsax-react"
+import { Loader2 } from "lucide-react"
 import Link from "next/link"
 import type { AttendeReportsT } from "./useAttendeReportsT"
 import { BOTS_BRAND } from "../brand"
@@ -72,12 +73,20 @@ export function ReportsBlocked({ t }: { t: AttendeReportsT }) {
   )
 }
 
-/** The workspace's first sync has not finished: the numbers would be incomplete, so none are shown (never zeros). */
+/**
+ * The workspace's first sync has not finished: the numbers would be incomplete, so none are shown (never zeros). It is
+ * visibly in progress (spinner, `aria-busy`): the page checks again by itself and the numbers replace it once complete.
+ */
 export function ReportsPreparing({ t }: { t: AttendeReportsT }) {
   return (
-    <div role="status" data-testid="reports-preparing">
+    <div role="status" aria-busy="true" data-testid="reports-preparing">
       <EmptyState
-        icon={<Timer1 size={22} />}
+        icon={
+          <span className="relative inline-flex">
+            <Timer1 size={22} />
+            <Loader2 className="absolute -right-2 -top-2 size-3.5 animate-spin text-primary motion-reduce:animate-none" aria-hidden />
+          </span>
+        }
         title={t("preparingTitle")}
         // Two whole sentences, each translated on its own.
         description={`${t("preparingHint")} ${t("preparingNote")}`}

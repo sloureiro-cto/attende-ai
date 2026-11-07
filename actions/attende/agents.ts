@@ -3,7 +3,7 @@
 import { getUsersFromWorkspace } from "actions/users/getUsersFromWorkspace"
 import { auth } from "auth"
 import { agentsFetch } from "lib/attende/agents/api"
-import type { AgentActionResult, AgentForm, AgentLine, AgentTemplate, AgentView, CreateAgentInput, CrmTarget, KnowledgeDocument, TestResult } from "lib/attende/agents/types"
+import type { AgentActionResult, AgentForm, AgentLine, AgentsListing, AgentTemplate, AgentView, CreateAgentInput, CrmTarget, JsynqAgentView, KnowledgeDocument, TestResult } from "lib/attende/agents/types"
 
 const enc = encodeURIComponent
 
@@ -15,6 +15,17 @@ export async function listAgentTemplatesAction(): Promise<AgentActionResult<Agen
 export async function listAttendeAgentsAction(): Promise<AgentActionResult<AgentView[]>> {
   const result = await agentsFetch<{ agents: AgentView[] }>("/")
   return result.success ? { success: true, data: result.data.agents ?? [] } : result
+}
+
+/** Every agent of the workspace: Attende's own ones and the ones that exist only in JSYNQ. */
+export async function listWorkspaceAgentsAction(): Promise<AgentActionResult<AgentsListing>> {
+  const result = await agentsFetch<Partial<AgentsListing>>("/")
+  return result.success ? { success: true, data: { agents: result.data.agents ?? [], jsynqAgents: result.data.jsynqAgents ?? [] } } : result
+}
+
+/** Switches one channel of a JSYNQ-only agent on or off (its JSYNQ binding is resumed or paused). */
+export async function setJsynqAgentLineAction(agentId: string, bindingId: string, active: boolean): Promise<AgentActionResult<JsynqAgentView>> {
+  return agentsFetch<JsynqAgentView>(`/jsynq/${enc(agentId)}/bindings/${enc(bindingId)}/${active ? "resume" : "pause"}`, { method: "POST", body: {} })
 }
 
 export async function getAttendeAgentAction(id: string): Promise<AgentActionResult<AgentView>> {

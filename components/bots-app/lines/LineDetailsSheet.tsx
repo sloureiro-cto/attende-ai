@@ -98,7 +98,7 @@ export function LineDetailsSheet({ line, onOpenChange, onReconnect, reconnecting
                     {line.agents.map((agent) => (
                       <li key={agent.id}>
                         <Link
-                          href={`${BOTS_ROUTES.agents}/${encodeURIComponent(agent.id)}`}
+                          href={agent.href ?? `${BOTS_ROUTES.agents}/${encodeURIComponent(agent.id)}`}
                           className={itemLinkClass}
                           aria-label={t("lineDrawerOpenAgentAria", { name: agent.name })}
                         >

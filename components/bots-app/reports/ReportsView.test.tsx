@@ -219,6 +219,23 @@ describe("ReportsView states", () => {
     expect(screen.getByTestId("report-period")).toHaveTextContent(/Updated about every 10 min$/)
   })
 
+  it("while preparing, checks again by itself and shows the numbers once they are ready", async () => {
+    jest.useFakeTimers()
+    try {
+      loadReportAction.mockResolvedValueOnce(ok({ ...overview(), status: { state: "ready", lastSyncAt: "2026-10-22T10:00:00.000Z" } }))
+      render(<ReportsView initial={initial({ ...overview(), status: { state: "preparing", lastSyncAt: null } })} />)
+      expect(screen.getByTestId("reports-preparing")).toHaveAttribute("aria-busy", "true")
+      expect(loadReportAction).not.toHaveBeenCalled()
+      await act(async () => {
+        jest.advanceTimersByTime(20_000)
+      })
+      expect(loadReportAction).toHaveBeenCalledTimes(1)
+      expect(await screen.findByTestId("kpi-conversations")).toBeInTheDocument()
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
   it("shows the numbers once the first sync finished", () => {
     render(<ReportsView initial={initial({ ...overview(), status: { state: "ready", lastSyncAt: "2026-10-22T10:00:00.000Z" } })} />)
     expect(screen.getByTestId("kpi-conversations")).toBeInTheDocument()

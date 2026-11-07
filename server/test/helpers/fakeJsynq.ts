@@ -12,7 +12,20 @@ import { AUTH_SECRET } from './tokens';
 
 const oid = () => randomBytes(12).toString('hex');
 
-type Agent = { id: string; workspaceId: string; name: string; description: string; systemPrompt: string; isActive: boolean; body: Record<string, unknown> };
+type Agent = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  isActive: boolean;
+  body: Record<string, unknown>;
+  /** As JSYNQ's `mapAgentConfigurationToResponse`: system agents (the seeded default assistant) are flagged. */
+  isSystem?: boolean;
+  type?: string;
+  category?: string;
+  modelConfig?: { provider?: string; model?: string };
+};
 type Binding = {
   _id: string;
   workspaceId: string;
@@ -401,7 +414,7 @@ export class FakeJsynq {
       this.newSubscription(_id, { planSlug: 'free', stripePriceId: 'price_jsynq_free', status: 'active' });
       // JSYNQ seeds its own default agent in every new workspace: it must not count as an Attende agent.
       const seeded = oid();
-      this.agents.set(seeded, { id: seeded, workspaceId: _id, name: 'JSYNQ', description: '', systemPrompt: 'default', isActive: true, body: {} });
+      this.agents.set(seeded, { id: seeded, workspaceId: _id, name: 'JSYNQ', description: '', systemPrompt: 'default', isActive: true, isSystem: true, body: {} });
       return res.json({ workspace: { ...ws, owner }, status: true });
     });
     r.get('/workspaces/check-owner', (_req, res) =>
