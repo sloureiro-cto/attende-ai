@@ -5,7 +5,8 @@ import { memo, useContext, useEffect } from "react"
 import { Handle, type NodeProps, Position, useUpdateNodeInternals } from "reactflow"
 import { cn } from "@/lib/utils"
 import { type AutomationsTFn, useAutomationsT } from "components/automations/ui/useAutomationsT"
-import { exitDisplayName, FIXED_EXIT_LABEL_KEYS, nodeOutputs } from "lib/automations/botGraph"
+import { exitLabelText } from "components/automations/ui/exitLabel"
+import { nodeOutputs } from "lib/automations/botGraph"
 import type { AdvancedAutomationNode } from "lib/automations/types"
 import { minutesParts, NODE_META, nodeKindLabelKey, TONE_CHIP, UNAVAILABLE_KINDS } from "./botNodeMeta"
 import { BotStageLabelsContext } from "./botStageLabels"
@@ -34,7 +35,7 @@ function summarize(node: AdvancedAutomationNode, t: AutomationsTFn, stageLabel?:
     case "condition":
       return t("advancedAutomationSummaryRules", { count: node.rows.length })
     case "split":
-      return node.paths.map((p) => `${p.name} ${p.percent}%`).join(" · ")
+      return node.paths.map((p, i) => `${p.name.trim() || t("automationsEditorDefaultPathName", { n: i + 1 })} ${p.percent}%`).join(" · ")
     case "wait": {
       const { value, unit } = minutesParts(node.minutes)
       return `${value} ${t(
@@ -162,8 +163,7 @@ const StepNodeImpl = ({ data, selected }: NodeProps<StepNodeData>) => {
   const bubble = node.kind === "send_message" && !!summary
 
   const exitRow = (exitId: string, i: number) => {
-    const name = exitDisplayName(node, exitId)
-    const label = name.fixedKey ? t(FIXED_EXIT_LABEL_KEYS[name.fixedKey]) : name.name?.trim() || exitId
+    const label = exitLabelText(node, exitId, t)
     const tone = exitTone(exitId)
     const count = showStats ? stat?.exits[exitId] : undefined
     return (

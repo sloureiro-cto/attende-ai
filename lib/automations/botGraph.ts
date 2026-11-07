@@ -86,13 +86,34 @@ export const FIXED_EXIT_LABEL_KEYS = {
   not_understood: "advancedAutomationExitNotUnderstood",
 } as const
 
-export function exitDisplayName(node: AdvancedAutomationNode, exitId: string): { fixedKey?: keyof typeof FIXED_EXIT_LABEL_KEYS; name?: string } {
+/** Numbered name of an option/row/path the author left unnamed ("Condição 2"), never its internal id. */
+export const UNNAMED_EXIT_LABEL_KEYS = {
+  option: "advancedAutomationOptionLabel",
+  row: "advancedAutomationRuleName",
+  path: "automationsEditorDefaultPathName",
+} as const
+
+export type ExitDisplayName = {
+  fixedKey?: keyof typeof FIXED_EXIT_LABEL_KEYS
+  name?: string
+  /** Set when `name` is blank: the numbered default to show instead. */
+  unnamed?: { key: (typeof UNNAMED_EXIT_LABEL_KEYS)[keyof typeof UNNAMED_EXIT_LABEL_KEYS]; n: number }
+}
+
+function named<T extends { id: string }>(items: T[] | undefined, exitId: string, nameOf: (item: T) => string | undefined, kind: keyof typeof UNNAMED_EXIT_LABEL_KEYS): ExitDisplayName {
+  const index = (items ?? []).findIndex((item) => item.id === exitId)
+  if (index < 0) return {}
+  const name = nameOf(items![index]!)?.trim()
+  return name ? { name } : { unnamed: { key: UNNAMED_EXIT_LABEL_KEYS[kind], n: index + 1 } }
+}
+
+export function exitDisplayName(node: AdvancedAutomationNode, exitId: string): ExitDisplayName {
   if (exitId in FIXED_EXIT_LABEL_KEYS && !(node.kind === "send_message" && (node.options ?? []).some((o) => o.id === exitId))) {
     return { fixedKey: exitId as keyof typeof FIXED_EXIT_LABEL_KEYS }
   }
-  if (node.kind === "send_message") return { name: node.options?.find((o) => o.id === exitId)?.label }
-  if (node.kind === "condition") return { name: node.rows.find((r) => r.id === exitId)?.name }
-  if (node.kind === "split") return { name: node.paths.find((p) => p.id === exitId)?.name }
+  if (node.kind === "send_message") return named(node.options, exitId, (o) => o.label, "option")
+  if (node.kind === "condition") return named(node.rows, exitId, (r) => r.name, "row")
+  if (node.kind === "split") return named(node.paths, exitId, (p) => p.name, "path")
   return {}
 }
 

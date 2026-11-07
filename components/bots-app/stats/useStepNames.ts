@@ -2,8 +2,8 @@
 
 import { useCallback } from "react"
 import { nodeKindLabelKey } from "components/automations/bot/botNodeMeta"
+import { exitLabelText } from "components/automations/ui/exitLabel"
 import { useAutomationsT } from "components/automations/ui/useAutomationsT"
-import { exitDisplayName, FIXED_EXIT_LABEL_KEYS } from "lib/automations/botGraph"
 import type { AdvancedAutomationNode } from "lib/automations/types"
 import { useStatsT } from "./useStatsT"
 
@@ -31,9 +31,7 @@ export function useStepNames() {
 
   const exitLabel = useCallback(
     (node: AdvancedAutomationNode, exitId: string): string => {
-      const { fixedKey, name } = exitDisplayName(node, exitId)
-      if (fixedKey) return at(FIXED_EXIT_LABEL_KEYS[fixedKey])
-      return name?.trim() || exitId
+      return exitLabelText(node, exitId, at)
     },
     [at]
   )
